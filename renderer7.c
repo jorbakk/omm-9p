@@ -543,95 +543,93 @@ threadmain(int argc, char **argv)
 	flush_pkt.data = (uint8_t*)"FLUSH";
 
 	// infinite loop waiting for fired events
-	SDL_Event event;
+	/* SDL_Event event; */
 	for(;;)
 	{
 		double incr, pos;
 
 		// wait indefinitely for the next available event
-		ret = SDL_WaitEvent(&event);
-		if (ret == 0)
-		{
-			printf("SDL_WaitEvent failed: %s.\n", SDL_GetError());
-		}
+		/* ret = SDL_WaitEvent(&event); */
+		/* if (ret == 0) */
+		/* { */
+			/* printf("SDL_WaitEvent failed: %s.\n", SDL_GetError()); */
+		/* } */
 
 		// switch on the retrieved event type
-		switch(event.type)
-		{
-			case SDL_KEYDOWN:
-			{
-				switch(event.key.keysym.sym)
-				{
-					case SDLK_LEFT:
-					{
-						incr = -10.0;
-						goto do_seek;
-					}
-					case SDLK_RIGHT:
-					{
-						incr = 10.0;
-						goto do_seek;
-					}
-					case SDLK_DOWN:
-					{
-						incr = -60.0;
-						goto do_seek;
-					}
-					case SDLK_UP:
-					{
-						incr = 60.0;
-						goto do_seek;
-					}
+		/* switch(event.type) */
+		/* { */
+			/* case SDL_KEYDOWN: */
+			/* { */
+				/* switch(event.key.keysym.sym) */
+				/* { */
+					/* case SDLK_LEFT: */
+					/* { */
+						/* incr = -10.0; */
+						/* goto do_seek; */
+					/* } */
+					/* case SDLK_RIGHT: */
+					/* { */
+						/* incr = 10.0; */
+						/* goto do_seek; */
+					/* } */
+					/* case SDLK_DOWN: */
+					/* { */
+						/* incr = -60.0; */
+						/* goto do_seek; */
+					/* } */
+					/* case SDLK_UP: */
+					/* { */
+						/* incr = 60.0; */
+						/* goto do_seek; */
+					/* } */
 
-					do_seek:
-					{
-						if(global_video_state)
-						{
-							pos = get_master_clock(global_video_state);
-							pos += incr;
-							stream_seek(global_video_state, (int64_t)(pos * AV_TIME_BASE), incr);
-						}
-						break;
-					};
+					/* do_seek: */
+					/* { */
+						/* if(global_video_state) */
+						/* { */
+							/* pos = get_master_clock(global_video_state); */
+							/* pos += incr; */
+							/* stream_seek(global_video_state, (int64_t)(pos * AV_TIME_BASE), incr); */
+						/* } */
+						/* break; */
+					/* }; */
 
-					default:
-					{
-						// nothing to do
-					}
-					break;
-				}
-			}
-			break;
+					/* default: */
+					/* { */
+						/* // nothing to do */
+					/* } */
+					/* break; */
+				/* } */
+			/* } */
+			/* break; */
 
-			case FF_QUIT_EVENT:
-			case SDL_QUIT:
-			{
-				videoState->quit = 1;
+			/* case FF_QUIT_EVENT: */
+			/* case SDL_QUIT: */
+			/* { */
+				/* videoState->quit = 1; */
 
-				/**
-				 * If the video has finished playing, then both the picture and audio
-				 * queues are waiting for more data.  Make them stop waiting and
-				 * terminate normally.
-				 */
-				SDL_CondSignal(videoState->audioq.cond);
-				SDL_CondSignal(videoState->videoq.cond);
+				 /* * If the video has finished playing, then both the picture and audio */
+				 /* * queues are waiting for more data.  Make them stop waiting and */
+				 /* * terminate normally. */
+				/* SDL_CondSignal(videoState->audioq.cond); */
+				/* SDL_CondSignal(videoState->videoq.cond); */
 
-				SDL_Quit();
-			}
-			break;
+				/* SDL_Quit(); */
+			/* } */
+			/* break; */
 
-			case FF_REFRESH_EVENT:
-			{
-				video_refresh_timer(event.user.data1);
-			}
-			break;
+			/* case FF_REFRESH_EVENT: */
+			/* { */
+				/* video_refresh_timer(event.user.data1); */
+			/* } */
+			/* break; */
 
-			default:
-			{
-				// nothing to do
-			}
-			break;
-		}
+			/* default: */
+			/* { */
+				/* // nothing to do */
+			/* } */
+			/* break; */
+		/* } */
 
 		// check global quit flag
 		if (videoState->quit)
