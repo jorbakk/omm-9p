@@ -1,24 +1,34 @@
-/**
-*
-*   File:   tutorial07.c
-*		   This tutorial adds seeking functionalities to the player coded in tutorial06.c
-*
-*		   Compiled using
-*			   gcc -o tutorial07 tutorial07.c -lavutil -lavformat -lavcodec -lswscale -lswresample -lz -lm  `sdl2-config --cflags --libs`
-*		   on Arch Linux.
-*
-*		   Please refer to previous tutorials for uncommented lines of code.
-*
-*   Author: Rambod Rahmani <rambodrahmani@autistici.org>
-*		   Created on 8/26/18.
-*
-**/
+/*
+ * Copyright 2022 Jörg Bakker
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is furnished to do
+ * so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
-#include <unistd.h>
-#include <stdio.h>
-#include <assert.h>
-#include <math.h>
-#include <time.h>
+#include <u.h>
+#include <libc.h>
+#include <signal.h>
+#include <bio.h>
+#include <fcall.h>
+#include <9pclient.h>
+#include <auth.h>
+#include <thread.h>
+
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/avstring.h>
@@ -27,6 +37,7 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_thread.h>
 
@@ -36,6 +47,8 @@
 #ifdef __MINGW32__
 #undef main
 #endif
+
+#define LOG(...) fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 /**
  * Debug flag.
@@ -386,6 +399,74 @@ AudioResamplingState * getAudioResampling(uint64_t channel_layout);
 
 void stream_seek(VideoState * videoState, int64_t pos, int rel);
 
+
+CFsys *(*nsmnt)(char*, char*) = nsmount;
+CFsys *(*fsmnt)(int, char*) = fsmount;
+static const int avctxBufferSize = 8192 * 10;
+char *addr = "tcp!localhost!5640";
+char *aname;
+
+
+int
+demuxerPacketRead(void *fid, uint8_t *buf, int count)
+{
+	LOG("demuxer reading %d bytes from fid: %p into buf: %p", count, fid, buf);
+	CFid *cfid = (CFid*)fid;
+	return fsread(cfid, buf, count);
+}
+
+
+int64_t
+demuxerPacketSeek(void *fid, int64_t offset, int whence)
+{
+	LOG("demuxer seeking fid: %p offset: %ld", fid, offset);
+	CFid *cfid = (CFid*)fid;
+	return fsseek(cfid, offset, whence);
+}
+
+
+CFsys*
+xparse(char *name, char **path)
+{
+	int fd;
+	char *p;
+	CFsys *fs;
+
+	if (addr == nil) {
+		p = strchr(name, '/');
+		if(p == nil)
+			p = name+strlen(name);
+		else
+			*p++ = 0;
+		*path = p;
+		fs = nsmnt(name, aname);
+		if(fs == nil)
+			sysfatal("mount: %r");
+	} else {
+		*path = name;
+		if ((fd = dial(addr, nil, nil, nil)) < 0)
+			sysfatal("dial: %r");
+		if ((fs = fsmnt(fd, aname)) == nil)
+			sysfatal("mount: %r");
+	}
+	return fs;
+}
+
+
+CFid*
+xopen(char *name, int mode)
+{
+	CFid *fid;
+	CFsys *fs;
+
+	fs = xparse(name, &name);
+	fid = fsopen(fs, name, mode);
+	if (fid == nil)
+		sysfatal("fsopen %s: %r", name);
+	return fid;
+}
+
+
 /**
  * Entry point.
  *
@@ -394,14 +475,15 @@ void stream_seek(VideoState * videoState, int64_t pos, int rel);
  *
  * @return		  execution exit code.
  */
-int main(int argc, char * argv[])
+void
+threadmain(int argc, char **argv)
 {
 	// if the given number of command line arguments is wrong
 	if ( argc != 3 )
 	{
 		// print help menu and exit
 		printHelpMenu();
-		return -1;
+		return;
 	}
 
 	/**
@@ -412,7 +494,7 @@ int main(int argc, char * argv[])
 	if (ret != 0)
 	{
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
-		return -1;
+		return;
 	}
 
 	// the global VideoState reference will be set in decode_thread() to this pointer
@@ -448,7 +530,7 @@ int main(int argc, char * argv[])
 		// free allocated memory before exiting
 		av_free(videoState);
 
-		return -1;
+		return;
 	}
 
 	av_init_packet(&flush_pkt);
@@ -556,7 +638,7 @@ int main(int argc, char * argv[])
 	// clean up memory
 	av_free(videoState);
 
-	return 0;
+	return;
 }
 
 /**
