@@ -1,10 +1,10 @@
 # OMM - Open Multimedia
 
-- [Introduction](#introduction)
-- [Dependencies](#dependencies)
-- [Building from Source](#building-from-source)
-- [Usage](#usage)
-- [References](#references)
+- [Introduction](https://github.com/captaingroove/omm-9p#introduction)
+- [Dependencies](https://github.com/captaingroove/omm-9p##dependencies)
+- [Building from Source](https://github.com/captaingroove/omm-9p##building-from-source)
+- [Usage](https://github.com/captaingroove/omm-9p##usage)
+- [References](https://github.com/captaingroove/omm-9p##references)
 
 ## Introduction
 
