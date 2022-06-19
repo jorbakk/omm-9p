@@ -20,6 +20,12 @@
  * SOFTWARE.
  */
 
+
+// TODO fix crash when reading from 9P server instead of a local file
+// 1. Replace SDL threads with pthreads, 9P threads ...?
+// 2. Make everything synchronous ...?
+
+
 #include <u.h>
 #include <libc.h>
 #include <signal.h>
@@ -667,9 +673,35 @@ int decode_thread(void * arg)
 	// retrieve global VideoState reference
 	VideoState * videoState = (VideoState *)arg;
 
+	// Set up 9P connection
+	CFid *fid = xopen(videoState->filename, OREAD);
+
+	// Set up IO
+	unsigned char *avctxBuffer;
+	avctxBuffer = malloc(avctxBufferSize);
+	AVIOContext *pIOCtx = avio_alloc_context(
+		avctxBuffer,		 // buffer
+		avctxBufferSize,	 // buffer size
+		0,				     // buffer is only readable - set to 1 for read/write
+		fid,				 // user specified data
+		demuxerPacketRead,   // function for reading packets
+		NULL,				 // function for writing packets
+		demuxerPacketSeek	 // function for seeking to position in stream
+		);
+	if(!pIOCtx){
+		sysfatal("failed to allocate memory for ffmpeg av io context");
+	}
+
+	AVFormatContext *pFormatCtx = avformat_alloc_context();
+	if (!pFormatCtx) {
+	  sysfatal("failed to allocate av format context");
+	}
 	// file I/O context: demuxers read a media file and split it into chunks of data (packets)
-	AVFormatContext * pFormatCtx = NULL;
-	int ret = avformat_open_input(&pFormatCtx, videoState->filename, NULL, NULL);
+	/* AVFormatContext * pFormatCtx = NULL; */
+	pFormatCtx->pb = pIOCtx;
+
+	/* int ret = avformat_open_input(&pFormatCtx, videoState->filename, NULL, NULL); */
+	int ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
 	if (ret < 0)
 	{
 		printf("Could not open file %s.\n", videoState->filename);
