@@ -167,7 +167,7 @@ typedef struct VideoState
     SDL_Texture *       texture;
     SDL_Renderer *      renderer;
     PacketQueue         videoq;
-    struct swsContext * sws_ctx;
+    struct SwsContext * sws_ctx;
     double              frame_timer;
     double              frame_last_pts;
     double              frame_last_delay;
@@ -452,7 +452,7 @@ int main(int argc, char * argv[])
     }
 
     av_init_packet(&flush_pkt);
-    flush_pkt.data = "FLUSH";
+    flush_pkt.data = (uint8_t*)"FLUSH";
 
     // infinite loop waiting for fired events
     SDL_Event event;
@@ -727,6 +727,7 @@ int decode_thread(void * arg)
 
             if (ret < 0)
             {
+				// FIXME warning about FormatCtx->filename is depricated ... should vanish when switching to 9P
                 fprintf(stderr, "%s: error while seeking\n", videoState->pFormatCtx->filename);
             }
             else
@@ -1775,8 +1776,10 @@ void video_display(VideoState * videoState)
             "FFmpeg SDL Video Player",
             SDL_WINDOWPOS_UNDEFINED,
             SDL_WINDOWPOS_UNDEFINED,
-            videoState->video_ctx->width / 2,
-            videoState->video_ctx->height / 2,
+            /* videoState->video_ctx->width / 2, */
+            /* videoState->video_ctx->height / 2, */
+            videoState->video_ctx->width,
+            videoState->video_ctx->height,
             SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI
             );
 
@@ -2111,6 +2114,7 @@ static void packet_queue_flush(PacketQueue * queue)
     for (pkt = queue->first_pkt; pkt != NULL; pkt = pkt1)
     {
         pkt1 = pkt->next;
+		// FIXME warning about av_free_packet is depricated
         av_free_packet(&pkt->pkt);
         av_freep(&pkt);
     }
