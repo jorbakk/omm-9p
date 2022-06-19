@@ -24,4 +24,4 @@ Run `make`. Currently, no dependencies are checked.
 ## References
 
 1. [Plan 9 from user space](https://9fans.github.io/plan9port)
-2. [FFmpeg](https://github.com/rambodrahmani/ffmpeg-video-player)
+2. [FFmpeg video player](https://github.com/rambodrahmani/ffmpeg-video-player)

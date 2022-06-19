@@ -172,13 +172,13 @@ threadmain(int argc, char **argv)
 	LOG("opening avformat input ...");
 	int ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
 	if (ret < 0) {
-	  sysfatal("failed to open av format input or couldn't read enough packet data");
+	  sysfatal("open av format input: %s", av_err2str(ret));
 	}
 
 	ret = avformat_find_stream_info(pFormatCtx, NULL);
 	if (ret < 0)
 	{
-		sysfatal("Could not find stream information %s\n", argv[1]);
+		sysfatal("find stream information for %s: %s", argv[1], av_err2str(ret));
 	}
 
 	av_dump_format(pFormatCtx, 0, argv[1], 0);
@@ -199,7 +199,7 @@ threadmain(int argc, char **argv)
 	}
 	if (videoStream == -1)
 	{
-		sysfatal("couldn't find a video stream");
+		sysfatal("could not find a video stream");
 	}
 
 	// Find and open the video decoder
@@ -207,7 +207,7 @@ threadmain(int argc, char **argv)
 	pCodec = avcodec_find_decoder(pFormatCtx->streams[videoStream]->codecpar->codec_id);
 	if (pCodec == NULL)
 	{
-		sysfatal("Unsupported codec");
+		sysfatal("unsupported codec");
 	}
 	pCodecCtxOrig = avcodec_alloc_context3(pCodec);
 	ret = avcodec_parameters_to_context(pCodecCtxOrig, pFormatCtx->streams[videoStream]->codecpar);
@@ -215,12 +215,12 @@ threadmain(int argc, char **argv)
 	ret = avcodec_parameters_to_context(pCodecCtx, pFormatCtx->streams[videoStream]->codecpar);
 	if (ret != 0)
 	{
-		sysfatal("Could not copy codec context.");
+		sysfatal("copy codec context: %s", av_err2str(ret));
 	}
 	ret = avcodec_open2(pCodecCtx, pCodec, NULL);
 	if (ret < 0)
 	{
-		sysfatal("Could not open codec.");
+		sysfatal("open codec.");
 	}
 
 	// Decode frames into ppm images
@@ -228,13 +228,13 @@ threadmain(int argc, char **argv)
 	pFrame = av_frame_alloc();
 	if (pFrame == NULL)
 	{
-		sysfatal("Could not allocate frame.");
+		sysfatal("failed to allocate input frame.");
 	}
 	AVFrame *pFrameRGB = NULL;
 	pFrameRGB = av_frame_alloc();
 	if (pFrameRGB == NULL)
 	{
-		sysfatal("Could not allocate frame.");
+		sysfatal("failed to allocate output frame");
 	}
 	uint8_t *buffer = NULL;
 	int numBytes;
@@ -255,7 +255,7 @@ threadmain(int argc, char **argv)
 	AVPacket *pPacket = av_packet_alloc();
 	if (pPacket == NULL)
 	{
-		sysfatal("Could not alloc packet");
+		sysfatal("failed to alloc av-packet");
 	}
 	sws_ctx = sws_getContext(
 		pCodecCtx->width,
@@ -274,8 +274,9 @@ threadmain(int argc, char **argv)
 	i = 0;
 	while (1)
 	{
-		if (av_read_frame(pFormatCtx, pPacket) < 0) {
-			LOG("failed to read av packet");
+		ret = av_read_frame(pFormatCtx, pPacket);
+		if (ret < 0) {
+			LOG("read av packet: %s", av_err2str(ret));
 			continue;
 		}
 		if (pPacket->stream_index == videoStream)
@@ -283,20 +284,20 @@ threadmain(int argc, char **argv)
 			ret = avcodec_send_packet(pCodecCtx, pPacket);
 			if (ret < 0)
 			{
-				sysfatal("Error sending packet for decoding");
+				sysfatal("send packet for decoding: %s", av_err2str(ret));
 			}
 
 			while (ret >= 0)
 			{
 				ret = avcodec_receive_frame(pCodecCtx, pFrame);
-
 				if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
 				{
+					LOG("no more frames available or end of file");
 					break;
 				}
 				else if (ret < 0)
 				{
-					sysfatal("Error while decoding");
+					sysfatal("while decoding: %s", av_err2str(ret));
 				}
 				sws_scale(
 					sws_ctx,
