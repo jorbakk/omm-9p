@@ -233,7 +233,7 @@ threadmain(int argc, char **argv)
 		sysfatal("open codec.");
 	}
 
-	// Decode frames into ppm images
+	// Decode frames
 	AVFrame *pFrame = NULL;
 	pFrame = av_frame_alloc();
 	if (pFrame == NULL)
@@ -248,17 +248,23 @@ threadmain(int argc, char **argv)
 	}
 	uint8_t *buffer = NULL;
 	int numBytes;
-	numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height, 32);
-	buffer = (uint8_t *) av_malloc(numBytes *sizeof(uint8_t));
-	av_image_fill_arrays(
-		pFrameRGB->data,
-		pFrameRGB->linesize,
-		buffer,
-		AV_PIX_FMT_RGB24,
-		pCodecCtx->width,
-		pCodecCtx->height,
-		32
-	);
+    numBytes = av_image_get_buffer_size(
+                AV_PIX_FMT_YUV420P,
+                pCodecCtx->width,
+                pCodecCtx->height,
+                32
+            );
+    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+    AVFrame * pict = av_frame_alloc();
+    av_image_fill_arrays(
+        pict->data,
+        pict->linesize,
+        buffer,
+        AV_PIX_FMT_YUV420P,
+        pCodecCtx->width,
+        pCodecCtx->height,
+        32
+    );
 
 	// Create an SDL window
     SDL_Window * screen = SDL_CreateWindow( // [2]
@@ -284,7 +290,6 @@ threadmain(int argc, char **argv)
                 pCodecCtx->width,
                 pCodecCtx->height
             );
-    USED(texture);
 
 	// Read from the stream and write to output images
 	struct SwsContext *sws_ctx = NULL;
@@ -293,18 +298,18 @@ threadmain(int argc, char **argv)
 	{
 		sysfatal("failed to alloc av-packet");
 	}
-	sws_ctx = sws_getContext(
-		pCodecCtx->width,
-		pCodecCtx->height,
-		pCodecCtx->pix_fmt,
-		pCodecCtx->width,
-		pCodecCtx->height,
-		AV_PIX_FMT_RGB24,   // sws_scale destination color scheme
-		SWS_BILINEAR,
-		NULL,
-		NULL,
-		NULL
-	);
+    sws_ctx = sws_getContext(
+        pCodecCtx->width,
+        pCodecCtx->height,
+        pCodecCtx->pix_fmt,
+        pCodecCtx->width,
+        pCodecCtx->height,
+        AV_PIX_FMT_YUV420P,
+        SWS_BILINEAR,
+        NULL,
+        NULL,
+        NULL
+    );
 	int maxFramesToDecode;
 	sscanf (argv[2], "%d", &maxFramesToDecode);
 	i = 0;
@@ -333,34 +338,55 @@ threadmain(int argc, char **argv)
 				}
 				else if (ret < 0)
 				{
-					sysfatal("while decoding: %s", av_err2str(ret));
+					sysfatal("error while decoding: %s", av_err2str(ret));
 				}
-				sws_scale(
-					sws_ctx,
-					(uint8_t const *const *)pFrame->data,
-					pFrame->linesize,
-					0,
-					pCodecCtx->height,
-					pFrameRGB->data,
-					pFrameRGB->linesize
-				);
+                sws_scale(
+                    sws_ctx,
+                    (uint8_t const * const *)pFrame->data,
+                    pFrame->linesize,
+                    0,
+                    pCodecCtx->height,
+                    pict->data,
+                    pict->linesize
+                );
 				if (++i <= maxFramesToDecode)
 				{
-					saveFrame(pFrameRGB, pCodecCtx->width, pCodecCtx->height, i);
-					LOG(
-						"Frame %c (%d) pts %ld dts %ld key_frame %d "
-			"[coded_picture_number %d, display_picture_number %d,"
-			" %dx%d]",
-						av_get_picture_type_char(pFrame->pict_type),
-						pCodecCtx->frame_number,
-						pFrameRGB->pts,
-						pFrameRGB->pkt_dts,
-						pFrameRGB->key_frame,
-						pFrameRGB->coded_picture_number,
-						pFrameRGB->display_picture_number,
-						pCodecCtx->width,
-						pCodecCtx->height
-					);
+                    // get clip fps
+                    double fps = av_q2d(pFormatCtx->streams[videoStream]->r_frame_rate);
+                    // get clip sleep time
+                    double sleep_time = 1.0/(double)fps;
+                    // Use SDL_Delay in milliseconds to allow for cpu scheduling
+                    SDL_Delay((1000 * sleep_time) - 10);
+                    // (0,0) is the upper-left corner in SDL.
+                    SDL_Rect rect;
+                    rect.x = 0;
+                    rect.y = 0;
+                    rect.w = pCodecCtx->width;
+                    rect.h = pCodecCtx->height;
+                    // Use this function to update a rectangle within a planar
+                    // YV12 or IYUV texture with new pixel data.
+                    SDL_UpdateYUVTexture(
+                        texture,            // the texture to update
+                        &rect,              // a pointer to the rectangle of pixels to update, or NULL to update the entire texture
+                        pict->data[0],      // the raw pixel data for the Y plane
+                        pict->linesize[0],  // the number of bytes between rows of pixel data for the Y plane
+                        pict->data[1],      // the raw pixel data for the U plane
+                        pict->linesize[1],  // the number of bytes between rows of pixel data for the U plane
+                        pict->data[2],      // the raw pixel data for the V plane
+                        pict->linesize[2]   // the number of bytes between rows of pixel data for the V plane
+                    );
+                    // clear the current rendering target with the drawing color
+                    SDL_RenderClear(renderer);
+                    // copy a portion of the texture to the current rendering target
+                    SDL_RenderCopy(
+                        renderer,   // the rendering context
+                        texture,    // the source texture
+                        NULL,       // the source SDL_Rect structure or NULL for the entire texture
+                        NULL        // the destination SDL_Rect structure or NULL for the entire rendering
+                                    // target; the texture will be stretched to fill the given rectangle
+                    );
+                    // update the screen with any rendering performed since the previous call
+                    SDL_RenderPresent(renderer);
 				}
 				else
 				{
