@@ -35,6 +35,9 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_thread.h>
+
 
 #define LOG(...) fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
@@ -144,6 +147,13 @@ threadmain(int argc, char **argv)
 		printHelp();
 		return;
 	}
+	int ret = -1;
+
+    ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
+    if (ret != 0)
+    {
+        sysfatal("could not initialize SDL: %s", SDL_GetError());
+    }
 
 	// Set up 9P connection
 	CFid *fid = xopen(argv[1], OREAD);
@@ -170,7 +180,7 @@ threadmain(int argc, char **argv)
 	}
 	pFormatCtx->pb = pIOCtx;
 	LOG("opening avformat input ...");
-	int ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
+	ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
 	if (ret < 0) {
 	  sysfatal("open av format input: %s", av_err2str(ret));
 	}
@@ -250,6 +260,32 @@ threadmain(int argc, char **argv)
 		32
 	);
 
+	// Create an SDL window
+    SDL_Window * screen = SDL_CreateWindow( // [2]
+                            "SDL Video Player",
+                            SDL_WINDOWPOS_UNDEFINED,
+                            SDL_WINDOWPOS_UNDEFINED,
+                            pCodecCtx->width/2,
+                            pCodecCtx->height/2,
+                            SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI
+    );
+    if (!screen)
+    {
+        sysfatal("could not set sdl video mode: %s", SDL_GetError());
+    }
+    SDL_GL_SetSwapInterval(1);
+    SDL_Renderer *renderer = NULL;
+    renderer = SDL_CreateRenderer(screen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+    SDL_Texture *texture = NULL;
+    texture = SDL_CreateTexture(
+                renderer,
+                SDL_PIXELFORMAT_YV12,
+                SDL_TEXTUREACCESS_STREAMING,
+                pCodecCtx->width,
+                pCodecCtx->height
+            );
+    USED(texture);
+
 	// Read from the stream and write to output images
 	struct SwsContext *sws_ctx = NULL;
 	AVPacket *pPacket = av_packet_alloc();
@@ -277,7 +313,7 @@ threadmain(int argc, char **argv)
 		ret = av_read_frame(pFormatCtx, pPacket);
 		if (ret < 0) {
 			LOG("read av packet: %s", av_err2str(ret));
-			continue;
+			break;
 		}
 		if (pPacket->stream_index == videoStream)
 		{
@@ -350,4 +386,6 @@ threadmain(int argc, char **argv)
 	avcodec_close(pCodecCtxOrig);
 	avformat_close_input(&pFormatCtx);
 	free(avctxBuffer);
+    SDL_DestroyRenderer(renderer);
+    SDL_Quit();
 }
