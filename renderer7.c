@@ -74,6 +74,7 @@
 #endif
 
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
+void saveFrame(AVFrame *avFrame, int width, int height, int pix_fmt, int frameIndex);
 
 static struct timespec curtime;
 
@@ -470,7 +471,7 @@ demuxerPacketRead(void *fid, uint8_t *buf, int count)
 {
 	// FIXME threadpin() and threadunpin() are not available in plan9port ...
 	// FIXME if we use ioproc functions like ioread(), how can we seek() then ...?
-	// FIXME use QLock (lock(3)) to suspend executing the calling thread? 
+	// FIXME use QLock (lock(3)) to suspend executing the calling thread?
 	//       Then need to pass it through the data pointer ...
 	/* threadpin(); */
 	LOG("demuxer reading %d bytes from fid: %p into buf: %p ...", count, fid, buf);
@@ -1434,7 +1435,7 @@ void video_thread(void * arg)
 			// means we quit getting packets
 			break;
 		}
-		// FIXME added this check because there are packets of size 0 popping out of the Channel 
+		// FIXME added this check because there are packets of size 0 popping out of the Channel
 		// ... is there temporarily no packet on the Channel then?
 		if (packet->size == 0) {
 			continue;
@@ -1513,6 +1514,7 @@ void video_thread(void * arg)
 				LOG("video frame is complete, synchronizing ...");
 				pts = synchronize_video(videoState, pFrame, pts);
 				LOG("synched pts: %f", pts);
+				saveFrame(pFrame, videoState->video_ctx->width, videoState->video_ctx->height, videoState->video_ctx->pix_fmt, (int)1000*pts);
 
 				LOG("queueing decoded frame for display ...");
 				if(queue_picture(videoState, pFrame, pts) < 0)
@@ -2965,4 +2967,105 @@ void stream_seek(VideoState * videoState, int64_t pos, int rel)
 		videoState->seek_flags = rel < 0 ? AVSEEK_FLAG_BACKWARD : 0;
 		videoState->seek_req = 1;
 	}
+}
+
+
+/**
+ * Write the given AVFrame into a .ppm file.
+ *
+ * @ip_aram   avFrame     the AVFrame to be saved.
+ * @param   width       the given frame width as obtained by the AVCodecContext.
+ * @param   height      the given frame height as obtained by the AVCodecContext.
+ * @param   frameIndex  the given frame index.
+ */
+void saveFrame(AVFrame *pFrame, int width, int height, int pix_fmt, int frameIndex)
+{
+    FILE * pFile;
+    char szFilename[32];
+    int  y;
+
+    AVFrame * pFrameRGB = NULL;
+    pFrameRGB = av_frame_alloc();
+    if (pFrameRGB == NULL)
+    {
+        // Could not allocate frame
+        printf("Could not allocate frame.\n");
+
+        // exit with error
+        return;
+    }
+    uint8_t * buffer = NULL;
+    int numBytes;
+    // Determine required buffer size and allocate buffer
+    // numBytes = avpicture_get_size(AV_PIX_FMT_RGB24, width, height);
+    // https://ffmpeg.org/pipermail/ffmpeg-devel/2016-January/187299.html
+    // what is 'linesize alignment' meaning?:
+    // https://stackoverflow.com/questions/35678041/what-is-linesize-alignment-meaning
+    numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, width, height, 32);
+    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+
+    struct SwsContext * sws_ctx = NULL;
+    sws_ctx = sws_getContext(
+        width,
+        height,
+        pix_fmt,
+        width,
+        height,
+        AV_PIX_FMT_RGB24,   // sws_scale destination color scheme
+        SWS_BILINEAR,
+        NULL,
+        NULL,
+        NULL
+    );
+    av_image_fill_arrays(
+        pFrameRGB->data,
+        pFrameRGB->linesize,
+        buffer,
+        AV_PIX_FMT_RGB24,
+        width,
+        height,
+        32
+    );
+    sws_scale(
+        sws_ctx,
+        (uint8_t const * const *)pFrame->data,
+        pFrame->linesize,
+        0,
+        height,
+        pFrameRGB->data,
+        pFrameRGB->linesize
+    );
+
+    /**
+     * We do a bit of standard file opening, etc., and then write the RGB data.
+     * We write the file one line at a time. A PPM file is simply a file that
+     * has RGB information laid out in a long string. If you know HTML colors,
+     * it would be like laying out the color of each pixel end to end like
+     * #ff0000#ff0000.... would be a red screen. (It's stored in binary and
+     * without the separator, but you get the idea.) The header indicated how
+     * wide and tall the image is, and the max size of the RGB values.
+     */
+
+    // Open file
+    sprintf(szFilename, "/tmp/%06d.ppm", frameIndex);
+    pFile = fopen(szFilename, "wb");
+    if (pFile == NULL)
+    {
+        return;
+    }
+
+    // Write header
+    fprintf(pFile, "P6\n%d %d\n255\n", width, height);
+
+    // Write pixel data
+    for (y = 0; y < height; y++)
+    {
+        /* fwrite(avFrame->data[0] + y * avFrame->linesize[0], 1, width * 3, pFile); */
+        fwrite(pFrameRGB->data[0] + y * pFrameRGB->linesize[0], 1, width * 3, pFile);
+    }
+
+    // Close file
+    fclose(pFile);
+
+    // FIXME free all buffers, frames ...
 }
