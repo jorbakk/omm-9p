@@ -22,11 +22,30 @@
 
 
 // TODO fix crash when reading from 9P server instead of a local file
-// 1. Replace SDL threads with pthreads, 9P threads ...?
+// 1. Replace SDL threads with pthreads (probably the same as SDL threads) or 9P channels ...?
 // 2. Make everything synchronous ...?
+//
+// Current thread layout:
+//   main_thread
+//   -> decode_thread
+//      -> stream_component_open (video)
+//         -> video_thread
+//      -> stream_component_open (audio)
+//   -> event loop
+//
+// Mutexes:
+//   1. packet queue, with condition
+//   2. pict queue, with condition
+//   3. screen
 
+// Plan 9 thread layout could look like this:
+//   main_thread
 
 #include <u.h>
+
+#include <time.h>
+/* #include <sys/syscall.h> */
+
 #include <libc.h>
 #include <signal.h>
 #include <bio.h>
@@ -45,7 +64,7 @@
 #include <libswresample/swresample.h>
 
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_thread.h>
+/* #include <SDL2/SDL_thread.h> */
 
 /**
  * Prevents SDL from overriding main().
@@ -54,7 +73,28 @@
 #undef main
 #endif
 
-#define LOG(...) fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
+#define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
+
+static struct timespec curtime;
+
+void printloginfo(void)
+{
+    long            ms; // Milliseconds
+    time_t          s;  // Seconds
+	pid_t tid;
+	/* tid = syscall(SYS_gettid); */
+	tid = threadid();
+	timespec_get(&curtime, TIME_UTC);
+    /* clock_gettime(CLOCK_REALTIME, &curtime); */
+    s  = curtime.tv_sec;
+    ms = round(curtime.tv_nsec / 1.0e6); // Convert nanoseconds to milliseconds
+    if (ms > 999) {
+        s++;
+        ms = 0;
+    }
+	fprintf(stderr, "%"PRIdMAX".%03ld %d│ ", (intmax_t)s, ms, tid);
+}
+
 
 /**
  * Debug flag.
@@ -121,7 +161,10 @@
 /**
  * Default audio video sync type.
  */
-#define DEFAULT_AV_SYNC_TYPE AV_SYNC_AUDIO_MASTER
+/* #define DEFAULT_AV_SYNC_TYPE AV_SYNC_AUDIO_MASTER */
+#define DEFAULT_AV_SYNC_TYPE AV_SYNC_EXTERNAL_MASTER
+
+#define THREAD_STACK_SIZE 1024 * 1024 * 10
 
 /**
  * Queue structure used to store AVPackets.
@@ -167,7 +210,8 @@ typedef struct VideoState
 	int				 audioStream;
 	AVStream *		  audio_st;
 	AVCodecContext *	audio_ctx;
-	PacketQueue		 audioq;
+	/* PacketQueue		 audioq; */
+	Channel         *audioq;
 	uint8_t			 audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
 	unsigned int		audio_buf_size;
 	unsigned int		audio_buf_index;
@@ -185,7 +229,9 @@ typedef struct VideoState
 	AVCodecContext *	video_ctx;
 	SDL_Texture *	   texture;
 	SDL_Renderer *	  renderer;
-	PacketQueue		 videoq;
+	/* PacketQueue		 videoq; */
+	Channel		 *videoq;
+	QLock        qlock;
 	struct SwsContext * sws_ctx;
 	double			  frame_timer;
 	double			  frame_last_pts;
@@ -225,13 +271,17 @@ typedef struct VideoState
 	/**
 	 * Threads.
 	 */
-	SDL_Thread *	decode_tid;
-	SDL_Thread *	video_tid;
+	/* SDL_Thread *	decode_tid; */
+	/* SDL_Thread *	video_tid; */
+	int decode_tid;
+	int video_tid;
 
 	/**
 	 * Input file name.
 	 */
 	char filename[1024];
+	// Plan 9 file pointer
+	CFid *fid;
 
 	/**
 	 * Global quit flag.
@@ -309,7 +359,8 @@ AVPacket flush_pkt;
  */
 void printHelpMenu();
 
-int decode_thread(void * arg);
+/* int decode_thread(void * arg); */
+void decode_thread(void * arg);
 
 int stream_component_open(
 		VideoState * videoState,
@@ -324,7 +375,8 @@ int queue_picture(
 		double pts
 );
 
-int video_thread(void * arg);
+/* int video_thread(void * arg); */
+void video_thread(void * arg);
 
 static int64_t guess_correct_pts(
 		AVCodecContext * ctx,
@@ -359,27 +411,27 @@ static void schedule_refresh(
 		Uint32 delay
 );
 
-static Uint32 sdl_refresh_timer_cb(
-		Uint32 interval,
-		void * param
-);
+/* static Uint32 sdl_refresh_timer_cb( */
+		/* Uint32 interval, */
+		/* void * param */
+/* ); */
 
 void video_display(VideoState * videoState);
 
-void packet_queue_init(PacketQueue * q);
+/* void packet_queue_init(PacketQueue * q); */
 
-int packet_queue_put(
-		PacketQueue * queue,
-		AVPacket * packet
-);
+/* int packet_queue_put( */
+		/* PacketQueue * queue, */
+		/* AVPacket * packet */
+/* ); */
 
-static int packet_queue_get(
-		PacketQueue * queue,
-		AVPacket * packet,
-		int blocking
-);
+/* static int packet_queue_get( */
+		/* PacketQueue * queue, */
+		/* AVPacket * packet, */
+		/* int blocking */
+/* ); */
 
-static void packet_queue_flush(PacketQueue * queue);
+/* static void packet_queue_flush(PacketQueue * queue); */
 
 void audio_callback(
 		void * userdata,
@@ -416,9 +468,18 @@ char *aname;
 int
 demuxerPacketRead(void *fid, uint8_t *buf, int count)
 {
-	LOG("demuxer reading %d bytes from fid: %p into buf: %p", count, fid, buf);
+	// FIXME threadpin() and threadunpin() are not available in plan9port ...
+	// FIXME if we use ioproc functions like ioread(), how can we seek() then ...?
+	// FIXME use QLock (lock(3)) to suspend executing the calling thread? 
+	//       Then need to pass it through the data pointer ...
+	/* threadpin(); */
+	LOG("demuxer reading %d bytes from fid: %p into buf: %p ...", count, fid, buf);
 	CFid *cfid = (CFid*)fid;
-	return fsread(cfid, buf, count);
+	int ret = fsread(cfid, buf, count);
+	// FIXME How can we avoid that we pass control to the main thread here?
+	LOG("demuxer read %d bytes", ret);
+	/* threadunpin(); */
+	return ret;
 }
 
 
@@ -427,7 +488,9 @@ demuxerPacketSeek(void *fid, int64_t offset, int whence)
 {
 	LOG("demuxer seeking fid: %p offset: %ld", fid, offset);
 	CFid *cfid = (CFid*)fid;
-	return fsseek(cfid, offset, whence);
+	int64_t ret = fsseek(cfid, offset, whence);
+	LOG("demuxer seek found offset %ld", ret);
+	return ret;
 }
 
 
@@ -449,9 +512,12 @@ xparse(char *name, char **path)
 		if(fs == nil)
 			sysfatal("mount: %r");
 	} else {
+		LOG("setting path to: %s", name);
 		*path = name;
+		LOG("dialing address: %s ...", addr);
 		if ((fd = dial(addr, nil, nil, nil)) < 0)
 			sysfatal("dial: %r");
+		LOG("mounting address ...");
 		if ((fs = fsmnt(fd, aname)) == nil)
 			sysfatal("mount: %r");
 	}
@@ -466,6 +532,7 @@ xopen(char *name, int mode)
 	CFsys *fs;
 
 	fs = xparse(name, &name);
+	LOG("opening: %s", name);
 	fid = fsopen(fs, name, mode);
 	if (fid == nil)
 		sysfatal("fsopen %s: %r", name);
@@ -484,6 +551,9 @@ xopen(char *name, int mode)
 void
 threadmain(int argc, char **argv)
 {
+	if (_DEBUG_)
+		chatty9pclient = 1;
+
 	// if the given number of command line arguments is wrong
 	if ( argc != 3 )
 	{
@@ -517,16 +587,22 @@ threadmain(int argc, char **argv)
 	videoState->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
 
 	// initialize locks for the display buffer (pictq)
-	videoState->pictq_mutex = SDL_CreateMutex();
-	videoState->pictq_cond = SDL_CreateCond();
+	/* videoState->pictq_mutex = SDL_CreateMutex(); */
+	/* videoState->pictq_cond = SDL_CreateCond(); */
 
 	// launch our threads by pushing an SDL_event of type FF_REFRESH_EVENT
 	schedule_refresh(videoState, 100);
 
 	videoState->av_sync_type = DEFAULT_AV_SYNC_TYPE;
 
+	// Set up 9P connection
+	LOG("opening 9P connection ...");
+	CFid *fid = xopen(videoState->filename, OREAD);
+	videoState->fid = fid;
+
 	// start the decoding thread to read data from the AVFormatContext
-	videoState->decode_tid = SDL_CreateThread(decode_thread, "Decoding Thread", videoState);
+	/* videoState->decode_tid = SDL_CreateThread(decode_thread, "Decoding Thread", videoState); */
+	videoState->decode_tid = threadcreate(decode_thread, videoState, THREAD_STACK_SIZE);
 
 	// check the decode thread was correctly started
 	if(!videoState->decode_tid)
@@ -538,6 +614,7 @@ threadmain(int argc, char **argv)
 
 		return;
 	}
+	LOG("decode thread created with id: %i", videoState->decode_tid);
 
 	av_init_packet(&flush_pkt);
 	flush_pkt.data = (uint8_t*)"FLUSH";
@@ -546,7 +623,14 @@ threadmain(int argc, char **argv)
 	/* SDL_Event event; */
 	for(;;)
 	{
-		double incr, pos;
+		LOG("yielding ...");
+		// FIXME why does yield() not pass control to the decoder thread here,
+		// after coming from the decoder thread in the second loop interation?
+		yield();
+		LOG("yielded.");
+		/* sleep(10); */
+
+		/* double incr, pos; */
 
 		// wait indefinitely for the next available event
 		/* ret = SDL_WaitEvent(&event); */
@@ -554,6 +638,7 @@ threadmain(int argc, char **argv)
 		/* { */
 			/* printf("SDL_WaitEvent failed: %s.\n", SDL_GetError()); */
 		/* } */
+		/* LOG("event loop got event of type: %i", event.type); */
 
 		// switch on the retrieved event type
 		/* switch(event.type) */
@@ -666,22 +751,26 @@ void printHelpMenu()
  *
  * @return	  < 0 in case of error, 0 otherwise.
  */
-int decode_thread(void * arg)
+/* int decode_thread(void * arg) */
+void decode_thread(void * arg)
 {
+	LOG("decode thread started");
 	// retrieve global VideoState reference
 	VideoState * videoState = (VideoState *)arg;
 
-	// Set up 9P connection
-	CFid *fid = xopen(videoState->filename, OREAD);
+	/* // Set up 9P connection */
+	/* LOG("Opening 9P connection ..."); */
+	/* CFid *fid = xopen(videoState->filename, OREAD); */
 
 	// Set up IO
+	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
 	AVIOContext *pIOCtx = avio_alloc_context(
 		avctxBuffer,		 // buffer
 		avctxBufferSize,	 // buffer size
 		0,				     // buffer is only readable - set to 1 for read/write
-		fid,				 // user specified data
+		videoState->fid,	 // user specified data
 		demuxerPacketRead,   // function for reading packets
 		NULL,				 // function for writing packets
 		demuxerPacketSeek	 // function for seeking to position in stream
@@ -699,12 +788,13 @@ int decode_thread(void * arg)
 	pFormatCtx->pb = pIOCtx;
 
 	/* int ret = avformat_open_input(&pFormatCtx, videoState->filename, NULL, NULL); */
+	LOG("opening stream input ...");
 	int ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
 	if (ret < 0)
 	{
-		printf("Could not open file %s.\n", videoState->filename);
-		return -1;
+		sysfatal("Could not open file %s", videoState->filename);
 	}
+	LOG("opened stream input");
 
 	// reset stream indexes
 	videoState->videoStream = -1;
@@ -721,7 +811,8 @@ int decode_thread(void * arg)
 	if (ret < 0)
 	{
 		printf("Could not find stream information: %s.\n", videoState->filename);
-		return -1;
+		/* return -1; */
+		return;
 	}
 
 	// dump information about file onto standard error
@@ -765,6 +856,7 @@ int decode_thread(void * arg)
 			printf("Could not open video codec.\n");
 			goto fail;
 		}
+		LOG("video stream component opened successfully.");
 	}
 
 	// return with error in case no audio stream was found
@@ -776,7 +868,9 @@ int decode_thread(void * arg)
 	else
 	{
 		// open audio stream component codec
-		ret = stream_component_open(videoState, audioStream);
+		// FIXME!!! not opening audio at the moment ...
+		/* ret = stream_component_open(videoState, audioStream); */
+		/* ret = 0; */
 
 		// check audio codec was opened correctly
 		if (ret < 0)
@@ -784,14 +878,17 @@ int decode_thread(void * arg)
 			printf("Could not open audio codec.\n");
 			goto fail;
 		}
+		LOG("audio stream component opened successfully.");
 	}
 
 	// check both the audio and video codecs were correctly retrieved
-	if (videoState->videoStream < 0 || videoState->audioStream < 0)
-	{
-		printf("Could not open codecs: %s.\n", videoState->filename);
-		goto fail;
-	}
+	// FIXME currently continueuing without audio ... or video ...
+	/* if (videoState->videoStream < 0 || videoState->audioStream < 0) */
+	/* if (videoState->videoStream < 0) */
+	/* { */
+		/* printf("Could not open codecs: %s.\n", videoState->filename); */
+		/* goto fail; */
+	/* } */
 
 	// alloc the AVPacket used to read the media file
 	AVPacket * packet = av_packet_alloc();
@@ -840,20 +937,22 @@ int decode_thread(void * arg)
 			if (ret < 0)
 			{
 				// FIXME warning about FormatCtx->filename is depricated ... should vanish when switching to 9P
-				fprintf(stderr, "%s: error while seeking\n", videoState->pFormatCtx->filename);
+				/* fprintf(stderr, "%s: error while seeking\n", videoState->pFormatCtx->filename); */
 			}
 			else
 			{
 				if (videoState->videoStream >= 0)
 				{
-					packet_queue_flush(&videoState->videoq);
-					packet_queue_put(&videoState->videoq, &flush_pkt);
+					// FIXME need some means to flush a channel?
+					/* packet_queue_flush(&videoState->videoq); */
+					/* packet_queue_put(&videoState->videoq, &flush_pkt); */
 				}
 
 				if (videoState->audioStream >= 0)
 				{
-					packet_queue_flush(&videoState->audioq);
-					packet_queue_put(&videoState->audioq, &flush_pkt);
+					// FIXME need some means to flush a channel?
+					/* packet_queue_flush(&videoState->audioq); */
+					/* packet_queue_put(&videoState->audioq, &flush_pkt); */
 				}
 			}
 
@@ -861,13 +960,14 @@ int decode_thread(void * arg)
 		}
 
 		// check audio and video packets queues size
-		if (videoState->audioq.size > MAX_AUDIOQ_SIZE || videoState->videoq.size > MAX_VIDEOQ_SIZE)
-		{
-			// wait for audio and video queues to decrease size
-			SDL_Delay(10);
+		// FIXME audioq is a Channel with unknown size, need to track the size separately
+		/* if (videoState->audioq.size > MAX_AUDIOQ_SIZE || videoState->videoq.size > MAX_VIDEOQ_SIZE) */
+		/* { */
+			/* // wait for audio and video queues to decrease size */
+			/* SDL_Delay(10); */
 
-			continue;
-		}
+			/* continue; */
+		/* } */
 
 		// read data from the AVFormatContext by repeatedly calling av_read_frame()
 		ret = av_read_frame(videoState->pFormatCtx, packet);
@@ -882,7 +982,8 @@ int decode_thread(void * arg)
 			else if (videoState->pFormatCtx->pb->error == 0)
 			{
 				// no read error; wait for user input
-				SDL_Delay(10);
+				// FIXME need a replacement ...?
+				/* SDL_Delay(10); */
 
 				continue;
 			}
@@ -896,11 +997,13 @@ int decode_thread(void * arg)
 		// put the packet in the appropriate queue
 		if (packet->stream_index == videoState->videoStream)
 		{
-			packet_queue_put(&videoState->videoq, packet);
+			/* packet_queue_put(&videoState->videoq, packet); */
+			sendp(videoState->videoq, packet);
 		}
 		else if (packet->stream_index == videoState->audioStream)
 		{
-			packet_queue_put(&videoState->audioq, packet);
+			/* packet_queue_put(&videoState->audioq, packet); */
+			sendp(videoState->audioq, packet);
 		}
 		else
 		{
@@ -912,7 +1015,8 @@ int decode_thread(void * arg)
 	// wait for the rest of the program to end
 	while (!videoState->quit)
 	{
-		SDL_Delay(100);
+		// FIXME need a replacement ...?
+		/* SDL_Delay(100); */
 	}
 
 	// close the opened input AVFormatContext
@@ -922,15 +1026,17 @@ int decode_thread(void * arg)
 	fail:
 	{
 		// create an SDL_Event of type FF_QUIT_EVENT
-		SDL_Event event;
-		event.type = FF_QUIT_EVENT;
-		event.user.data1 = videoState;
+		// FIXME need a replacement ...?
+		/* SDL_Event event; */
+		/* event.type = FF_QUIT_EVENT; */
+		/* event.user.data1 = videoState; */
 
 		// push the event to the events queue
-		SDL_PushEvent(&event);
+		/* SDL_PushEvent(&event); */
 
 		// return with error
-		return -1;
+		/* return -1; */
+		return;
 	};
 }
 
@@ -979,6 +1085,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 	// in case of Audio codec, set up and open the audio device
 	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO)
 	{
+		LOG("setting up audio device ...");
 		// desired and obtained audio specs references
 		SDL_AudioSpec wanted_specs;
 		SDL_AudioSpec specs;
@@ -1002,6 +1109,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
 			return -1;
 		}
+		LOG("audio device opened successfully");
 	}
 
 	// initialize the AVCodecContext to use the given AVCodec
@@ -1028,10 +1136,13 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			memset(&videoState->audio_pkt, 0, sizeof(videoState->audio_pkt));
 
 			// init audio packet queue
-			packet_queue_init(&videoState->audioq);
+			/* packet_queue_init(&videoState->audioq); */
+			videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE);
 
 			// start playing audio on the first audio device
+			LOG("calling sdl_pauseaudio(0) ...");
 			SDL_PauseAudio(0);
+			LOG("sdl_pauseaudio(0) called.");
 		}
 			break;
 
@@ -1049,10 +1160,13 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			videoState->video_current_pts_time = av_gettime();
 
 			// init video packet queue
-			packet_queue_init(&videoState->videoq);
+			/* packet_queue_init(&videoState->videoq); */
+			videoState->videoq = chancreate(sizeof(AVPacket*), MAX_VIDEOQ_SIZE);
 
 			// start video thread
-			videoState->video_tid = SDL_CreateThread(video_thread, "Video Thread", videoState);
+			/* videoState->video_tid = SDL_CreateThread(video_thread, "Video Thread", videoState); */
+			videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE);
+			LOG("Video thread created with id: %i", videoState->video_tid);
 
 			// set up the VideoState SWSContext to convert the image data to YUV420
 			videoState->sws_ctx = sws_getContext(videoState->video_ctx->width,
@@ -1163,17 +1277,18 @@ void alloc_picture(void * userdata)
  */
 int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 {
-	// lock VideoState->pictq mutex
-	SDL_LockMutex(videoState->pictq_mutex);
+	// FIXME replace this with reading from the picture Channel
+	/* // lock VideoState->pictq mutex */
+	/* SDL_LockMutex(videoState->pictq_mutex); */
 
-	// wait until we have space for a new pic in VideoState->pictq
-	while (videoState->pictq_size >= VIDEO_PICTURE_QUEUE_SIZE && !videoState->quit)
-	{
-		SDL_CondWait(videoState->pictq_cond, videoState->pictq_mutex);
-	}
+	/* // wait until we have space for a new pic in VideoState->pictq */
+	/* while (videoState->pictq_size >= VIDEO_PICTURE_QUEUE_SIZE && !videoState->quit) */
+	/* { */
+		/* SDL_CondWait(videoState->pictq_cond, videoState->pictq_mutex); */
+	/* } */
 
-	// unlock VideoState->pictq mutex
-	SDL_UnlockMutex(videoState->pictq_mutex);
+	/* // unlock VideoState->pictq mutex */
+	/* SDL_UnlockMutex(videoState->pictq_mutex); */
 
 	// check global quit flag
 	if (videoState->quit)
@@ -1183,7 +1298,10 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 
 	// retrieve video picture using the queue write index
 	VideoPicture * videoPicture;
-	videoPicture = &videoState->pictq[videoState->pictq_windex];
+	/* videoPicture = &videoState->pictq[videoState->pictq_windex]; */
+	// FIXME !!! properly read frame from picture Channel
+	/* videoPicture = recvp(videoState->pictq); */
+	return 0;
 
 	// if the VideoPicture SDL_Overlay is not allocated or has a different width/height
 	if (!videoPicture->frame ||
@@ -1264,8 +1382,10 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
  *
  * @return
  */
-int video_thread(void * arg)
+/* int video_thread(void * arg) */
+void video_thread(void * arg)
 {
+	LOG("video thread ...");
 	// retrieve global VideoState reference
 	VideoState * videoState = (VideoState *)arg;
 
@@ -1274,7 +1394,8 @@ int video_thread(void * arg)
 	if (packet == NULL)
 	{
 		printf("Could not allocate AVPacket.\n");
-		return -1;
+		/* return -1; */
+		return;
 	}
 
 	// set this when we are done decoding an entire frame
@@ -1286,20 +1407,37 @@ int video_thread(void * arg)
 	if (!pFrame)
 	{
 		printf("Could not allocate AVFrame.\n");
-		return -1;
+		/* return -1; */
+		return;
 	}
 
 	// each decoded frame carries its PTS in the VideoPicture queue
 	double pts;
 
+	// Setting decoder threading parameter that might have an influence in the 9P threading environment
+	videoState->video_ctx->thread_count = 1;
+	videoState->video_ctx->thread_type = FF_THREAD_FRAME;
+	videoState->video_ctx->debug = 1;
+
 	for (;;)
 	{
+		LOG("video_thread looping ...");
 		// get a packet from the video PacketQueue
-		int ret = packet_queue_get(&videoState->videoq, packet, 1);
-		if (ret < 0)
+		/* int ret = packet_queue_get(&videoState->videoq, packet, 1); */
+		LOG("receiving packet from video queue ...");
+		packet = recvp(videoState->videoq);
+		/* LOG("packet received with size: %d, duration: %ld, pos: %ld", packet->size, packet->duration, packet->pos); */
+		LOG("received packet of size: %d", packet->size);
+		/* if (ret < 0) */
+		if (packet == NULL)
 		{
 			// means we quit getting packets
 			break;
+		}
+		// FIXME added this check because there are packets of size 0 popping out of the Channel 
+		// ... is there temporarily no packet on the Channel then?
+		if (packet->size == 0) {
+			continue;
 		}
 
 		if (packet->data == flush_pkt.data)
@@ -1309,52 +1447,77 @@ int video_thread(void * arg)
 		}
 
 		// give the decoder raw compressed data in an AVPacket
-		ret = avcodec_send_packet(videoState->video_ctx, packet);
+		/* ret = avcodec_send_packet(videoState->video_ctx, packet); */
+		LOG("sending packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet->size, videoState->video_ctx->width, videoState->video_ctx->height);
+		int ret = avcodec_send_packet(videoState->video_ctx, packet);
+		LOG("sending returns: %d", ret);
 		if (ret < 0)
 		{
-			printf("Error sending packet for decoding.\n");
-			return -1;
+			LOG("error sending packet for decoding: %s", av_err2str(ret));
+			/* return -1; */
+			return;
 		}
 
 		while (ret >= 0)
 		{
 			// get decoded output data from decoder
+			LOG("receiving decoded frame from decoder ...");
 			ret = avcodec_receive_frame(videoState->video_ctx, pFrame);
+			LOG("receiving returns: %d", ret);
+			if (ret < 0)
+			{
+				LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
+			}
 
 			// check an entire frame was decoded
 			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
 			{
+				if (ret == AVERROR(EAGAIN)) {
+					LOG("video stream: AVERROR = EAGAIN");
+				}
+				if (ret == AVERROR_EOF) {
+					LOG("video stream: AVERROR = EOF");
+				}
 				break;
 			}
 			else if (ret < 0)
 			{
-				printf("Error while decoding.\n");
-				return -1;
+				LOG("Error while decoding: %s", av_err2str(ret));
+				/* return -1; */
+				return;
 			}
 			else
 			{
+				LOG("video frame finished");
 				frameFinished = 1;
 			}
 
 			// attempt to guess proper monotonic timestamps for decoded video frames
 			pts = guess_correct_pts(videoState->video_ctx, pFrame->pts, pFrame->pkt_dts);
+			LOG("guess_correct_pts() returns pts: %f", pts);
 
 			// in case we get an undefined timestamp value
 			if (pts == AV_NOPTS_VALUE)
 			{
+				LOG("pts is an undefined timestamp value");
 				// set pts to the default value of 0
 				pts = 0;
 			}
 
 			pts *= av_q2d(videoState->video_st->time_base);
+			LOG("corrected pts: %f", pts);
 
 			// did we get an entire video frame?
 			if (frameFinished)
 			{
+				LOG("video frame is complete, synchronizing ...");
 				pts = synchronize_video(videoState, pFrame, pts);
+				LOG("synched pts: %f", pts);
 
+				LOG("queueing decoded frame for display ...");
 				if(queue_picture(videoState, pFrame, pts) < 0)
 				{
+					LOG("error queueing decoded frame for display.");
 					break;
 				}
 			}
@@ -1368,7 +1531,8 @@ int video_thread(void * arg)
 	av_frame_free(&pFrame);
 	av_free(pFrame);
 
-	return 0;
+	/* return 0; */
+	return;
 }
 
 /**
@@ -1717,16 +1881,16 @@ void video_refresh_timer(void * userdata)
 			}
 
 			// lock VideoPicture queue mutex
-			SDL_LockMutex(videoState->pictq_mutex);
+			/* SDL_LockMutex(videoState->pictq_mutex); */
 
 			// decrease VideoPicture queue size
 			videoState->pictq_size--;
 
 			// notify other threads waiting for the VideoPicture queue
-			SDL_CondSignal(videoState->pictq_cond);
+			/* SDL_CondSignal(videoState->pictq_cond); */
 
 			// unlock VideoPicture queue mutex
-			SDL_UnlockMutex(videoState->pictq_mutex);
+			/* SDL_UnlockMutex(videoState->pictq_mutex); */
 		}
 	}
 	else
@@ -1834,13 +1998,14 @@ double get_master_clock(VideoState * videoState)
 static void schedule_refresh(VideoState * videoState, Uint32 delay)
 {
 	// schedule an SDL timer
-	int ret = SDL_AddTimer(delay, sdl_refresh_timer_cb, videoState);
+	// FIXME need to replace SDL_AddTimer with something else ...
+	/* int ret = SDL_AddTimer(delay, sdl_refresh_timer_cb, videoState); */
 
 	// check the timer was correctly scheduled
-	if (ret == 0)
-	{
-		printf("Could not schedule refresh callback: %s.\n.", SDL_GetError());
-	}
+	/* if (ret == 0) */
+	/* { */
+		/* printf("Could not schedule refresh callback: %s.\n.", SDL_GetError()); */
+	/* } */
 }
 
 /**
@@ -1856,19 +2021,22 @@ static void schedule_refresh(VideoState * videoState, Uint32 delay)
  * @return			  if the returned value from the callback is 0, the timer
  *					  is canceled.
  */
-static Uint32 sdl_refresh_timer_cb(Uint32 interval, void * param)
-{
-	// create an SDL_Event of type FF_REFRESH_EVENT
-	SDL_Event event;
-	event.type = FF_REFRESH_EVENT;
-	event.user.data1 = param;
 
-	// push the event to the events queue
-	SDL_PushEvent(&event);
+// sdl_refresh_timer_cb() should not be called, as SDL_AddTimer() is deactivated in schedule_refresh()
+// FIXME find a replacement for sdl_refresh_timer_cb ...
+/* static Uint32 sdl_refresh_timer_cb(Uint32 interval, void * param) */
+/* { */
+	/* // create an SDL_Event of type FF_REFRESH_EVENT */
+	/* SDL_Event event; */
+	/* event.type = FF_REFRESH_EVENT; */
+	/* event.user.data1 = param; */
 
-	// return 0 to cancel the timer
-	return 0;
-}
+	/* // push the event to the events queue */
+	/* SDL_PushEvent(&event); */
+
+	/* // return 0 to cancel the timer */
+	/* return 0; */
+/* } */
 
 /**
  * Retrieves the video aspect ratio first, which is just the width divided by the
@@ -2004,7 +2172,7 @@ void video_display(VideoState * videoState)
 			rect.h = h;
 
 			// lock screen mutex
-			SDL_LockMutex(screen_mutex);
+			/* SDL_LockMutex(screen_mutex); */
 
 			// update the texture with the new pixel data
 			SDL_UpdateYUVTexture(
@@ -2028,17 +2196,18 @@ void video_display(VideoState * videoState)
 			SDL_RenderPresent(videoState->renderer);
 
 			// unlock screen mutex
-			SDL_UnlockMutex(screen_mutex);
+			/* SDL_UnlockMutex(screen_mutex); */
 		}
 		else
 		{
 			// create an SDLEvent of type FF_QUIT_EVENT
-			SDL_Event event;
-			event.type = FF_QUIT_EVENT;
-			event.user.data1 = videoState;
+			// FIXME need to replace this ...?
+			/* SDL_Event event; */
+			/* event.type = FF_QUIT_EVENT; */
+			/* event.user.data1 = videoState; */
 
 			// push the event
-			SDL_PushEvent(&event);
+			/* SDL_PushEvent(&event); */
 		}
 	}
 }
@@ -2048,33 +2217,33 @@ void video_display(VideoState * videoState)
  *
  * @param q the PacketQueue to be initialized.
  */
-void packet_queue_init(PacketQueue * q)
-{
-	// alloc memory for the audio queue
-	memset(
-			q,
-			0,
-			sizeof(PacketQueue)
-	);
+/* void packet_queue_init(PacketQueue * q) */
+/* { */
+	/* // alloc memory for the audio queue */
+	/* memset( */
+			/* q, */
+			/* 0, */
+			/* sizeof(PacketQueue) */
+	/* ); */
 
-	// Returns the initialized and unlocked mutex or NULL on failure
-	q->mutex = SDL_CreateMutex();
-	if (!q->mutex)
-	{
-		// could not create mutex
-		printf("SDL_CreateMutex Error: %s.\n", SDL_GetError());
-		return;
-	}
+	/* // Returns the initialized and unlocked mutex or NULL on failure */
+	/* q->mutex = SDL_CreateMutex(); */
+	/* if (!q->mutex) */
+	/* { */
+		/* // could not create mutex */
+		/* printf("SDL_CreateMutex Error: %s.\n", SDL_GetError()); */
+		/* return; */
+	/* } */
 
-	// Returns a new condition variable or NULL on failure
-	q->cond = SDL_CreateCond();
-	if (!q->cond)
-	{
-		// could not create condition variable
-		printf("SDL_CreateCond Error: %s.\n", SDL_GetError());
-		return;
-	}
-}
+	/* // Returns a new condition variable or NULL on failure */
+	/* q->cond = SDL_CreateCond(); */
+	/* if (!q->cond) */
+	/* { */
+		/* // could not create condition variable */
+		/* printf("SDL_CreateCond Error: %s.\n", SDL_GetError()); */
+		/* return; */
+	/* } */
+/* } */
 
 /**
  * Put the given AVPacket in the given PacketQueue.
@@ -2084,56 +2253,56 @@ void packet_queue_init(PacketQueue * q)
  *
  * @return		  0 if the AVPacket is correctly inserted in the given PacketQueue.
  */
-int packet_queue_put(PacketQueue * queue, AVPacket * packet)
-{
-	// alloc the new AVPacketList to be inserted in the audio PacketQueue
-	AVPacketList * avPacketList;
-	avPacketList = av_malloc(sizeof(AVPacketList));
+/* int packet_queue_put(PacketQueue * queue, AVPacket * packet) */
+/* { */
+	/* // alloc the new AVPacketList to be inserted in the audio PacketQueue */
+	/* AVPacketList * avPacketList; */
+	/* avPacketList = av_malloc(sizeof(AVPacketList)); */
 
-	// check the AVPacketList was allocated
-	if (!avPacketList)
-	{
-		return -1;
-	}
+	/* // check the AVPacketList was allocated */
+	/* if (!avPacketList) */
+	/* { */
+		/* return -1; */
+	/* } */
 
-	// add reference to the given AVPacket
-	avPacketList->pkt = * packet;
+	/* // add reference to the given AVPacket */
+	/* avPacketList->pkt = * packet; */
 
-	// the new AVPacketList will be inserted at the end of the queue
-	avPacketList->next = NULL;
+	/* // the new AVPacketList will be inserted at the end of the queue */
+	/* avPacketList->next = NULL; */
 
-	// lock mutex
-	SDL_LockMutex(queue->mutex);
+	/* // lock mutex */
+	/* SDL_LockMutex(queue->mutex); */
 
-	// check the queue is empty
-	if (!queue->last_pkt)
-	{
-		// if it is, insert as first
-		queue->first_pkt = avPacketList;
-	}
-	else
-	{
-		// if not, insert as last
-		queue->last_pkt->next = avPacketList;
-	}
+	/* // check the queue is empty */
+	/* if (!queue->last_pkt) */
+	/* { */
+		/* // if it is, insert as first */
+		/* queue->first_pkt = avPacketList; */
+	/* } */
+	/* else */
+	/* { */
+		/* // if not, insert as last */
+		/* queue->last_pkt->next = avPacketList; */
+	/* } */
 
-	// point the last AVPacketList in the queue to the newly created AVPacketList
-	queue->last_pkt = avPacketList;
+	/* // point the last AVPacketList in the queue to the newly created AVPacketList */
+	/* queue->last_pkt = avPacketList; */
 
-	// increase by 1 the number of AVPackets in the queue
-	queue->nb_packets++;
+	/* // increase by 1 the number of AVPackets in the queue */
+	/* queue->nb_packets++; */
 
-	// increase queue size by adding the size of the newly inserted AVPacket
-	queue->size += avPacketList->pkt.size;
+	/* // increase queue size by adding the size of the newly inserted AVPacket */
+	/* queue->size += avPacketList->pkt.size; */
 
-	// notify packet_queue_get which is waiting that a new packet is available
-	SDL_CondSignal(queue->cond);
+	/* // notify packet_queue_get which is waiting that a new packet is available */
+	/* SDL_CondSignal(queue->cond); */
 
-	// unlock mutex
-	SDL_UnlockMutex(queue->mutex);
+	/* // unlock mutex */
+	/* SDL_UnlockMutex(queue->mutex); */
 
-	return 0;
-}
+	/* return 0; */
+/* } */
 
 /**
  * Get the first AVPacket from the given PacketQueue.
@@ -2146,98 +2315,98 @@ int packet_queue_put(PacketQueue * queue, AVPacket * packet)
  * @return			  < 0 if returning because the quit flag is set, 0 if the queue
  *					  is empty, 1 if it is not empty and a packet was extracted.
  */
-static int packet_queue_get(PacketQueue * queue, AVPacket * packet, int blocking)
-{
-	int ret;
+/* static int packet_queue_get(PacketQueue * queue, AVPacket * packet, int blocking) */
+/* { */
+	/* int ret; */
 
-	AVPacketList * avPacketList;
+	/* AVPacketList * avPacketList; */
 
-	// lock mutex
-	SDL_LockMutex(queue->mutex);
+	/* // lock mutex */
+	/* SDL_LockMutex(queue->mutex); */
 
-	for (;;)
-	{
-		// check quit flag
-		if (global_video_state->quit)
-		{
-			ret = -1;
-			break;
-		}
+	/* for (;;) */
+	/* { */
+		/* // check quit flag */
+		/* if (global_video_state->quit) */
+		/* { */
+			/* ret = -1; */
+			/* break; */
+		/* } */
 
-		// point to the first AVPacketList in the queue
-		avPacketList = queue->first_pkt;
+		/* // point to the first AVPacketList in the queue */
+		/* avPacketList = queue->first_pkt; */
 
-		// if the first packet is not NULL, the queue is not empty
-		if (avPacketList)
-		{
-			// place the second packet in the queue at first position
-			queue->first_pkt = avPacketList->next;
+		/* // if the first packet is not NULL, the queue is not empty */
+		/* if (avPacketList) */
+		/* { */
+			/* // place the second packet in the queue at first position */
+			/* queue->first_pkt = avPacketList->next; */
 
-			// check if queue is empty after removal
-			if (!queue->first_pkt)
-			{
-				// first_pkt = last_pkt = NULL = empty queue
-				queue->last_pkt = NULL;
-			}
+			/* // check if queue is empty after removal */
+			/* if (!queue->first_pkt) */
+			/* { */
+				/* // first_pkt = last_pkt = NULL = empty queue */
+				/* queue->last_pkt = NULL; */
+			/* } */
 
-			// decrease the number of packets in the queue
-			queue->nb_packets--;
+			/* // decrease the number of packets in the queue */
+			/* queue->nb_packets--; */
 
-			// decrease the size of the packets in the queue
-			queue->size -= avPacketList->pkt.size;
+			/* // decrease the size of the packets in the queue */
+			/* queue->size -= avPacketList->pkt.size; */
 
-			// point packet to the extracted packet, this will return to the calling function
-			*packet = avPacketList->pkt;
+			/* // point packet to the extracted packet, this will return to the calling function */
+			/* *packet = avPacketList->pkt; */
 
-			// free memory
-			av_free(avPacketList);
+			/* // free memory */
+			/* av_free(avPacketList); */
 
-			ret = 1;
-			break;
-		}
-		else if (!blocking)
-		{
-			ret = 0;
-			break;
-		}
-		else
-		{
-			// unlock mutex and wait for cond signal, then lock mutex again
-			SDL_CondWait(queue->cond, queue->mutex);
-		}
-	}
+			/* ret = 1; */
+			/* break; */
+		/* } */
+		/* else if (!blocking) */
+		/* { */
+			/* ret = 0; */
+			/* break; */
+		/* } */
+		/* else */
+		/* { */
+			/* // unlock mutex and wait for cond signal, then lock mutex again */
+			/* SDL_CondWait(queue->cond, queue->mutex); */
+		/* } */
+	/* } */
 
-	// unlock mutex
-	SDL_UnlockMutex(queue->mutex);
+	/* // unlock mutex */
+	/* SDL_UnlockMutex(queue->mutex); */
 
-	return ret;
-}
+	/* return ret; */
+/* } */
 
 /**
  *
  * @param queue
  */
-static void packet_queue_flush(PacketQueue * queue)
-{
-	AVPacketList *pkt, *pkt1;
+/* static void packet_queue_flush(PacketQueue * queue) */
+/* { */
+	/* AVPacketList *pkt, *pkt1; */
 
-	SDL_LockMutex(queue->mutex);
+	/* SDL_LockMutex(queue->mutex); */
 
-	for (pkt = queue->first_pkt; pkt != NULL; pkt = pkt1)
-	{
-		pkt1 = pkt->next;
-		// FIXME warning about av_free_packet is depricated
-		av_free_packet(&pkt->pkt);
-		av_freep(&pkt);
-	}
+	/* for (pkt = queue->first_pkt; pkt != NULL; pkt = pkt1) */
+	/* { */
+		/* pkt1 = pkt->next; */
+		/* // FIXME warning about av_free_packet is depricated */
+		/* av_free_packet(&pkt->pkt); */
+		/* av_freep(&pkt); */
+	/* } */
 
-	queue->last_pkt = NULL;
-	queue->first_pkt = NULL;
-	queue->nb_packets = 0;
-	queue->size = 0;
+	/* queue->last_pkt = NULL; */
+	/* queue->first_pkt = NULL; */
+	/* queue->nb_packets = 0; */
+	/* queue->size = 0; */
 
-	SDL_UnlockMutex(queue->mutex);
-}
+	/* SDL_UnlockMutex(queue->mutex); */
+/* } */
 
 /**
  * Pull in data from audio_decode_frame(), store the result in an intermediary
@@ -2251,6 +2420,7 @@ static void packet_queue_flush(PacketQueue * queue)
  */
 void audio_callback(void * userdata, Uint8 * stream, int len)
 {
+	LOG("audio_callback() for SDL audio output ...");
 	// retrieve the VideoState
 	VideoState * videoState = (VideoState *)userdata;
 
@@ -2259,6 +2429,7 @@ void audio_callback(void * userdata, Uint8 * stream, int len)
 	// while the length of the audio data buffer is > 0
 	while (len > 0)
 	{
+		LOG("audio_callback() looping over audio data buffer");
 		// check global quit flag
 		if (global_video_state->quit)
 		{
@@ -2306,7 +2477,9 @@ void audio_callback(void * userdata, Uint8 * stream, int len)
 		}
 
 		// copy data from audio buffer to the SDL stream
+		LOG("audio_callback() copy data to sdl audio buffer ...");
 		memcpy(stream, (uint8_t *)videoState->audio_buf + videoState->audio_buf_index, len1);
+		LOG("audio_callback() copied data to sdl audio buffer.");
 
 		len -= len1;
 		stream += len1;
@@ -2331,6 +2504,7 @@ void audio_callback(void * userdata, Uint8 * stream, int len)
  */
 int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_size, double * pts_ptr)
 {
+	LOG("audio_decode_frame() ...");
 	// allocate AVPacket to read from the audio PacketQueue (audioq)
 	AVPacket * avPacket = av_packet_alloc();
 	if (avPacket == NULL)
@@ -2361,6 +2535,7 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 	// audio frames, resample the obtained frame and update the audio buffer
 	for (;;)
 	{
+		LOG("audio_decode_frame() looping");
 		// check global quit flag
 		if (videoState->quit)
 		{
@@ -2385,6 +2560,7 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 			// check the decoder needs more AVPackets to be sent
 			if (ret == AVERROR(EAGAIN))
 			{
+				LOG("audio stream, avcodec_receive_frame: AVERROR = EAGAIN or EOF");
 				ret = 0;
 			}
 
@@ -2397,11 +2573,12 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 			// check the decoder needs more AVPackets to be sent
 			if (ret == AVERROR(EAGAIN))
 			{
+				LOG("audio stream, avcodec_send_packet: AVERROR = EAGAIN or EOF");
 				ret = 0;
 			}
 			else if (ret < 0)
 			{
-				printf("avcodec_receive_frame decoding error.\n");
+				LOG("avcodec_receive_frame/send_packet decoding error: %s", av_err2str(ret));
 				av_frame_free(&avFrame);
 				return -1;
 			}
@@ -2465,10 +2642,12 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 		}
 
 		// get more audio AVPacket
-		int ret = packet_queue_get(&videoState->audioq, avPacket, 1);
+		/* int ret = packet_queue_get(&videoState->audioq, avPacket, 1); */
+		avPacket = recvp(videoState->audioq);
 
 		// if packet_queue_get returns < 0, the global quit flag was set
-		if (ret < 0)
+		/* if (ret < 0) */
+		if (avPacket == NULL)
 		{
 			return -1;
 		}

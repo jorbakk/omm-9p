@@ -21,6 +21,9 @@
  */
 
 
+#include <time.h>
+#include <sys/syscall.h>
+
 #include <u.h>
 #include <libc.h>
 #include <signal.h>
@@ -38,8 +41,27 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_thread.h>
 
+#define _DEBUG_ 1
+#define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
-#define LOG(...) fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
+static struct timespec curtime;
+
+void printloginfo(void)
+{
+    long            ms; // Milliseconds
+    time_t          s;  // Seconds
+	pid_t tid;
+	tid = syscall(SYS_gettid);
+	timespec_get(&curtime, TIME_UTC);
+    /* clock_gettime(CLOCK_REALTIME, &curtime); */
+    s  = curtime.tv_sec;
+    ms = round(curtime.tv_nsec / 1.0e6); // Convert nanoseconds to milliseconds
+    if (ms > 999) {
+        s++;
+        ms = 0;
+    }
+	fprintf(stderr, "%"PRIdMAX".%03ld %d│ ", (intmax_t)s, ms, tid);
+}
 
 void printHelp();
 void saveFrame(AVFrame *avFrame, int width, int height, int frameIndex);
@@ -142,6 +164,9 @@ saveFrame(AVFrame *avFrame, int width, int height, int frameIndex)
 void
 threadmain(int argc, char **argv)
 {
+	if (_DEBUG_)
+		chatty9pclient = 1;
+
 	if ( !(argc > 2) )
 	{
 		printHelp();
