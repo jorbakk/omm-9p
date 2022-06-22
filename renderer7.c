@@ -1521,9 +1521,9 @@ void video_thread(void * arg)
 	double pts;
 
 	// Setting decoder threading parameter that might have an influence in the 9P threading environment
-	videoState->video_ctx->thread_count = 1;
-	videoState->video_ctx->thread_type = FF_THREAD_FRAME;
-	videoState->video_ctx->debug = 1;
+	/* videoState->video_ctx->thread_count = 1; */
+	/* videoState->video_ctx->thread_type = FF_THREAD_FRAME; */
+	/* videoState->video_ctx->debug = 1; */
 
 	for (;;)
 	{
