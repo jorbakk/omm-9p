@@ -421,7 +421,7 @@ static void schedule_refresh(
 		/* void * param */
 /* ); */
 
-void video_display(VideoState * videoState);
+void video_display(VideoState * videoState, VideoPicture *videoPicture);
 
 /* void packet_queue_init(PacketQueue * q); */
 
@@ -972,38 +972,47 @@ void decode_thread(void * arg)
 
 		// read data from the AVFormatContext by repeatedly calling av_read_frame()
 		ret = av_read_frame(videoState->pFormatCtx, packet);
+		LOG("read av packet of size: %i", packet->size);
 		if (ret < 0)
 		{
+			LOG("failed to read av packet: %s", av_err2str(ret));
 			if (ret == AVERROR_EOF)
 			{
 				// media EOF reached, quit
 				videoState->quit = 1;
 				break;
 			}
-			else if (videoState->pFormatCtx->pb->error == 0)
-			{
-				// no read error; wait for user input
-				// FIXME need a replacement ...?
+			/* else if (videoState->pFormatCtx->pb->error == 0) */
+			/* { */
+				/* // no read error; wait for user input */
+				/* // FIXME need a replacement ...? */
 				/* SDL_Delay(10); */
 
-				continue;
-			}
+				/* continue; */
+			/* } */
 			else
 			{
 				// exit for loop in case of error
 				break;
 			}
 		}
+		// FIXME added exiting when av packet size is zero in the decoder thread
+		if (packet->size == 0) {
+			LOG("packet size is zero, exiting decoder thread");
+			break;
+		}
 
 		// put the packet in the appropriate queue
 		if (packet->stream_index == videoState->videoStream)
 		{
 			/* packet_queue_put(&videoState->videoq, packet); */
+			LOG("sending av packet of size %i to video queue ...", packet->size);
 			sendp(videoState->videoq, packet);
 		}
 		else if (packet->stream_index == videoState->audioStream)
 		{
 			/* packet_queue_put(&videoState->audioq, packet); */
+			LOG("sending av packet of size %i to audio queue ...", packet->size);
 			sendp(videoState->audioq, packet);
 		}
 		else
@@ -1014,11 +1023,11 @@ void decode_thread(void * arg)
 	}
 
 	// wait for the rest of the program to end
-	while (!videoState->quit)
-	{
-		// FIXME need a replacement ...?
+	// FIXME need a replacement ...?
+	/* while (!videoState->quit) */
+	/* { */
 		/* SDL_Delay(100); */
-	}
+	/* } */
 
 	// close the opened input AVFormatContext
 	avformat_close_input(&pFormatCtx);
@@ -1432,6 +1441,7 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 				videoPicture->rgb_frame->linesize
 		);
 	}
+	LOG("sending decoded video frame with pts %f to picture queue ...", videoPicture->pts);
 	sendp(videoState->pictq, videoPicture);
 
 	return 0;
@@ -1490,10 +1500,9 @@ void video_thread(void * arg)
 		LOG("video_thread looping ...");
 		// get a packet from the video PacketQueue
 		/* int ret = packet_queue_get(&videoState->videoq, packet, 1); */
-		LOG("receiving packet from video queue ...");
 		packet = recvp(videoState->videoq);
+		LOG("received av packet of size %i from video queue ...", packet->size);
 		/* LOG("packet received with size: %d, duration: %ld, pos: %ld", packet->size, packet->duration, packet->pos); */
-		LOG("received packet of size: %d", packet->size);
 		/* if (ret < 0) */
 		if (packet == NULL)
 		{
@@ -1857,6 +1866,7 @@ void video_refresh_timer(void * userdata)
 			// get VideoPicture reference using the queue read index
 			/* videoPicture = &videoState->pictq[videoState->pictq_rindex]; */
 			videoPicture = recvp(videoState->pictq);
+			LOG("received decoded video frame with pts %f from picture queue ...", videoPicture->pts);
 
 			if (_DEBUG_)
 			{
@@ -1953,7 +1963,7 @@ void video_refresh_timer(void * userdata)
 			}
 
 			// show the frame on the SDL_Surface (the screen)
-			video_display(videoState);
+			video_display(videoState, videoPicture);
 
 			// update read index for the next frame
 			if(++videoState->pictq_rindex == VIDEO_PICTURE_QUEUE_SIZE)
@@ -2128,7 +2138,7 @@ static void schedule_refresh(VideoState * videoState, Uint32 delay)
  *
  * @param   videoState  the global VideoState reference.
  */
-void video_display(VideoState * videoState)
+void video_display(VideoState * videoState, VideoPicture *videoPicture)
 {
 	// create window, renderer and textures if not already created
 	if (!screen)
@@ -2175,17 +2185,11 @@ void video_display(VideoState * videoState)
 	}
 
 	// reference for the next VideoPicture to be displayed
-	VideoPicture * videoPicture;
+	/* VideoPicture * videoPicture; */
 
 	double aspect_ratio;
 
 	int w, h, x, y;
-
-	// get next VideoPicture to be displayed from the VideoPicture queue
-	/* videoPicture = &videoState->pictq[videoState->pictq_rindex]; */
-	LOG("receiving video picture for display ...");
-	videoPicture = recvp(videoState->pictq);
-	LOG("received video picture.");
 
 	if (videoPicture->rgb_frame) {
 		saveFrame(videoPicture->rgb_frame, videoState, (int)1000*(videoPicture->pts));
@@ -2733,6 +2737,7 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 		// get more audio AVPacket
 		/* int ret = packet_queue_get(&videoState->audioq, avPacket, 1); */
 		avPacket = recvp(videoState->audioq);
+		LOG("received av packet of size %i from audio queue ...", avPacket->size);
 
 		// if packet_queue_get returns < 0, the global quit flag was set
 		/* if (ret < 0) */

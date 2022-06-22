@@ -345,6 +345,7 @@ threadmain(int argc, char **argv)
 			LOG("read av packet: %s", av_err2str(ret));
 			break;
 		}
+		LOG("read av packet of size: %i", pPacket->size);
 		if (pPacket->stream_index == videoStream)
 		{
 			ret = avcodec_send_packet(pCodecCtx, pPacket);
