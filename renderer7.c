@@ -74,7 +74,6 @@
 #endif
 
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
-void saveFrame(AVFrame *avFrame, int width, int height, int pix_fmt, int frameIndex);
 
 static struct timespec curtime;
 
@@ -176,8 +175,8 @@ typedef struct PacketQueue
 	AVPacketList *  last_pkt;
 	int			 nb_packets;
 	int			 size;
-	SDL_mutex *	 mutex;
-	SDL_cond *	  cond;
+	/* SDL_mutex *	 mutex; */
+	/* SDL_cond *	  cond; */
 } PacketQueue;
 
 /**
@@ -186,6 +185,7 @@ typedef struct PacketQueue
 typedef struct VideoPicture
 {
 	AVFrame *   frame;
+	AVFrame *   rgb_frame;
 	int		 width;
 	int		 height;
 	int		 allocated;
@@ -234,6 +234,7 @@ typedef struct VideoState
 	Channel		 *videoq;
 	QLock        qlock;
 	struct SwsContext * sws_ctx;
+	struct SwsContext * rgb_ctx;
 	double			  frame_timer;
 	double			  frame_last_pts;
 	double			  frame_last_delay;
@@ -248,12 +249,13 @@ typedef struct VideoState
 	/**
 	 * VideoPicture Queue.
 	 */
-	VideoPicture		pictq[VIDEO_PICTURE_QUEUE_SIZE];
+	/* VideoPicture		pictq[VIDEO_PICTURE_QUEUE_SIZE]; */
+	Channel		*pictq;
 	int				 pictq_size;
 	int				 pictq_rindex;
 	int				 pictq_windex;
-	SDL_mutex *		 pictq_mutex;
-	SDL_cond *		  pictq_cond;
+	/* SDL_mutex *		 pictq_mutex; */
+	/* SDL_cond *		  pictq_cond; */
 
 	/**
 	 * AV Sync.
@@ -343,7 +345,7 @@ SDL_Window * screen;
 /**
  * Global SDL_Surface mutex reference.
  */
-SDL_mutex * screen_mutex;
+/* SDL_mutex * screen_mutex; */
 
 /**
  * Global VideoState reference.
@@ -360,6 +362,8 @@ AVPacket flush_pkt;
  */
 void printHelpMenu();
 
+void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex);
+
 /* int decode_thread(void * arg); */
 void decode_thread(void * arg);
 
@@ -368,7 +372,7 @@ int stream_component_open(
 		int stream_index
 );
 
-void alloc_picture(void * userdata);
+VideoPicture* alloc_picture(void * userdata);
 
 int queue_picture(
 		VideoState * videoState,
@@ -629,6 +633,7 @@ threadmain(int argc, char **argv)
 		// after coming from the decoder thread in the second loop interation?
 		yield();
 		LOG("yielded.");
+		video_refresh_timer(videoState);
 		/* sleep(10); */
 
 		/* double incr, pos; */
@@ -1163,6 +1168,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			// init video packet queue
 			/* packet_queue_init(&videoState->videoq); */
 			videoState->videoq = chancreate(sizeof(AVPacket*), MAX_VIDEOQ_SIZE);
+			videoState->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE);
 
 			// start video thread
 			/* videoState->video_tid = SDL_CreateThread(video_thread, "Video Thread", videoState); */
@@ -1181,9 +1187,20 @@ int stream_component_open(VideoState * videoState, int stream_index)
 												 NULL,
 												 NULL
 			);
+			videoState->rgb_ctx = sws_getContext(videoState->video_ctx->width,
+												 videoState->video_ctx->height,
+												 videoState->video_ctx->pix_fmt,
+												 videoState->video_ctx->width,
+												 videoState->video_ctx->height,
+												 AV_PIX_FMT_RGB24,
+												 SWS_BILINEAR,
+												 NULL,
+												 NULL,
+												 NULL
+			);
 
 			// initialize global SDL_Surface mutex reference
-			screen_mutex = SDL_CreateMutex();
+			/* screen_mutex = SDL_CreateMutex(); */
 		}
 			break;
 
@@ -1204,25 +1221,27 @@ int stream_component_open(VideoState * videoState, int stream_index)
  *
  * @param   userdata	the global VideoState reference.
  */
-void alloc_picture(void * userdata)
+VideoPicture* alloc_picture(void * userdata)
 {
 	// retrieve global VideoState reference.
 	VideoState * videoState = (VideoState *)userdata;
 
 	// retrieve the VideoPicture pointed by the queue write index
-	VideoPicture * videoPicture;
-	videoPicture = &videoState->pictq[videoState->pictq_windex];
+	VideoPicture * videoPicture = NULL;
+	videoPicture = malloc(sizeof(VideoPicture));
+	memset(videoPicture, 0, sizeof(VideoPicture));
+	/* videoPicture = &videoState->pictq[videoState->pictq_windex]; */
 
 	// check if the SDL_Overlay is allocated
-	if (videoPicture->frame)
-	{
-		// we already have an AVFrame allocated, free memory
-		av_frame_free(&videoPicture->frame);
-		av_free(videoPicture->frame);
-	}
+	/* if (videoPicture->frame) */
+	/* { */
+		/* // we already have an AVFrame allocated, free memory */
+		/* av_frame_free(&videoPicture->frame); */
+		/* av_free(videoPicture->frame); */
+	/* } */
 
 	// lock global screen mutex
-	SDL_LockMutex(screen_mutex);
+	/* SDL_LockMutex(screen_mutex); */
 
 	// get the size in bytes required to store an image with the given parameters
 	int numBytes;
@@ -1232,17 +1251,32 @@ void alloc_picture(void * userdata)
 			videoState->video_ctx->height,
 			32
 	);
+	int rgb_numBytes;
+	rgb_numBytes = av_image_get_buffer_size(
+			AV_PIX_FMT_RGB24,
+			videoState->video_ctx->width,
+			videoState->video_ctx->height,
+			32
+	);
 
 	// allocate image data buffer
 	uint8_t * buffer = NULL;
 	buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+	uint8_t * rgb_buffer = NULL;
+	rgb_buffer = (uint8_t *) av_malloc(rgb_numBytes * sizeof(uint8_t));
 
 	// alloc the AVFrame later used to contain the scaled frame
 	videoPicture->frame = av_frame_alloc();
 	if (videoPicture->frame == NULL)
 	{
 		printf("Could not allocate frame.\n");
-		return;
+		return NULL;
+	}
+	videoPicture->rgb_frame = av_frame_alloc();
+	if (videoPicture->rgb_frame == NULL)
+	{
+		printf("Could not allocate rgb frame.\n");
+		return NULL;
 	}
 
 	// The fields of the given image are filled in by using the buffer which points to the image data buffer.
@@ -1255,14 +1289,25 @@ void alloc_picture(void * userdata)
 			videoState->video_ctx->height,
 			32
 	);
+	av_image_fill_arrays(
+			videoPicture->rgb_frame->data,
+			videoPicture->rgb_frame->linesize,
+			rgb_buffer,
+			AV_PIX_FMT_RGB24,
+			videoState->video_ctx->width,
+			videoState->video_ctx->height,
+			32
+	);
 
 	// unlock global screen mutex
-	SDL_UnlockMutex(screen_mutex);
+	/* SDL_UnlockMutex(screen_mutex); */
 
 	// update VideoPicture struct fields
 	videoPicture->width = videoState->video_ctx->width;
 	videoPicture->height = videoState->video_ctx->height;
 	videoPicture->allocated = 1;
+
+	return videoPicture;
 }
 
 /**
@@ -1299,35 +1344,40 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 
 	// retrieve video picture using the queue write index
 	VideoPicture * videoPicture;
+	videoPicture = alloc_picture(videoState);
+	if (videoPicture == NULL) {
+		LOG("failed to allocate video picture");
+		return -1;
+	}
 	/* videoPicture = &videoState->pictq[videoState->pictq_windex]; */
 	// FIXME !!! properly read frame from picture Channel
 	/* videoPicture = recvp(videoState->pictq); */
-	return 0;
+	/* return 0; */
 
 	// if the VideoPicture SDL_Overlay is not allocated or has a different width/height
-	if (!videoPicture->frame ||
-		videoPicture->width != videoState->video_ctx->width ||
-		videoPicture->height != videoState->video_ctx->height)
-	{
-		// set SDL_Overlay not allocated
-		videoPicture->allocated = 0;
+	/* if (!videoPicture->frame || */
+		/* videoPicture->width != videoState->video_ctx->width || */
+		/* videoPicture->height != videoState->video_ctx->height) */
+	/* { */
+		/* // set SDL_Overlay not allocated */
+		/* videoPicture->allocated = 0; */
 
-		// allocate a new SDL_Overlay for the VideoPicture struct
-		alloc_picture(videoState);
+		/* // allocate a new SDL_Overlay for the VideoPicture struct */
+		/* alloc_picture(videoState); */
 
-		// check global quit flag
-		if(videoState->quit)
-		{
-			return -1;
-		}
-	}
+		/* // check global quit flag */
+		/* if(videoState->quit) */
+		/* { */
+			/* return -1; */
+		/* } */
+	/* } */
+
+	// set pts value for the last decode frame in the VideoPicture queu (pctq)
+	videoPicture->pts = pts;
 
 	// check the new SDL_Overlay was correctly allocated
 	if (videoPicture->frame)
 	{
-		// set pts value for the last decode frame in the VideoPicture queu (pctq)
-		videoPicture->pts = pts;
-
 		// set VideoPicture AVFrame info using the last decoded frame
 		videoPicture->frame->pict_type = pFrame->pict_type;
 		videoPicture->frame->pts = pFrame->pts;
@@ -1349,25 +1399,49 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 				videoPicture->frame->linesize
 		);
 
-		// update VideoPicture queue write index
-		++videoState->pictq_windex;
+		/* // update VideoPicture queue write index */
+		/* ++videoState->pictq_windex; */
 
-		// if the write index has reached the VideoPicture queue size
-		if(videoState->pictq_windex == VIDEO_PICTURE_QUEUE_SIZE)
-		{
-			// set it to 0
-			videoState->pictq_windex = 0;
-		}
+		/* // if the write index has reached the VideoPicture queue size */
+		/* if(videoState->pictq_windex == VIDEO_PICTURE_QUEUE_SIZE) */
+		/* { */
+			/* // set it to 0 */
+			/* videoState->pictq_windex = 0; */
+		/* } */
 
-		// lock VideoPicture queue
-		SDL_LockMutex(videoState->pictq_mutex);
+		/* // lock VideoPicture queue */
+		/* SDL_LockMutex(videoState->pictq_mutex); */
 
-		// increase VideoPicture queue size
-		videoState->pictq_size++;
+		/* // increase VideoPicture queue size */
+		/* videoState->pictq_size++; */
 
-		// unlock VideoPicture queue
-		SDL_UnlockMutex(videoState->pictq_mutex);
+		/* // unlock VideoPicture queue */
+		/* SDL_UnlockMutex(videoState->pictq_mutex); */
 	}
+	if (videoPicture->rgb_frame)
+	{
+		// set VideoPicture AVFrame info using the last decoded frame
+		videoPicture->rgb_frame->pict_type = pFrame->pict_type;
+		videoPicture->rgb_frame->pts = pFrame->pts;
+		videoPicture->rgb_frame->pkt_dts = pFrame->pkt_dts;
+		videoPicture->rgb_frame->key_frame = pFrame->key_frame;
+		videoPicture->rgb_frame->coded_picture_number = pFrame->coded_picture_number;
+		videoPicture->rgb_frame->display_picture_number = pFrame->display_picture_number;
+		videoPicture->rgb_frame->width = pFrame->width;
+		videoPicture->rgb_frame->height = pFrame->height;
+
+		// scale the image in pFrame->data and put the resulting scaled image in pict->data
+		sws_scale(
+				videoState->rgb_ctx,
+				(uint8_t const * const *)pFrame->data,
+				pFrame->linesize,
+				0,
+				videoState->video_ctx->height,
+				videoPicture->rgb_frame->data,
+				videoPicture->rgb_frame->linesize
+		);
+	}
+	sendp(videoState->pictq, videoPicture);
 
 	return 0;
 }
@@ -1514,7 +1588,7 @@ void video_thread(void * arg)
 				LOG("video frame is complete, synchronizing ...");
 				pts = synchronize_video(videoState, pFrame, pts);
 				LOG("synched pts: %f", pts);
-				saveFrame(pFrame, videoState->video_ctx->width, videoState->video_ctx->height, videoState->video_ctx->pix_fmt, (int)1000*pts);
+				/* saveFrame(pFrame, videoState->video_ctx->width, videoState->video_ctx->height, videoState->video_ctx->pix_fmt, (int)1000*pts); */
 
 				LOG("queueing decoded frame for display ...");
 				if(queue_picture(videoState, pFrame, pts) < 0)
@@ -1777,16 +1851,17 @@ void video_refresh_timer(void * userdata)
 	if (videoState->video_st)
 	{
 		// check the VideoPicture queue contains decoded frames
-		if (videoState->pictq_size == 0)
-		{
-			fprintf(stderr, "\n!!!videoState->pictq_size == 0!!!\n");
+		/* if (videoState->pictq_size == 0) */
+		/* { */
+			/* fprintf(stderr, "\n!!!videoState->pictq_size == 0!!!\n"); */
 
-			schedule_refresh(videoState, 1);
-		}
-		else
-		{
+			/* schedule_refresh(videoState, 1); */
+		/* } */
+		/* else */
+		/* { */
 			// get VideoPicture reference using the queue read index
-			videoPicture = &videoState->pictq[videoState->pictq_rindex];
+			/* videoPicture = &videoState->pictq[videoState->pictq_rindex]; */
+			videoPicture = recvp(videoState->pictq);
 
 			if (_DEBUG_)
 			{
@@ -1893,7 +1968,7 @@ void video_refresh_timer(void * userdata)
 
 			// unlock VideoPicture queue mutex
 			/* SDL_UnlockMutex(videoState->pictq_mutex); */
-		}
+		/* } */
 	}
 	else
 	{
@@ -2102,7 +2177,12 @@ void video_display(VideoState * videoState)
 	int w, h, x, y;
 
 	// get next VideoPicture to be displayed from the VideoPicture queue
-	videoPicture = &videoState->pictq[videoState->pictq_rindex];
+	/* videoPicture = &videoState->pictq[videoState->pictq_rindex]; */
+	videoPicture = recvp(videoState->pictq);
+
+	if (videoPicture->rgb_frame) {
+		saveFrame(videoPicture->rgb_frame, videoState, (int)1000*(videoPicture->pts));
+	}
 
 	if (videoPicture->frame)
 	{
@@ -2978,63 +3058,65 @@ void stream_seek(VideoState * videoState, int64_t pos, int rel)
  * @param   height      the given frame height as obtained by the AVCodecContext.
  * @param   frameIndex  the given frame index.
  */
-void saveFrame(AVFrame *pFrame, int width, int height, int pix_fmt, int frameIndex)
+/* void saveFrame(AVFrame *pFrame, int width, int height, int pix_fmt, int frameIndex) */
+void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex)
 {
     FILE * pFile;
     char szFilename[32];
     int  y;
 
-    AVFrame * pFrameRGB = NULL;
-    pFrameRGB = av_frame_alloc();
-    if (pFrameRGB == NULL)
-    {
-        // Could not allocate frame
-        printf("Could not allocate frame.\n");
+	// FIXME probably need to allocate the RGB frame only once to avoid the errors in the output ppm images
+    /* AVFrame * pFrameRGB = NULL; */
+    /* pFrameRGB = av_frame_alloc(); */
+    /* if (pFrameRGB == NULL) */
+    /* { */
+        /* // Could not allocate frame */
+        /* printf("Could not allocate frame.\n"); */
 
-        // exit with error
-        return;
-    }
-    uint8_t * buffer = NULL;
-    int numBytes;
+        /* // exit with error */
+        /* return; */
+    /* } */
+    /* uint8_t * buffer = NULL; */
+    /* int numBytes; */
     // Determine required buffer size and allocate buffer
     // numBytes = avpicture_get_size(AV_PIX_FMT_RGB24, width, height);
     // https://ffmpeg.org/pipermail/ffmpeg-devel/2016-January/187299.html
     // what is 'linesize alignment' meaning?:
     // https://stackoverflow.com/questions/35678041/what-is-linesize-alignment-meaning
-    numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, width, height, 32);
-    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+    /* numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, width, height, 32); */
+    /* buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t)); */
 
-    struct SwsContext * sws_ctx = NULL;
-    sws_ctx = sws_getContext(
-        width,
-        height,
-        pix_fmt,
-        width,
-        height,
-        AV_PIX_FMT_RGB24,   // sws_scale destination color scheme
-        SWS_BILINEAR,
-        NULL,
-        NULL,
-        NULL
-    );
-    av_image_fill_arrays(
-        pFrameRGB->data,
-        pFrameRGB->linesize,
-        buffer,
-        AV_PIX_FMT_RGB24,
-        width,
-        height,
-        32
-    );
-    sws_scale(
-        sws_ctx,
-        (uint8_t const * const *)pFrame->data,
-        pFrame->linesize,
-        0,
-        height,
-        pFrameRGB->data,
-        pFrameRGB->linesize
-    );
+    /* struct SwsContext * sws_ctx = NULL; */
+    /* sws_ctx = sws_getContext( */
+        /* width, */
+        /* height, */
+        /* pix_fmt, */
+        /* width, */
+        /* height, */
+        /* AV_PIX_FMT_RGB24,   // sws_scale destination color scheme */
+        /* SWS_BILINEAR, */
+        /* NULL, */
+        /* NULL, */
+        /* NULL */
+    /* ); */
+    /* av_image_fill_arrays( */
+        /* pFrameRGB->data, */
+        /* pFrameRGB->linesize, */
+        /* buffer, */
+        /* AV_PIX_FMT_RGB24, */
+        /* width, */
+        /* height, */
+        /* 32 */
+    /* ); */
+    /* sws_scale( */
+        /* videoState->video_ctx->rgb_ctx, */
+        /* (uint8_t const * const *)pFrame->data, */
+        /* pFrame->linesize, */
+        /* 0, */
+        /* videoState->video_ctx->height, */
+        /* pFrameRGB->data, */
+        /* pFrameRGB->linesize */
+    /* ); */
 
     /**
      * We do a bit of standard file opening, etc., and then write the RGB data.
@@ -3055,13 +3137,14 @@ void saveFrame(AVFrame *pFrame, int width, int height, int pix_fmt, int frameInd
     }
 
     // Write header
-    fprintf(pFile, "P6\n%d %d\n255\n", width, height);
+    /* fprintf(pFile, "P6\n%d %d\n255\n", width, height); */
+    fprintf(pFile, "P6\n%d %d\n255\n", videoState->video_ctx->width, videoState->video_ctx->height);
 
     // Write pixel data
-    for (y = 0; y < height; y++)
+    for (y = 0; y < videoState->video_ctx->height; y++)
     {
         /* fwrite(avFrame->data[0] + y * avFrame->linesize[0], 1, width * 3, pFile); */
-        fwrite(pFrameRGB->data[0] + y * pFrameRGB->linesize[0], 1, width * 3, pFile);
+        fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, videoState->video_ctx->width * 3, pFile);
     }
 
     // Close file
