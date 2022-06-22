@@ -21,10 +21,6 @@
  */
 
 
-// TODO fix crash when reading from 9P server instead of a local file
-// 1. Replace SDL threads with pthreads (probably the same as SDL threads) or 9P channels ...?
-// 2. Make everything synchronous ...?
-//
 // Current thread layout:
 //   main_thread
 //   -> decode_thread
@@ -32,19 +28,12 @@
 //         -> video_thread
 //      -> stream_component_open (audio)
 //   -> event loop
-//
-// Mutexes:
-//   1. packet queue, with condition
-//   2. pict queue, with condition
-//   3. screen
+//   -> display pictures
 
-// Plan 9 thread layout could look like this:
-//   main_thread
 
 #include <u.h>
 
 #include <time.h>
-/* #include <sys/syscall.h> */
 
 #include <libc.h>
 #include <signal.h>
@@ -64,14 +53,7 @@
 #include <libswresample/swresample.h>
 
 #include <SDL2/SDL.h>
-/* #include <SDL2/SDL_thread.h> */
 
-/**
- * Prevents SDL from overriding main().
- */
-#ifdef __MINGW32__
-#undef main
-#endif
 
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
@@ -96,122 +78,29 @@ void printloginfo(void)
 }
 
 
-/**
- * Debug flag.
- */
 #define _DEBUG_ 1
-
-/**
- * SDL audio buffer size in samples.
- */
 #define SDL_AUDIO_BUFFER_SIZE 1024
-
-/**
- * Maximum number of samples per channel in an audio frame.
- */
 #define MAX_AUDIO_FRAME_SIZE 192000
-
-/**
- * Audio packets queue maximum size.
- */
 #define MAX_AUDIOQ_SIZE (5 * 16 * 1024)
-
-/**
- * Video packets queue maximum size.
- */
 #define MAX_VIDEOQ_SIZE (5 * 256 * 1024)
-
-/**
- * AV sync correction threshold.
- */
 #define AV_SYNC_THRESHOLD 0.01
-
-/**
- * No AV sync correction threshold.
- */
 #define AV_NOSYNC_THRESHOLD 1.0
-
-/**
- *
- */
 #define SAMPLE_CORRECTION_PERCENT_MAX 10
-
-/**
- *
- */
 #define AUDIO_DIFF_AVG_NB 20
-
-/**
- * Custom SDL_Event type.
- * Notifies the next video frame has to be displayed.
- */
-#define FF_REFRESH_EVENT (SDL_USEREVENT)
-
-/**
- * Custom SDL_Event type.
- * Notifies the program needs to quit.
- */
-#define FF_QUIT_EVENT (SDL_USEREVENT + 1)
-
-/**
- * Video Frame queue size.
- */
 #define VIDEO_PICTURE_QUEUE_SIZE 1
-
-/**
- * Default audio video sync type.
- */
 /* #define DEFAULT_AV_SYNC_TYPE AV_SYNC_AUDIO_MASTER */
 #define DEFAULT_AV_SYNC_TYPE AV_SYNC_EXTERNAL_MASTER
-
 #define THREAD_STACK_SIZE 1024 * 1024 * 10
+#define avctxBufferSize 8192 * 10
 
-/**
- * Queue structure used to store AVPackets.
- */
-typedef struct PacketQueue
-{
-	AVPacketList *  first_pkt;
-	AVPacketList *  last_pkt;
-	int			 nb_packets;
-	int			 size;
-	/* SDL_mutex *	 mutex; */
-	/* SDL_cond *	  cond; */
-} PacketQueue;
 
-/**
- * Queue structure used to store processed video frames.
- */
-typedef struct VideoPicture
-{
-	AVFrame *   frame;
-	AVFrame *   rgb_frame;
-	int		 width;
-	int		 height;
-	int		 allocated;
-	double	  pts;
-} VideoPicture;
-
-/**
- * Struct used to hold the format context, the indices of the audio and video stream,
- * the corresponding AVStream objects, the audio and video codec information,
- * the audio and video queues and buffers, the global quit flag and the filename of
- * the movie.
- */
 typedef struct VideoState
 {
-	/**
-	 * File I/O Context.
-	 */
 	AVFormatContext * pFormatCtx;
-
-	/**
-	 * Audio Stream.
-	 */
+	// Audio Stream.
 	int				 audioStream;
 	AVStream *		  audio_st;
 	AVCodecContext *	audio_ctx;
-	/* PacketQueue		 audioq; */
 	Channel         *audioq;
 	uint8_t			 audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
 	unsigned int		audio_buf_size;
@@ -221,18 +110,14 @@ typedef struct VideoState
 	uint8_t *		   audio_pkt_data;
 	int				 audio_pkt_size;
 	double			  audio_clock;
-
-	/**
-	 * Video Stream.
-	 */
+	// Video Stream.
 	int				 videoStream;
 	AVStream *		  video_st;
 	AVCodecContext *	video_ctx;
 	SDL_Texture *	   texture;
 	SDL_Renderer *	  renderer;
-	/* PacketQueue		 videoq; */
 	Channel		 *videoq;
-	QLock        qlock;
+	Channel		*pictq;
 	struct SwsContext * sws_ctx;
 	struct SwsContext * rgb_ctx;
 	double			  frame_timer;
@@ -245,62 +130,27 @@ typedef struct VideoState
 	double			  audio_diff_avg_coef;
 	double			  audio_diff_threshold;
 	int				 audio_diff_avg_count;
-
-	/**
-	 * VideoPicture Queue.
-	 */
-	/* VideoPicture		pictq[VIDEO_PICTURE_QUEUE_SIZE]; */
-	Channel		*pictq;
-	int				 pictq_size;
-	int				 pictq_rindex;
-	int				 pictq_windex;
-	/* SDL_mutex *		 pictq_mutex; */
-	/* SDL_cond *		  pictq_cond; */
-
-	/**
-	 * AV Sync.
-	 */
+	// AV Sync
 	int	 av_sync_type;
 	double  external_clock;
 	int64_t external_clock_time;
-
-	/**
-	 * Seeking.
-	 */
+	// Seeking
 	int	 seek_req;
 	int	 seek_flags;
 	int64_t seek_pos;
-
-	/**
-	 * Threads.
-	 */
-	/* SDL_Thread *	decode_tid; */
-	/* SDL_Thread *	video_tid; */
+	// Threads.
 	int decode_tid;
 	int video_tid;
-
-	/**
-	 * Input file name.
-	 */
+	// Input file name and plan 9 file reference
 	char filename[1024];
-	// Plan 9 file pointer
 	CFid *fid;
-
-	/**
-	 * Global quit flag.
-	 */
+	// Quit flag
 	int quit;
-
-	/**
-	 * Maximum number of frames to be decoded.
-	 */
+	// Maximum number of frames to be decoded.
 	long	maxFramesToDecode;
 	int	 currentFrameIndex;
 } VideoState;
 
-/**
- * Struct used to hold data fields used for audio resampling.
- */
 typedef struct AudioResamplingState
 {
 	SwrContext * swr_ctx;
@@ -316,158 +166,92 @@ typedef struct AudioResamplingState
 
 } AudioResamplingState;
 
-/**
- * Audio Video Sync Types.
- */
+typedef struct VideoPicture
+{
+    AVFrame *   frame;
+    AVFrame *   rgb_frame;
+    int         width;
+    int         height;
+    int         allocated;
+    double      pts;
+} VideoPicture;
+
 enum
 {
-	/**
-	 * Sync to audio clock.
-	 */
-			AV_SYNC_AUDIO_MASTER,
-
-	/**
-	 * Sync to video clock.
-	 */
-			AV_SYNC_VIDEO_MASTER,
-
-	/**
-	 * Sync to external clock: the computer clock
-	 */
-			AV_SYNC_EXTERNAL_MASTER,
+	// Sync to audio clock.
+	AV_SYNC_AUDIO_MASTER,
+	// Sync to video clock.
+	AV_SYNC_VIDEO_MASTER,
+	// Sync to external clock: the computer clock
+	AV_SYNC_EXTERNAL_MASTER,
 };
 
-/**
- * Global SDL_Window reference.
- */
 SDL_Window * screen;
-
-/**
- * Global SDL_Surface mutex reference.
- */
-/* SDL_mutex * screen_mutex; */
-
-/**
- * Global VideoState reference.
- */
 VideoState * global_video_state;
-
-/**
- *
- */
 AVPacket flush_pkt;
+char *addr = "tcp!localhost!5640";
+char *aname;
 
-/**
- * Methods declaration.
- */
-void printHelpMenu();
-
+void printHelp();
 void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex);
-
-/* int decode_thread(void * arg); */
 void decode_thread(void * arg);
-
 int stream_component_open(
 		VideoState * videoState,
 		int stream_index
 );
-
 VideoPicture* alloc_picture(void * userdata);
-
 int queue_picture(
 		VideoState * videoState,
 		AVFrame * pFrame,
 		double pts
 );
-
-/* int video_thread(void * arg); */
 void video_thread(void * arg);
-
 static int64_t guess_correct_pts(
 		AVCodecContext * ctx,
 		int64_t reordered_pts,
 		int64_t dts
 );
-
 double synchronize_video(
 		VideoState * videoState,
 		AVFrame * src_frame,
 		double pts
 );
-
 int synchronize_audio(
 		VideoState * videoState,
 		short * samples,
 		int samples_size
 );
-
 void video_refresh_timer(void * userdata);
-
 double get_audio_clock(VideoState * videoState);
-
 double get_video_clock(VideoState * videoState);
-
 double get_external_clock(VideoState * videoState);
-
 double get_master_clock(VideoState * videoState);
-
 static void schedule_refresh(
 		VideoState * videoState,
 		Uint32 delay
 );
-
-/* static Uint32 sdl_refresh_timer_cb( */
-		/* Uint32 interval, */
-		/* void * param */
-/* ); */
-
 void video_display(VideoState * videoState, VideoPicture *videoPicture);
-
-/* void packet_queue_init(PacketQueue * q); */
-
-/* int packet_queue_put( */
-		/* PacketQueue * queue, */
-		/* AVPacket * packet */
-/* ); */
-
-/* static int packet_queue_get( */
-		/* PacketQueue * queue, */
-		/* AVPacket * packet, */
-		/* int blocking */
-/* ); */
-
-/* static void packet_queue_flush(PacketQueue * queue); */
-
 void audio_callback(
 		void * userdata,
 		Uint8 * stream,
 		int len
 );
-
 int audio_decode_frame(
 		VideoState * videoState,
 		uint8_t * audio_buf,
 		int buf_size,
 		double * pts_ptr
 );
-
 static int audio_resampling(
 		VideoState * videoState,
 		AVFrame * decoded_audio_frame,
 		enum AVSampleFormat out_sample_fmt,
 		uint8_t * out_buf
 );
-
 AudioResamplingState * getAudioResampling(uint64_t channel_layout);
-
 void stream_seek(VideoState * videoState, int64_t pos, int rel);
-
-
 CFsys *(*nsmnt)(char*, char*) = nsmount;
 CFsys *(*fsmnt)(int, char*) = fsmount;
-static const int avctxBufferSize = 8192 * 10;
-char *addr = "tcp!localhost!5640";
-char *aname;
 
 
 int
@@ -538,14 +322,6 @@ xopen(char *name, int mode)
 }
 
 
-/**
- * Entry point.
- *
- * @param   argc	command line arguments counter.
- * @param   argv	command line arguments.
- *
- * @return		  execution exit code.
- */
 void
 threadmain(int argc, char **argv)
 {
@@ -556,7 +332,7 @@ threadmain(int argc, char **argv)
 	if ( argc != 3 )
 	{
 		// print help menu and exit
-		printHelpMenu();
+		printHelp();
 		return;
 	}
 
@@ -732,7 +508,7 @@ threadmain(int argc, char **argv)
 /**
  * Print help menu containing usage information.
  */
-void printHelpMenu()
+void printHelp()
 {
 	printf("Invalid arguments.\n\n");
 	printf("Usage: ./tutorial07 <filename> <max-frames-to-decode>\n\n");
@@ -2012,16 +1788,16 @@ void video_refresh_timer(void * userdata)
 			video_display(videoState, videoPicture);
 
 			// update read index for the next frame
-			if(++videoState->pictq_rindex == VIDEO_PICTURE_QUEUE_SIZE)
-			{
-				videoState->pictq_rindex = 0;
-			}
+			/* if(++videoState->pictq_rindex == VIDEO_PICTURE_QUEUE_SIZE) */
+			/* { */
+				/* videoState->pictq_rindex = 0; */
+			/* } */
 
 			// lock VideoPicture queue mutex
 			/* SDL_LockMutex(videoState->pictq_mutex); */
 
 			// decrease VideoPicture queue size
-			videoState->pictq_size--;
+			/* videoState->pictq_size--; */
 
 			// notify other threads waiting for the VideoPicture queue
 			/* SDL_CondSignal(videoState->pictq_cond); */
