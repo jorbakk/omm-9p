@@ -1006,13 +1006,13 @@ void decode_thread(void * arg)
 		if (packet->stream_index == videoState->videoStream)
 		{
 			/* packet_queue_put(&videoState->videoq, packet); */
-			LOG("sending av packet of size %i to video queue ...", packet->size);
+			LOG("==> sending av packet of size %i to video queue ...", packet->size);
 			sendp(videoState->videoq, packet);
 		}
 		else if (packet->stream_index == videoState->audioStream)
 		{
 			/* packet_queue_put(&videoState->audioq, packet); */
-			LOG("sending av packet of size %i to audio queue ...", packet->size);
+			LOG("==> sending av packet of size %i to audio queue ...", packet->size);
 			sendp(videoState->audioq, packet);
 		}
 		else
@@ -1441,7 +1441,7 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 				videoPicture->rgb_frame->linesize
 		);
 	}
-	LOG("sending decoded video frame with pts %f to picture queue ...", videoPicture->pts);
+	LOG("==> sending decoded video frame with pts %f to picture queue ...", videoPicture->pts);
 	sendp(videoState->pictq, videoPicture);
 
 	return 0;
@@ -1501,7 +1501,7 @@ void video_thread(void * arg)
 		// get a packet from the video PacketQueue
 		/* int ret = packet_queue_get(&videoState->videoq, packet, 1); */
 		packet = recvp(videoState->videoq);
-		LOG("received av packet of size %i from video queue ...", packet->size);
+		LOG("<== received av packet of size %i from video queue.", packet->size);
 		/* LOG("packet received with size: %d, duration: %ld, pos: %ld", packet->size, packet->duration, packet->pos); */
 		/* if (ret < 0) */
 		if (packet == NULL)
@@ -1866,7 +1866,7 @@ void video_refresh_timer(void * userdata)
 			// get VideoPicture reference using the queue read index
 			/* videoPicture = &videoState->pictq[videoState->pictq_rindex]; */
 			videoPicture = recvp(videoState->pictq);
-			LOG("received decoded video frame with pts %f from picture queue ...", videoPicture->pts);
+			LOG("<== received decoded video frame with pts %f from picture queue.", videoPicture->pts);
 
 			if (_DEBUG_)
 			{
@@ -2737,7 +2737,7 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 		// get more audio AVPacket
 		/* int ret = packet_queue_get(&videoState->audioq, avPacket, 1); */
 		avPacket = recvp(videoState->audioq);
-		LOG("received av packet of size %i from audio queue ...", avPacket->size);
+		LOG("<== received av packet of size %i from audio queue.", avPacket->size);
 
 		// if packet_queue_get returns < 0, the global quit flag was set
 		/* if (ret < 0) */
