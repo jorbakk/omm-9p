@@ -622,8 +622,6 @@ threadmain(int argc, char **argv)
 	for(;;)
 	{
 		LOG("threadmain yielding ...");
-		// FIXME why does yield() not pass control to the decoder thread here,
-		// after coming from the decoder thread in the second loop interation?
 		yield();
 		LOG("threadmain yielded.");
 
@@ -869,8 +867,10 @@ void decode_thread(void * arg)
 	else
 	{
 		// open audio stream component codec
-		// FIXME!!! not opening audio at the moment ...
-		ret = stream_component_open(videoState, audioStream);
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		// FIXME!!! not opening audio at the moment ... if we do, we crash
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		/* ret = stream_component_open(videoState, audioStream); */
 		/* ret = 0; */
 
 		// check audio codec was opened correctly
@@ -883,13 +883,11 @@ void decode_thread(void * arg)
 	}
 
 	// check both the audio and video codecs were correctly retrieved
-	// FIXME currently continueuing without audio ... or video ...
 	/* if (videoState->videoStream < 0 || videoState->audioStream < 0) */
-	/* if (videoState->videoStream < 0) */
 	if (videoState->videoStream < 0 && videoState->audioStream < 0)
 	{
 		/* printf("Could not open codecs: %s.\n", videoState->filename); */
-		LOG("no video and audio stream found");
+		LOG("both video and audio stream missing");
 		goto fail;
 	}
 
@@ -939,7 +937,7 @@ void decode_thread(void * arg)
 
 			if (ret < 0)
 			{
-				// FIXME warning about FormatCtx->filename is depricated ... should vanish when switching to 9P
+				// ... warning about FormatCtx->filename is depricated ... should vanish when switching to 9P
 				/* fprintf(stderr, "%s: error while seeking\n", videoState->pFormatCtx->filename); */
 			}
 			else
@@ -963,7 +961,7 @@ void decode_thread(void * arg)
 		}
 
 		// check audio and video packets queues size
-		// FIXME audioq is a Channel with unknown size, need to track the size separately
+		// FIXME audioq and videoq now are Channels with unknown size, need to track the size separately ...?
 		/* if (videoState->audioq.size > MAX_AUDIOQ_SIZE || videoState->videoq.size > MAX_VIDEOQ_SIZE) */
 		/* { */
 			/* // wait for audio and video queues to decrease size */
@@ -1029,7 +1027,7 @@ void decode_thread(void * arg)
 	fail:
 	{
 		// create an SDL_Event of type FF_QUIT_EVENT
-		// FIXME need a replacement ...?
+		// FIXME need a replacement for FF_QUIT_EVENT...?
 		/* SDL_Event event; */
 		/* event.type = FF_QUIT_EVENT; */
 		/* event.user.data1 = videoState; */
@@ -1320,7 +1318,6 @@ VideoPicture* alloc_picture(void * userdata)
  */
 int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 {
-	// FIXME replace this with reading from the picture Channel
 	/* // lock VideoState->pictq mutex */
 	/* SDL_LockMutex(videoState->pictq_mutex); */
 
@@ -1340,16 +1337,13 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 	}
 
 	// retrieve video picture using the queue write index
+	/* videoPicture = &videoState->pictq[videoState->pictq_windex]; */
 	VideoPicture * videoPicture;
 	videoPicture = alloc_picture(videoState);
 	if (videoPicture == NULL) {
 		LOG("failed to allocate video picture");
 		return -1;
 	}
-	/* videoPicture = &videoState->pictq[videoState->pictq_windex]; */
-	// FIXME !!! properly read frame from picture Channel
-	/* videoPicture = recvp(videoState->pictq); */
-	/* return 0; */
 
 	// if the VideoPicture SDL_Overlay is not allocated or has a different width/height
 	/* if (!videoPicture->frame || */
@@ -1506,12 +1500,14 @@ void video_thread(void * arg)
 			// means we quit getting packets
 			break;
 		}
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 		// FIXME added this check because there are packets of size 0 popping out of the Channel
 		// ... is there temporarily no packet on the Channel then?
 		if (packet->size == 0) {
 			LOG("PACKET SIZE IS 0");
 			/* continue; */
 		}
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 		if (packet->data == flush_pkt.data)
 		{
@@ -2294,7 +2290,7 @@ void video_display(VideoState * videoState)
 		else
 		{
 			// create an SDLEvent of type FF_QUIT_EVENT
-			// FIXME need to replace this ...?
+			// FIXME need to replace FF_QUIT_EVENT ...?
 			/* SDL_Event event; */
 			/* event.type = FF_QUIT_EVENT; */
 			/* event.user.data1 = videoState; */
@@ -2488,7 +2484,7 @@ void video_display(VideoState * videoState)
 	/* for (pkt = queue->first_pkt; pkt != NULL; pkt = pkt1) */
 	/* { */
 		/* pkt1 = pkt->next; */
-		/* // FIXME warning about av_free_packet is depricated */
+		/* // ... warning about av_free_packet is depricated */
 		/* av_free_packet(&pkt->pkt); */
 		/* av_freep(&pkt); */
 	/* } */
