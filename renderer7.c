@@ -1008,14 +1008,30 @@ void decode_thread(void * arg)
 			/* packet_queue_put(&videoState->videoq, packet); */
 			LOG("==> sending av packet of size %i to video queue ...", packet->size);
 			/* sendp(videoState->videoq, packet); */
-			send(videoState->videoq, packet);
+			int sendret = send(videoState->videoq, packet);
+			if (sendret == 1) {
+				LOG("<== sending av packet of size %i to video queue succeeded.", packet->size);
+			} else if (sendret == -1) {
+				LOG("<== sending av packet to video queue interrupted");
+			}
+			else {
+				LOG("<== unforseen error when sending av packet to video queue");
+			}
 		}
 		else if (packet->stream_index == videoState->audioStream)
 		{
 			/* packet_queue_put(&videoState->audioq, packet); */
 			LOG("==> sending av packet of size %i to audio queue ...", packet->size);
 			/* sendp(videoState->audioq, packet); */
-			send(videoState->audioq, packet);
+			int sendret = send(videoState->audioq, packet);
+			if (sendret == 1) {
+				LOG("<== sending av packet of size %i to audio queue succeeded.", packet->size);
+			} else if (sendret == -1) {
+				LOG("<== sending av packet to audio queue interrupted");
+			}
+			else {
+				LOG("<== unforseen error when sending av packet to audio queue");
+			}
 		}
 		else
 		{
@@ -1448,7 +1464,15 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 	}
 	LOG("==> sending decoded video frame with pts %f to picture queue ...", videoPicture->pts);
 	/* sendp(videoState->pictq, videoPicture); */
-	send(videoState->pictq, videoPicture);
+	int sendret = send(videoState->pictq, videoPicture);
+	if (sendret == 1) {
+		LOG("<== sending decoded video frame with pts %f to picture queue succeeded.", videoPicture->pts);
+	} else if (sendret == -1) {
+		LOG("<== sending decoded video frame to picture queue interrupted");
+	}
+	else {
+		LOG("<== unforseen error when sending decoded video frame to picture queue");
+	}
 
 	return 0;
 }
@@ -1882,8 +1906,15 @@ void video_refresh_timer(void * userdata)
 			// get VideoPicture reference using the queue read index
 			/* videoPicture = &videoState->pictq[videoState->pictq_rindex]; */
 			/* videoPicture = recvp(videoState->pictq); */
-			recv(videoState->pictq, videoPicture);
-			LOG("<== received decoded video frame with pts %f from picture queue.", videoPicture->pts);
+			int recret = recv(videoState->pictq, videoPicture);
+			if (recret == 1) {
+				LOG("<== received decoded video frame with pts %f from picture queue.", videoPicture->pts);
+			} else if (recret == -1) {
+				LOG("<== reveiving decoded video frame from picture queue interrupted");
+			}
+			else {
+				LOG("<== unforseen error when receiving decoded video frame from picture queue");
+			}
 
 			if (_DEBUG_)
 			{
@@ -2209,7 +2240,8 @@ void video_display(VideoState * videoState, VideoPicture *videoPicture)
 	int w, h, x, y;
 
 	if (videoPicture->rgb_frame) {
-		saveFrame(videoPicture->rgb_frame, videoState, (int)1000*(videoPicture->pts));
+		// Disabled saving frame to disc for now, it takes too much disc space ...
+		/* saveFrame(videoPicture->rgb_frame, videoState, (int)1000*(videoPicture->pts)); */
 	}
 
 	if (videoPicture->frame)
@@ -2754,8 +2786,15 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 		// get more audio AVPacket
 		/* int ret = packet_queue_get(&videoState->audioq, avPacket, 1); */
 		/* avPacket = recvp(videoState->audioq); */
-		recv(videoState->audioq, avPacket);
-		LOG("<== received av packet of size %i from audio queue.", avPacket->size);
+		int recret = recv(videoState->audioq, avPacket);
+		if (recret == 1) {
+			LOG("<== received av packet of size %i from audio queue.", avPacket->size);
+		} else if (recret == -1) {
+			LOG("<== reveiving av packet from audio queue interrupted");
+		}
+		else {
+			LOG("<== unforseen error when receiving av packet from audio queue");
+		}
 
 		// if packet_queue_get returns < 0, the global quit flag was set
 		/* if (ret < 0) */
