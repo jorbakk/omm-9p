@@ -1547,14 +1547,12 @@ void video_thread(void * arg)
 			// means we quit getting packets
 			break;
 		}
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		// FIXME added this check because there are packets of size 0 popping out of the Channel
-		// ... is there temporarily no packet on the Channel then?
+		// Added this check because there were packets of size 0 popping out of the Channel
+		// before changing from sendp/recvp to send/recv
 		if (packet->size == 0) {
 			LOG("PACKET SIZE IS 0");
 			/* continue; */
 		}
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 		if (packet->data == flush_pkt.data)
 		{
