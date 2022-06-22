@@ -8,7 +8,11 @@ LIBS   += $(9PLIBS) $(AVLIBS) $(SDL2LIBS)
 CFLAGS += $(SDL2CFLAGS)
 
 # all: build/renderer7 build/renderer build/threadtest
-all: build/renderer7 build/renderer
+all: build/renderer7 build/renderer1 build/renderer
+
+build/renderer1: renderer1.c
+	9c -g -o build/renderer1.o $(CFLAGS) renderer1.c
+	9l -g -o build/renderer1 build/renderer1.o $(LIBS)
 
 build/renderer7: renderer7.c
 	9c -g -o build/renderer7.o $(CFLAGS) renderer7.c

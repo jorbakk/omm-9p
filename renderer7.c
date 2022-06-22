@@ -473,17 +473,10 @@ char *aname;
 int
 demuxerPacketRead(void *fid, uint8_t *buf, int count)
 {
-	// FIXME threadpin() and threadunpin() are not available in plan9port ...
-	// FIXME if we use ioproc functions like ioread(), how can we seek() then ...?
-	// FIXME use QLock (lock(3)) to suspend executing the calling thread?
-	//       Then need to pass it through the data pointer ...
-	/* threadpin(); */
 	LOG("demuxer reading %d bytes from fid: %p into buf: %p ...", count, fid, buf);
 	CFid *cfid = (CFid*)fid;
 	int ret = fsread(cfid, buf, count);
-	// FIXME How can we avoid that we pass control to the main thread here?
 	LOG("demuxer read %d bytes", ret);
-	/* threadunpin(); */
 	return ret;
 }
 
@@ -628,12 +621,14 @@ threadmain(int argc, char **argv)
 	/* SDL_Event event; */
 	for(;;)
 	{
-		LOG("yielding ...");
+		LOG("threadmain yielding ...");
 		// FIXME why does yield() not pass control to the decoder thread here,
 		// after coming from the decoder thread in the second loop interation?
 		yield();
-		LOG("yielded.");
+		LOG("threadmain yielded.");
+
 		video_refresh_timer(videoState);
+
 		/* sleep(10); */
 
 		/* double incr, pos; */
@@ -816,7 +811,7 @@ void decode_thread(void * arg)
 	ret = avformat_find_stream_info(pFormatCtx, NULL);
 	if (ret < 0)
 	{
-		printf("Could not find stream information: %s.\n", videoState->filename);
+		LOG("Could not find stream information: %s.", videoState->filename);
 		/* return -1; */
 		return;
 	}
@@ -848,8 +843,8 @@ void decode_thread(void * arg)
 	// return with error in case no video stream was found
 	if (videoStream == -1)
 	{
-		printf("Could not find video stream.\n");
-		goto fail;
+		LOG("Could not find video stream.");
+		/* goto fail; */
 	}
 	else
 	{
@@ -868,20 +863,20 @@ void decode_thread(void * arg)
 	// return with error in case no audio stream was found
 	if (audioStream == -1)
 	{
-		printf("Could not find audio stream.\n");
-		goto fail;
+		LOG("Could not find audio stream.");
+		/* goto fail; */
 	}
 	else
 	{
 		// open audio stream component codec
 		// FIXME!!! not opening audio at the moment ...
-		/* ret = stream_component_open(videoState, audioStream); */
+		ret = stream_component_open(videoState, audioStream);
 		/* ret = 0; */
 
 		// check audio codec was opened correctly
 		if (ret < 0)
 		{
-			printf("Could not open audio codec.\n");
+			LOG("Could not open audio codec.");
 			goto fail;
 		}
 		LOG("audio stream component opened successfully.");
@@ -891,16 +886,18 @@ void decode_thread(void * arg)
 	// FIXME currently continueuing without audio ... or video ...
 	/* if (videoState->videoStream < 0 || videoState->audioStream < 0) */
 	/* if (videoState->videoStream < 0) */
-	/* { */
+	if (videoState->videoStream < 0 && videoState->audioStream < 0)
+	{
 		/* printf("Could not open codecs: %s.\n", videoState->filename); */
-		/* goto fail; */
-	/* } */
+		LOG("no video and audio stream found");
+		goto fail;
+	}
 
 	// alloc the AVPacket used to read the media file
 	AVPacket * packet = av_packet_alloc();
 	if (packet == NULL)
 	{
-		printf("Could not allocate AVPacket.\n");
+		LOG("Could not allocate AVPacket.");
 		goto fail;
 	}
 
@@ -1512,7 +1509,8 @@ void video_thread(void * arg)
 		// FIXME added this check because there are packets of size 0 popping out of the Channel
 		// ... is there temporarily no packet on the Channel then?
 		if (packet->size == 0) {
-			continue;
+			LOG("PACKET SIZE IS 0");
+			/* continue; */
 		}
 
 		if (packet->data == flush_pkt.data)
@@ -1832,7 +1830,8 @@ int synchronize_audio(VideoState * videoState, short * samples, int samples_size
  */
 void video_refresh_timer(void * userdata)
 {
-	fprintf(stderr, "\n!!!VIDEO_REFRESH_TIMER CALLED!!!\n");
+	/* fprintf(stderr, "\n!!!VIDEO_REFRESH_TIMER CALLED!!!\n"); */
+	LOG("refresh timer ...");
 
 	// retrieve global VideoState reference
 	VideoState * videoState = (VideoState *)userdata;
@@ -1865,15 +1864,16 @@ void video_refresh_timer(void * userdata)
 
 			if (_DEBUG_)
 			{
-				printf("Current Frame PTS:\t\t%f\n", videoPicture->pts);
-				printf("Last Frame PTS:\t\t\t%f\n", videoState->frame_last_pts);
+				LOG("Current Frame PTS:\t\t%f", videoPicture->pts);
+				LOG("Last Frame PTS:\t\t\t%f", videoState->frame_last_pts);
 			}
 
 			// get last frame pts
 			pts_delay = videoPicture->pts - videoState->frame_last_pts;
 
-			if (_DEBUG_)
-				printf("PTS Delay:\t\t\t\t%f\n", pts_delay);
+			if (_DEBUG_) {
+				LOG("PTS Delay:\t\t\t\t%f", pts_delay);
+			}
 
 			// if the obtained delay is incorrect
 			if (pts_delay <= 0 || pts_delay >= 1.0)
@@ -1882,8 +1882,9 @@ void video_refresh_timer(void * userdata)
 				pts_delay = videoState->frame_last_delay;
 			}
 
-			if (_DEBUG_)
-				printf("Corrected PTS Delay:\t%f\n", pts_delay);
+			if (_DEBUG_) {
+				LOG("Corrected PTS Delay:\t%f", pts_delay);
+			}
 
 			// save delay information for the next time
 			videoState->frame_last_delay = pts_delay;
@@ -1895,20 +1896,23 @@ void video_refresh_timer(void * userdata)
 				// update delay to stay in sync with the master clock: audio or video
 				audio_ref_clock = get_master_clock(videoState);
 
-				if (_DEBUG_)
-					printf("Ref Clock:\t\t\t\t%f\n", audio_ref_clock);
+				if (_DEBUG_) {
+					LOG("Ref Clock:\t\t\t\t%f", audio_ref_clock);
+				}
 
 				// calculate audio video delay accordingly to the master clock
 				audio_video_delay = videoPicture->pts - audio_ref_clock;
 
-				if (_DEBUG_)
-					printf("Audio Video Delay:\t\t%f\n", audio_video_delay);
+				if (_DEBUG_) {
+					LOG("Audio Video Delay:\t\t%f", audio_video_delay);
+				}
 
 				// skip or repeat the frame taking into account the delay
 				sync_threshold = (pts_delay > AV_SYNC_THRESHOLD) ? pts_delay : AV_SYNC_THRESHOLD;
 
-				if (_DEBUG_)
-					printf("Sync Threshold:\t\t\t%f\n", sync_threshold);
+				if (_DEBUG_) {
+					LOG("Sync Threshold:\t\t\t%f", sync_threshold);
+				}
 
 				// check audio video delay absolute value is below sync threshold
 				if(fabs(audio_video_delay) < AV_NOSYNC_THRESHOLD)
@@ -1924,29 +1928,33 @@ void video_refresh_timer(void * userdata)
 				}
 			}
 
-			if (_DEBUG_)
-				printf("Corrected PTS delay:\t%f\n", pts_delay);
+			if (_DEBUG_) {
+				LOG("Corrected PTS delay:\t%f", pts_delay);
+			}
 
 			videoState->frame_timer += pts_delay;
 
 			// compute the real delay
 			real_delay = videoState->frame_timer - (av_gettime() / 1000000.0);
 
-			if (_DEBUG_)
-				printf("Real Delay:\t\t\t\t%f\n", real_delay);
+			if (_DEBUG_) {
+				LOG("Real Delay:\t\t\t\t%f", real_delay);
+			}
 
 			if (real_delay < 0.010)
 			{
 				real_delay = 0.010;
 			}
 
-			if (_DEBUG_)
-				printf("Corrected Real Delay:\t%f\n", real_delay);
+			if (_DEBUG_) {
+				LOG("Corrected Real Delay:\t%f", real_delay);
+			}
 
 			schedule_refresh(videoState, (Uint32)(real_delay * 1000 + 0.5));
 
-			if (_DEBUG_)
-				printf("Next Scheduled Refresh:\t%f\n\n", (real_delay * 1000 + 0.5));
+			if (_DEBUG_) {
+				LOG("Next Scheduled Refresh:\t%f\n", (real_delay * 1000 + 0.5));
+			}
 
 			// show the frame on the SDL_Surface (the screen)
 			video_display(videoState);
@@ -1974,6 +1982,7 @@ void video_refresh_timer(void * userdata)
 	{
 		schedule_refresh(videoState, 100);
 	}
+	LOG("refresh timer finished.");
 }
 
 /**
@@ -2178,7 +2187,9 @@ void video_display(VideoState * videoState)
 
 	// get next VideoPicture to be displayed from the VideoPicture queue
 	/* videoPicture = &videoState->pictq[videoState->pictq_rindex]; */
+	LOG("receiving video picture for display ...");
 	videoPicture = recvp(videoState->pictq);
+	LOG("received video picture.");
 
 	if (videoPicture->rgb_frame) {
 		saveFrame(videoPicture->rgb_frame, videoState, (int)1000*(videoPicture->pts));
@@ -2232,8 +2243,8 @@ void video_display(VideoState * videoState)
 			if (_DEBUG_)
 			{
 				// dump information about the frame being rendered
-				printf(
-						"Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]\n",
+				LOG(
+						"Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]",
 						av_get_picture_type_char(videoPicture->frame->pict_type),
 						videoState->video_ctx->frame_number,
 						videoPicture->frame->pts,
@@ -3061,62 +3072,10 @@ void stream_seek(VideoState * videoState, int64_t pos, int rel)
 /* void saveFrame(AVFrame *pFrame, int width, int height, int pix_fmt, int frameIndex) */
 void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex)
 {
+	LOG("saving video picture to file ...");
     FILE * pFile;
     char szFilename[32];
     int  y;
-
-	// FIXME probably need to allocate the RGB frame only once to avoid the errors in the output ppm images
-    /* AVFrame * pFrameRGB = NULL; */
-    /* pFrameRGB = av_frame_alloc(); */
-    /* if (pFrameRGB == NULL) */
-    /* { */
-        /* // Could not allocate frame */
-        /* printf("Could not allocate frame.\n"); */
-
-        /* // exit with error */
-        /* return; */
-    /* } */
-    /* uint8_t * buffer = NULL; */
-    /* int numBytes; */
-    // Determine required buffer size and allocate buffer
-    // numBytes = avpicture_get_size(AV_PIX_FMT_RGB24, width, height);
-    // https://ffmpeg.org/pipermail/ffmpeg-devel/2016-January/187299.html
-    // what is 'linesize alignment' meaning?:
-    // https://stackoverflow.com/questions/35678041/what-is-linesize-alignment-meaning
-    /* numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, width, height, 32); */
-    /* buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t)); */
-
-    /* struct SwsContext * sws_ctx = NULL; */
-    /* sws_ctx = sws_getContext( */
-        /* width, */
-        /* height, */
-        /* pix_fmt, */
-        /* width, */
-        /* height, */
-        /* AV_PIX_FMT_RGB24,   // sws_scale destination color scheme */
-        /* SWS_BILINEAR, */
-        /* NULL, */
-        /* NULL, */
-        /* NULL */
-    /* ); */
-    /* av_image_fill_arrays( */
-        /* pFrameRGB->data, */
-        /* pFrameRGB->linesize, */
-        /* buffer, */
-        /* AV_PIX_FMT_RGB24, */
-        /* width, */
-        /* height, */
-        /* 32 */
-    /* ); */
-    /* sws_scale( */
-        /* videoState->video_ctx->rgb_ctx, */
-        /* (uint8_t const * const *)pFrame->data, */
-        /* pFrame->linesize, */
-        /* 0, */
-        /* videoState->video_ctx->height, */
-        /* pFrameRGB->data, */
-        /* pFrameRGB->linesize */
-    /* ); */
 
     /**
      * We do a bit of standard file opening, etc., and then write the RGB data.
@@ -3149,6 +3108,5 @@ void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex)
 
     // Close file
     fclose(pFile);
-
-    // FIXME free all buffers, frames ...
+	LOG("saved video picture.");
 }
