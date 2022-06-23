@@ -1047,7 +1047,7 @@ void audio_thread(void * arg)
 {
 	LOG("audio thread ...");
 	VideoState *videoState = (VideoState*)arg;
-	FILE *audio_out = fopen("/tmp/out.au", "wb");
+	FILE *audio_out = fopen("/tmp/out.pcm", "wb");
 	AVPacket *packet = av_packet_alloc();
 	if (packet == NULL) {
 		printf("Could not allocate AVPacket.\n");
