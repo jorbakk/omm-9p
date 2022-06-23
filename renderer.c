@@ -909,10 +909,11 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 }
 
 
-void video_thread(void * arg)
+void video_thread(void *arg)
 {
 	LOG("video thread ...");
-	VideoState * videoState = (VideoState *)arg;
+	VideoState *videoState = (VideoState*)arg;
+	/* AVPacket packet; */
 	AVPacket * packet = av_packet_alloc();
 	if (packet == NULL) {
 		printf("Could not allocate AVPacket.\n");
@@ -920,7 +921,7 @@ void video_thread(void * arg)
 	}
 	// set this when we are done decoding an entire frame
 	int frameFinished = 0;
-	static AVFrame * pFrame = NULL;
+	static AVFrame *pFrame = NULL;
 	pFrame = av_frame_alloc();
 	if (!pFrame) {
 		printf("Could not allocate AVFrame.\n");
@@ -936,6 +937,8 @@ void video_thread(void * arg)
 	{
 		LOG("video_thread looping ...");
 		/* packet = recvp(videoState->videoq); */
+		/* int recret = recv(videoState->videoq, &packet); */
+		/* if (recret == 1) { LOG("<== received av packet of size %i from video queue.", packet.size); */
 		int recret = recv(videoState->videoq, packet);
 		if (recret == 1) { LOG("<== received av packet of size %i from video queue.", packet->size);
 		}
@@ -950,15 +953,19 @@ void video_thread(void * arg)
 		}
 		// Added this check because there were packets of size 0 popping out of the Channel
 		// before changing from sendp/recvp to send/recv
-		if (packet->size == 0) { 
+		/* if (packet.size == 0) {  */
+		if (packet->size == 0) {
 			LOG("PACKET SIZE IS 0");
 			/* continue; */
 		}
+		/* if (packet.data == flush_pkt.data) { */
 		if (packet->data == flush_pkt.data) {
 			avcodec_flush_buffers(videoState->video_ctx);
 			continue;
 		}
 		// give the decoder raw compressed data in an AVPacket
+		/* LOG("sending video packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet.size, videoState->video_ctx->width, videoState->video_ctx->height); */
+		/* int ret = avcodec_send_packet(videoState->video_ctx, &packet); */
 		LOG("sending video packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet->size, videoState->video_ctx->width, videoState->video_ctx->height);
 		int ret = avcodec_send_packet(videoState->video_ctx, packet);
 		LOG("sending returns: %d", ret);
@@ -1018,6 +1025,7 @@ void video_thread(void * arg)
 			}
 		}
 		av_packet_unref(packet);
+		/* av_packet_unref(&packet); */
 	}
 	av_frame_unref(pFrame);
 	/* av_frame_free(&pFrame); */
