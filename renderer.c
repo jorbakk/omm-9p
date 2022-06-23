@@ -1505,55 +1505,44 @@ void video_display(VideoState * videoState, VideoPicture *videoPicture)
 		x = (screen_width - w);
 		y = (screen_height - h);
 		// check the number of frames to decode was not exceeded
-		if (++videoState->currentFrameIndex < videoState->maxFramesToDecode) {
-			if (_DEBUG_) {
-				// dump information about the frame being rendered
-				LOG(
-						"Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]",
-						av_get_picture_type_char(videoPicture->frame->pict_type),
-						videoState->video_ctx->frame_number,
-						videoPicture->frame->pts,
-						videoPicture->frame->pkt_dts,
-						videoPicture->frame->key_frame,
-						videoPicture->frame->coded_picture_number,
-						videoPicture->frame->display_picture_number,
-						videoPicture->frame->width,
-						videoPicture->frame->height
-				);
-			}
-			// set blit area x and y coordinates, width and height
-			SDL_Rect rect;
-			rect.x = x;
-			rect.y = y;
-			rect.w = w;
-			rect.h = h;
-			// update the texture with the new pixel data
-			SDL_UpdateYUVTexture(
-					videoState->texture,
-					&rect,
-					videoPicture->frame->data[0],
-					videoPicture->frame->linesize[0],
-					videoPicture->frame->data[1],
-					videoPicture->frame->linesize[1],
-					videoPicture->frame->data[2],
-					videoPicture->frame->linesize[2]
+		if (_DEBUG_) {
+			// dump information about the frame being rendered
+			LOG(
+					"Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]",
+					av_get_picture_type_char(videoPicture->frame->pict_type),
+					videoState->video_ctx->frame_number,
+					videoPicture->frame->pts,
+					videoPicture->frame->pkt_dts,
+					videoPicture->frame->key_frame,
+					videoPicture->frame->coded_picture_number,
+					videoPicture->frame->display_picture_number,
+					videoPicture->frame->width,
+					videoPicture->frame->height
 			);
-			// clear the current rendering target with the drawing color
-			SDL_RenderClear(videoState->renderer);
-			// copy a portion of the texture to the current rendering target
-			SDL_RenderCopy(videoState->renderer, videoState->texture, NULL, NULL);
-			// update the screen with any rendering performed since the previous call
-			SDL_RenderPresent(videoState->renderer);
 		}
-		else {
-			// create an SDLEvent of type FF_QUIT_EVENT
-			// FIXME need to replace FF_QUIT_EVENT ...?
-			/* SDL_Event event; */
-			/* event.type = FF_QUIT_EVENT; */
-			/* event.user.data1 = videoState; */
-			// push the event
-			/* SDL_PushEvent(&event); */
-		}
+		// set blit area x and y coordinates, width and height
+		SDL_Rect rect;
+		rect.x = x;
+		rect.y = y;
+		rect.w = w;
+		rect.h = h;
+		// update the texture with the new pixel data
+		SDL_UpdateYUVTexture(
+				videoState->texture,
+				&rect,
+				videoPicture->frame->data[0],
+				videoPicture->frame->linesize[0],
+				videoPicture->frame->data[1],
+				videoPicture->frame->linesize[1],
+				videoPicture->frame->data[2],
+				videoPicture->frame->linesize[2]
+		);
+		// clear the current rendering target with the drawing color
+		SDL_RenderClear(videoState->renderer);
+		// copy a portion of the texture to the current rendering target
+		SDL_RenderCopy(videoState->renderer, videoState->texture, NULL, NULL);
+		// update the screen with any rendering performed since the previous call
+		SDL_RenderPresent(videoState->renderer);
 	}
 }
 
