@@ -24,6 +24,7 @@
 // TODO
 // 1. Random crashes when playing mp4 files, reproducible with iron.mp4
 //    - no issues with transport streams
+//    - most likely connected to freeing avframes
 // 2. Crash on opening / processing audio stream
 //    - most likely the sdl audio callback
 // 3. AV sync
@@ -757,6 +758,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 void
 init_picture(void *userdata, VideoPicture *videoPicture)
 {
+	LOG("init picture ...");
 	// retrieve global VideoState reference.
 	VideoState * videoState = (VideoState *)userdata;
 
@@ -827,8 +829,11 @@ init_picture(void *userdata, VideoPicture *videoPicture)
 void
 deinit_picture(void *userdata, VideoPicture *videoPicture)
 {
-	av_frame_free(&videoPicture->frame);
-	av_free(videoPicture->frame);
+	LOG("deinit picture ...");
+	av_frame_unref(videoPicture->frame);
+	/* av_frame_free(&videoPicture->frame); */
+	/* av_free(videoPicture->frame); */
+
 	/* av_frame_free(&videoPicture->rgb_frame); */
 	/* av_free(videoPicture->rgb_frame); */
 }
@@ -940,7 +945,8 @@ void video_thread(void * arg)
 		}
 		// Added this check because there were packets of size 0 popping out of the Channel
 		// before changing from sendp/recvp to send/recv
-		if (packet->size == 0) { LOG("PACKET SIZE IS 0");
+		if (packet->size == 0) { 
+			LOG("PACKET SIZE IS 0");
 			/* continue; */
 		}
 		if (packet->data == flush_pkt.data) {
@@ -1008,8 +1014,9 @@ void video_thread(void * arg)
 		}
 		av_packet_unref(packet);
 	}
-	av_frame_free(&pFrame);
-	av_free(pFrame);
+	av_frame_unref(pFrame);
+	/* av_frame_free(&pFrame); */
+	/* av_free(pFrame); */
 	return;
 }
 
@@ -1560,7 +1567,8 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 		LOG("audio_decode_frame() looping");
 		// check global quit flag
 		if (videoState->quit) {
-			av_frame_free(&avFrame);
+			av_frame_unref(avFrame);
+			/* av_frame_free(&avFrame); */
 			return -1;
 		}
 		// check if we obtained an AVPacket from the audio PacketQueue
@@ -1589,7 +1597,8 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 			}
 			else if (ret < 0) {
 				LOG("avcodec_receive_frame/send_packet decoding error: %s", av_err2str(ret));
-				av_frame_free(&avFrame);
+				av_frame_unref(avFrame);
+				/* av_frame_free(&avFrame); */
 				return -1;
 			}
 			else {
@@ -1628,7 +1637,8 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 				// wipe the packet
 				av_packet_unref(avPacket);
 			}
-			av_frame_free(&avFrame);
+			av_frame_unref(avFrame);
+			/* av_frame_free(&avFrame); */
 			// we have the data, return it and come back for more later
 			return data_size;
 		}
@@ -1665,7 +1675,8 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 			videoState->audio_clock = av_q2d(videoState->audio_st->time_base)*avPacket->pts;
 		}
 	}
-	av_frame_free(&avFrame);
+	av_frame_unref(avFrame);
+	/* av_frame_free(&avFrame); */
 	return 0;
 }
 
