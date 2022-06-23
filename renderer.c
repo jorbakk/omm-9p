@@ -491,7 +491,7 @@ void demuxer_thread(void * arg)
 		LOG("both video and audio stream missing");
 		goto fail;
 	}
-	AVPacket * packet = av_packet_alloc();
+	AVPacket *packet = av_packet_alloc();
 	if (packet == NULL) {
 		LOG("Could not allocate AVPacket.");
 		goto fail;
@@ -603,10 +603,12 @@ void demuxer_thread(void * arg)
 				LOG("==> unforseen error when sending av packet to audio queue");
 			}
 		}
-		else {
-			av_packet_unref(packet);
-		}
+		/* else { */
+			/* av_packet_unref(packet); */
+		/* } */
 	}
+	av_packet_unref(packet);
+
 	// wait for the rest of the program to end
 	// FIXME need a replacement ...?
 	/* while (!videoState->quit) */
