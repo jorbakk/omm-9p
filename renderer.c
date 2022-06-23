@@ -597,7 +597,13 @@ void decode_thread(void * arg)
 	/* { */
 		/* SDL_Delay(100); */
 	/* } */
+	if (pIOCtx) {
+		avio_context_free(&pIOCtx);
+	}
 	avformat_close_input(&pFormatCtx);
+	if (pFormatCtx) {
+		avformat_free_context(pFormatCtx);
+	}
 	// in case of failure, push the FF_QUIT_EVENT and return
 	LOG("quitting decode thread");
 	threadexitsall("end of file");
