@@ -1033,9 +1033,9 @@ void video_thread(void *arg)
 				}
 			}
 		}
-		av_packet_unref(packet);
-		/* av_packet_unref(&packet); */
 	}
+	av_packet_unref(packet);
+	/* av_packet_unref(&packet); */
 	av_frame_unref(pFrame);
 	/* av_frame_free(&pFrame); */
 	/* av_free(pFrame); */
@@ -1131,8 +1131,8 @@ void audio_thread(void * arg)
 				fwrite(videoState->audio_buf, 1, data_size, audio_out);
 			}
 		}
-		av_packet_unref(packet);
 	}
+	av_packet_unref(packet);
 	av_frame_unref(pFrame);
 	fclose(audio_out);
 	return;
