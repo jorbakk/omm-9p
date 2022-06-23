@@ -32,11 +32,10 @@
 // 2. Crash on opening / processing audio stream
 //    - most likely the SDL audio callback using threads in libsdl
 //    -> yes, decoding audio works without SDL audio callback
-// 3. Write decoded audio to a file
-// 4. AV sync
-// 5. Proper shutdown of renderer
-// 6. Keyboard events
-// 7. 9P control server
+// 3. AV sync
+// 4. Proper shutdown of renderer
+// 5. Keyboard events
+// 6. 9P control server
 
 // Current thread layout:
 //   main_thread
@@ -1048,6 +1047,7 @@ void audio_thread(void * arg)
 {
 	LOG("audio thread ...");
 	VideoState *videoState = (VideoState*)arg;
+	FILE *audio_out = fopen("/tmp/out.au", "wb");
 	AVPacket *packet = av_packet_alloc();
 	if (packet == NULL) {
 		printf("Could not allocate AVPacket.\n");
@@ -1118,11 +1118,23 @@ void audio_thread(void * arg)
 			}
 			else {
 				LOG("audio frame finished");
+				/* // output silence */
+				/* videoState->audio_buf_size = 1024; */
+				/* // clear memory */
+				/* memset(videoState->audio_buf, 0, videoState->audio_buf_size); */
+				int data_size = audio_resampling(
+						videoState,
+						pFrame,
+						AV_SAMPLE_FMT_S16,
+						videoState->audio_buf);
+				LOG("resampled audio bytes: %d", data_size);
+				fwrite(videoState->audio_buf, 1, data_size, audio_out);
 			}
 		}
 		av_packet_unref(packet);
 	}
 	av_frame_unref(pFrame);
+	fclose(audio_out);
 	return;
 }
 
