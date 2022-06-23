@@ -293,7 +293,8 @@ xparse(char *name, char **path)
 		fs = nsmnt(name, aname);
 		if(fs == nil)
 			sysfatal("mount: %r");
-	} else {
+	}
+	else {
 		LOG("setting path to: %s", name);
 		*path = name;
 		LOG("dialing address: %s ...", addr);
@@ -399,7 +400,7 @@ void decode_thread(void * arg)
 		NULL,				 // function for writing packets
 		demuxerPacketSeek	 // function for seeking to position in stream
 		);
-	if(!pIOCtx){
+	if(!pIOCtx) {
 		sysfatal("failed to allocate memory for ffmpeg av io context");
 	}
 	AVFormatContext *pFormatCtx = avformat_alloc_context();
@@ -441,8 +442,7 @@ void decode_thread(void * arg)
 		LOG("Could not find video stream.");
 		/* goto fail; */
 	}
-	else
-	{
+	else {
 		ret = stream_component_open(videoState, videoStream);
 		if (ret < 0) {
 			printf("Could not open video codec.\n");
@@ -454,8 +454,7 @@ void decode_thread(void * arg)
 		LOG("Could not find audio stream.");
 		/* goto fail; */
 	}
-	else
-	{
+	else {
 		// open audio stream component codec
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 		// FIXME!!! not opening audio at the moment ... if we do, we crash
@@ -509,8 +508,7 @@ void decode_thread(void * arg)
 				// ... warning about FormatCtx->filename is depricated ... should vanish when switching to 9P
 				/* fprintf(stderr, "%s: error while seeking\n", videoState->pFormatCtx->filename); */
 			}
-			else
-			{
+			else {
 				if (videoState->videoStream >= 0) {
 					// FIXME need some means to flush a channel?
 					/* packet_queue_flush(&videoState->videoq); */
@@ -550,8 +548,7 @@ void decode_thread(void * arg)
 
 				/* continue; */
 			/* } */
-			else
-			{
+			else {
 				// exit for loop in case of error
 				break;
 			}
@@ -567,7 +564,8 @@ void decode_thread(void * arg)
 			int sendret = send(videoState->videoq, packet);
 			if (sendret == 1) {
 				LOG("<== sending av packet of size %i to video queue succeeded.", packet->size);
-			} else if (sendret == -1) {
+			}
+			else if (sendret == -1) {
 				LOG("<== sending av packet to video queue interrupted");
 			}
 			else {
@@ -580,15 +578,15 @@ void decode_thread(void * arg)
 			int sendret = send(videoState->audioq, packet);
 			if (sendret == 1) {
 				LOG("<== sending av packet of size %i to audio queue succeeded.", packet->size);
-			} else if (sendret == -1) {
+			}
+			else if (sendret == -1) {
 				LOG("<== sending av packet to audio queue interrupted");
 			}
 			else {
 				LOG("<== unforseen error when sending av packet to audio queue");
 			}
 		}
-		else
-		{
+		else {
 			av_packet_unref(packet);
 		}
 	}
@@ -871,7 +869,8 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 	int sendret = send(videoState->pictq, videoPicture);
 	if (sendret == 1) {
 		LOG("<== sending decoded video frame with pts %f to picture queue succeeded.", videoPicture->pts);
-	} else if (sendret == -1) {
+	}
+	else if (sendret == -1) {
 		LOG("<== sending decoded video frame to picture queue interrupted");
 	}
 	else {
@@ -910,9 +909,11 @@ void video_thread(void * arg)
 		/* packet = recvp(videoState->videoq); */
 		int recret = recv(videoState->videoq, packet);
 		if (recret == 1) { LOG("<== received av packet of size %i from video queue.", packet->size);
-		} else if (recret == -1) {
+		}
+		else if (recret == -1) {
 			LOG("<== reveiving av packet from video queue interrupted");
-		} else {
+		}
+		else {
 			LOG("<== unforseen error when receiving av packet from video queue");
 		}
 		if (packet == NULL) {
@@ -958,8 +959,7 @@ void video_thread(void * arg)
 				LOG("Error while decoding: %s", av_err2str(ret));
 				return;
 			}
-			else
-			{
+			else {
 				LOG("video frame finished");
 				frameFinished = 1;
 			}
@@ -1014,7 +1014,8 @@ static int64_t guess_correct_pts(AVCodecContext * ctx, int64_t reordered_pts, in
 	}
 	if ((ctx->pts_correction_num_faulty_pts <= ctx->pts_correction_num_faulty_dts || dts == AV_NOPTS_VALUE) && reordered_pts != AV_NOPTS_VALUE) {
 		pts = reordered_pts;
-	} else {
+	}
+	else {
 		pts = dts;
 	}
 	return pts;
@@ -1027,7 +1028,8 @@ double synchronize_video(VideoState * videoState, AVFrame * src_frame, double pt
 	if (pts != 0) {
 		// if we have pts, set video clock to it
 		videoState->video_clock = pts;
-	} else {
+	}
+	else {
 		// if we aren't given a pts, set it to the clock
 		pts = videoState->video_clock;
 	}
@@ -1056,7 +1058,8 @@ int synchronize_audio(VideoState * videoState, short * samples, int samples_size
 			videoState->audio_diff_cum = diff + videoState->audio_diff_avg_coef * videoState->audio_diff_cum;
 			if (videoState->audio_diff_avg_count < AUDIO_DIFF_AVG_NB) {
 				videoState->audio_diff_avg_count++;
-			} else {
+			}
+			else {
 				avg_diff = videoState->audio_diff_cum * (1.0 - videoState->audio_diff_avg_coef);
 				/**
 				 * So we're doing pretty well; we know approximately how off the audio
@@ -1089,7 +1092,7 @@ int synchronize_audio(VideoState * videoState, short * samples, int samples_size
 						/* remove samples */
 						samples_size = wanted_size;
 					}
-					else if(wanted_size > samples_size) {
+					else if (wanted_size > samples_size) {
 						uint8_t *samples_end, *q;
 						int nb;
 						/* add samples by copying final sample*/
@@ -1144,7 +1147,8 @@ void video_refresh_timer(void * userdata)
 			int recret = recv(videoState->pictq, videoPicture);
 			if (recret == 1) {
 				LOG("<== received decoded video frame with pts %f from picture queue.", videoPicture->pts);
-			} else if (recret == -1) {
+			}
+			else if (recret == -1) {
 				LOG("<== reveiving decoded video frame from picture queue interrupted");
 			}
 			else {
@@ -1267,7 +1271,8 @@ double get_master_clock(VideoState * videoState)
 	}
 	else if (videoState->av_sync_type == AV_SYNC_EXTERNAL_MASTER) {
 		return get_external_clock(videoState);
-	} else {
+	}
+	else {
 		fprintf(stderr, "Error: Undefined A/V sync type.");
 		return -1;
 	}
@@ -1348,7 +1353,8 @@ void video_display(VideoState * videoState, VideoPicture *videoPicture)
 	if (videoPicture->frame) {
 		if (videoState->video_ctx->sample_aspect_ratio.num == 0) {
 			aspect_ratio = 0;
-		} else {
+		}
+		else {
 			aspect_ratio = av_q2d(videoState->video_ctx->sample_aspect_ratio) * videoState->video_ctx->width / videoState->video_ctx->height;
 		}
 		if (aspect_ratio <= 0.0) {
@@ -1414,8 +1420,7 @@ void video_display(VideoState * videoState, VideoPicture *videoPicture)
 			// update the screen with any rendering performed since the previous call
 			SDL_RenderPresent(videoState->renderer);
 		}
-		else
-		{
+		else {
 			// create an SDLEvent of type FF_QUIT_EVENT
 			// FIXME need to replace FF_QUIT_EVENT ...?
 			/* SDL_Event event; */
@@ -1482,7 +1487,8 @@ void audio_callback(void * userdata, Uint8 * stream, int len)
 				memset(videoState->audio_buf, 0, videoState->audio_buf_size);
 
 				printf("audio_decode_frame() failed.\n");
-			} else {
+			}
+			else {
 				audio_size = synchronize_audio(videoState, (int16_t *)videoState->audio_buf, audio_size);
 
 				// cast to usigned just to get rid of annoying warning messages
@@ -1566,7 +1572,8 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 				LOG("avcodec_receive_frame/send_packet decoding error: %s", av_err2str(ret));
 				av_frame_free(&avFrame);
 				return -1;
-			} else {
+			}
+			else {
 				len1 = avPacket->size;
 			}
 
@@ -1615,10 +1622,11 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 		/* avPacket = recvp(videoState->audioq); */
 		int recret = recv(videoState->audioq, avPacket);
 		if (recret == 1) { LOG("<== received av packet of size %i from audio queue.", avPacket->size);
-		} else 
-		if (recret == -1) {
+		}
+		else if (recret == -1) {
 			LOG("<== reveiving av packet from audio queue interrupted");
-		} else {
+		}
+		else {
 			LOG("<== unforseen error when receiving av packet from audio queue");
 		}
 		// if packet_queue_get returns < 0, the global quit flag was set
@@ -1666,7 +1674,8 @@ static int audio_resampling(VideoState * videoState, AVFrame * decoded_audio_fra
 	}
 	else if (videoState->audio_ctx->channels == 2) {
 		arState->out_channel_layout = AV_CH_LAYOUT_STEREO;
-	} else {
+	}
+	else {
 		arState->out_channel_layout = AV_CH_LAYOUT_SURROUND;
 	}
 	// retrieve number of audio samples (per channel)
@@ -1809,7 +1818,8 @@ static int audio_resampling(VideoState * videoState, AVFrame * decoded_audio_fra
 			printf("av_samples_get_buffer_size error.\n");
 			return -1;
 		}
-	} else {
+	}
+	else {
 		printf("swr_ctx null error.\n");
 		return -1;
 	}
