@@ -29,9 +29,11 @@
 //    - other possible causes: threading related, function returning s.th. w/o return statement
 //    - decoded images are shifted / skewed (at least running in valgrind)
 //    - valgrind with no options works best, otherwise also frames seem to be dropped
-// 2. Crash on opening / processing audio stream
-//    - most likely the SDL audio callback using threads in libsdl
-//    -> yes, decoding audio works without SDL audio callback
+//    - the size of the video packets sent to the decoder are very small in the beginning
+//      of the stream
+// 2. Crash on writing audio stream to the pcm device using the SDL callback
+//    - writing decoded audio to file works
+//    - use a different audio output method w/o callback (that might use pthreads)
 // 3. AV sync
 // 4. Proper shutdown of renderer
 // 5. Keyboard events
