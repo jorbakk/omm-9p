@@ -119,7 +119,7 @@ typedef struct VideoState
 	Channel		 *videoq;
 	Channel		*pictq;
 	struct SwsContext * sws_ctx;
-	struct SwsContext * rgb_ctx;
+	/* struct SwsContext * rgb_ctx; */
 	double			  frame_timer;
 	double			  frame_last_pts;
 	double			  frame_last_delay;
@@ -169,10 +169,9 @@ typedef struct AudioResamplingState
 typedef struct VideoPicture
 {
     AVFrame *   frame;
-    AVFrame *   rgb_frame;
+    /* AVFrame *   rgb_frame; */
     int         width;
     int         height;
-    int         allocated;
     double      pts;
 } VideoPicture;
 
@@ -200,6 +199,7 @@ int stream_component_open(
 		int stream_index
 );
 void init_picture(void * userdata, VideoPicture *videoPicture);
+void deinit_picture(void * userdata, VideoPicture *videoPicture);
 int queue_picture(
 		VideoState * videoState,
 		AVFrame * pFrame,
@@ -701,17 +701,17 @@ int stream_component_open(VideoState * videoState, int stream_index)
 												 NULL,
 												 NULL
 			);
-			videoState->rgb_ctx = sws_getContext(videoState->video_ctx->width,
-												 videoState->video_ctx->height,
-												 videoState->video_ctx->pix_fmt,
-												 videoState->video_ctx->width,
-												 videoState->video_ctx->height,
-												 AV_PIX_FMT_RGB24,
-												 SWS_BILINEAR,
-												 NULL,
-												 NULL,
-												 NULL
-			);
+			/* videoState->rgb_ctx = sws_getContext(videoState->video_ctx->width, */
+												 /* videoState->video_ctx->height, */
+												 /* videoState->video_ctx->pix_fmt, */
+												 /* videoState->video_ctx->width, */
+												 /* videoState->video_ctx->height, */
+												 /* AV_PIX_FMT_RGB24, */
+												 /* SWS_BILINEAR, */
+												 /* NULL, */
+												 /* NULL, */
+												 /* NULL */
+			/* ); */
 		}
 			break;
 		default:
@@ -748,27 +748,27 @@ init_picture(void *userdata, VideoPicture *videoPicture)
 			videoState->video_ctx->height,
 			32
 	);
-	int rgb_numBytes;
-	rgb_numBytes = av_image_get_buffer_size(
-			AV_PIX_FMT_RGB24,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
-			32
-	);
+	/* int rgb_numBytes; */
+	/* rgb_numBytes = av_image_get_buffer_size( */
+			/* AV_PIX_FMT_RGB24, */
+			/* videoState->video_ctx->width, */
+			/* videoState->video_ctx->height, */
+			/* 32 */
+	/* ); */
 	uint8_t * buffer = NULL;
 	buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-	uint8_t * rgb_buffer = NULL;
-	rgb_buffer = (uint8_t *) av_malloc(rgb_numBytes * sizeof(uint8_t));
+	/* uint8_t * rgb_buffer = NULL; */
+	/* rgb_buffer = (uint8_t *) av_malloc(rgb_numBytes * sizeof(uint8_t)); */
 	videoPicture->frame = av_frame_alloc();
 	if (videoPicture->frame == NULL) {
 		printf("Could not allocate frame.\n");
 		return;
 	}
-	videoPicture->rgb_frame = av_frame_alloc();
-	if (videoPicture->rgb_frame == NULL) {
-		printf("Could not allocate rgb frame.\n");
-		return;
-	}
+	/* videoPicture->rgb_frame = av_frame_alloc(); */
+	/* if (videoPicture->rgb_frame == NULL) { */
+		/* printf("Could not allocate rgb frame.\n"); */
+		/* return; */
+	/* } */
 	av_image_fill_arrays(
 			videoPicture->frame->data,
 			videoPicture->frame->linesize,
@@ -778,18 +778,29 @@ init_picture(void *userdata, VideoPicture *videoPicture)
 			videoState->video_ctx->height,
 			32
 	);
-	av_image_fill_arrays(
-			videoPicture->rgb_frame->data,
-			videoPicture->rgb_frame->linesize,
-			rgb_buffer,
-			AV_PIX_FMT_RGB24,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
-			32
-	);
+	/* av_image_fill_arrays( */
+			/* videoPicture->rgb_frame->data, */
+			/* videoPicture->rgb_frame->linesize, */
+			/* rgb_buffer, */
+			/* AV_PIX_FMT_RGB24, */
+			/* videoState->video_ctx->width, */
+			/* videoState->video_ctx->height, */
+			/* 32 */
+	/* ); */
+	av_free(buffer);
+	/* av_free(rgb_buffer); */
 	videoPicture->width = videoState->video_ctx->width;
 	videoPicture->height = videoState->video_ctx->height;
-	videoPicture->allocated = 1;
+}
+
+
+void
+deinit_picture(void *userdata, VideoPicture *videoPicture)
+{
+	av_frame_free(&videoPicture->frame);
+	av_free(videoPicture->frame);
+	/* av_frame_free(&videoPicture->rgb_frame); */
+	/* av_free(videoPicture->rgb_frame); */
 }
 
 
@@ -823,25 +834,25 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 				videoPicture.frame->linesize
 		);
 	}
-	if (videoPicture.rgb_frame) {
-		videoPicture.rgb_frame->pict_type = pFrame->pict_type;
-		videoPicture.rgb_frame->pts = pFrame->pts;
-		videoPicture.rgb_frame->pkt_dts = pFrame->pkt_dts;
-		videoPicture.rgb_frame->key_frame = pFrame->key_frame;
-		videoPicture.rgb_frame->coded_picture_number = pFrame->coded_picture_number;
-		videoPicture.rgb_frame->display_picture_number = pFrame->display_picture_number;
-		videoPicture.rgb_frame->width = pFrame->width;
-		videoPicture.rgb_frame->height = pFrame->height;
-		sws_scale(
-				videoState->rgb_ctx,
-				(uint8_t const * const *)pFrame->data,
-				pFrame->linesize,
-				0,
-				videoState->video_ctx->height,
-				videoPicture.rgb_frame->data,
-				videoPicture.rgb_frame->linesize
-		);
-	}
+	/* if (videoPicture.rgb_frame) { */
+		/* videoPicture.rgb_frame->pict_type = pFrame->pict_type; */
+		/* videoPicture.rgb_frame->pts = pFrame->pts; */
+		/* videoPicture.rgb_frame->pkt_dts = pFrame->pkt_dts; */
+		/* videoPicture.rgb_frame->key_frame = pFrame->key_frame; */
+		/* videoPicture.rgb_frame->coded_picture_number = pFrame->coded_picture_number; */
+		/* videoPicture.rgb_frame->display_picture_number = pFrame->display_picture_number; */
+		/* videoPicture.rgb_frame->width = pFrame->width; */
+		/* videoPicture.rgb_frame->height = pFrame->height; */
+		/* sws_scale( */
+				/* videoState->rgb_ctx, */
+				/* (uint8_t const * const *)pFrame->data, */
+				/* pFrame->linesize, */
+				/* 0, */
+				/* videoState->video_ctx->height, */
+				/* videoPicture.rgb_frame->data, */
+				/* videoPicture.rgb_frame->linesize */
+		/* ); */
+	/* } */
 	LOG("==> sending decoded video frame with pts %f to picture queue ...", videoPicture.pts);
 	/* sendp(videoState->pictq, videoPicture); */
 	int sendret = send(videoState->pictq, &videoPicture);
@@ -1203,6 +1214,7 @@ void video_refresh_timer(void * userdata)
 	else {
 		schedule_refresh(videoState, 100);
 	}
+	deinit_picture(videoState, &videoPicture);
 	/* LOG("refresh timer finished."); */
 }
 
@@ -1323,10 +1335,10 @@ void video_display(VideoState * videoState, VideoPicture *videoPicture)
 	}
 	double aspect_ratio;
 	int w, h, x, y;
-	if (videoPicture->rgb_frame) {
-		// Disabled saving frame to disc for now, it takes too much disc space ...
+	// Disabled saving frame to disc for now, it takes too much disc space ...
+	/* if (videoPicture->rgb_frame) { */
 		/* saveFrame(videoPicture->rgb_frame, videoState, (int)1000*(videoPicture->pts)); */
-	}
+	/* } */
 	if (videoPicture->frame) {
 		if (videoState->video_ctx->sample_aspect_ratio.num == 0) {
 			aspect_ratio = 0;
