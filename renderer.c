@@ -25,9 +25,13 @@
 // 1. Random crashes when playing mp4 files, reproducible with iron.mp4
 //    - no issues with transport streams (also bunny_xxx.mp4 seem to be ok)
 //    - maybe connected to freeing avframes, or sending packets through the channel
+//    - no crashes in valgrind
+//    - other possible causes: threading related, function returning s.th. w/o return statement
+//    - decoded images are shifted / skewed (at least running in valgrind)
+//    - valgrind with no options works best, otherwise also frames seem to be dropped
 // 2. Crash on opening / processing audio stream
 //    - most likely the SDL audio callback using threads in libsdl
-//    -> decoding audio works without SDL audio callback
+//    -> yes, decoding audio works without SDL audio callback
 // 3. Write decoded audio to a file
 // 4. AV sync
 // 5. Proper shutdown of renderer
@@ -933,9 +937,9 @@ void video_thread(void *arg)
 	// each decoded frame carries its PTS in the VideoPicture queue
 	double pts;
 	// Setting decoder threading parameter that might have an influence in the 9P threading environment
-	/* videoState->video_ctx->thread_count = 1; */
-	/* videoState->video_ctx->thread_type = FF_THREAD_FRAME; */
-	/* videoState->video_ctx->debug = 1; */
+	videoState->video_ctx->thread_count = 1;
+	videoState->video_ctx->thread_type = FF_THREAD_FRAME;
+	videoState->video_ctx->debug = 1;
 	for (;;)
 	{
 		LOG("video_thread looping ...");
