@@ -501,11 +501,16 @@ void demuxer_thread(void * arg)
 		if (videoState->quit) {
 			break;
 		}
-		AVPacket *packet = av_packet_alloc();
-		if (packet == NULL) {
-			LOG("Could not allocate AVPacket.");
-			goto fail;
-		}
+		/////////////////////////////////////////////////////////////////////////////
+		// NOTE AVPacket must be one object for the whole demuxing
+		// process so this might be the reason, why sending over
+		// the Channel doesn't always work
+		/////////////////////////////////////////////////////////////////////////////
+		/* AVPacket *packet = av_packet_alloc(); */
+		/* if (packet == NULL) { */
+			/* LOG("Could not allocate AVPacket."); */
+			/* goto fail; */
+		/* } */
 		// FIXME seek stuff goes here ... see end of this file
 		// ...
 		ret = av_read_frame(videoState->pFormatCtx, packet);
@@ -556,9 +561,7 @@ void demuxer_thread(void * arg)
 				LOG("==> unforseen error when sending av packet to audio queue");
 			}
 		}
-		/* else { */
 		/* av_packet_unref(packet); */
-		/* } */
 	}
 	av_packet_unref(packet);
 
