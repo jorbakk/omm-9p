@@ -913,6 +913,8 @@ void video_thread(void *arg)
 {
 	LOG("video thread ...");
 	VideoState *videoState = (VideoState*)arg;
+	// Allocating AVPacket on the stack leads to a crash when sending the
+	// packet to the decoder after some successfull decoded packets
 	/* AVPacket packet; */
 	AVPacket * packet = av_packet_alloc();
 	if (packet == NULL) {
