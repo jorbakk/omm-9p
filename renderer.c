@@ -199,7 +199,7 @@ int stream_component_open(
 		VideoState * videoState,
 		int stream_index
 );
-VideoPicture* alloc_picture(void * userdata);
+void init_picture(void * userdata, VideoPicture *videoPicture);
 int queue_picture(
 		VideoState * videoState,
 		AVFrame * pFrame,
@@ -723,21 +723,16 @@ int stream_component_open(VideoState * videoState, int stream_index)
 	return 0;
 }
 
-/**
- * Allocates a new SDL_Overlay for the VideoPicture struct referenced by the
- * global VideoState struct reference.
- * The remaining VideoPicture struct fields are also updated.
- *
- * @param   userdata	the global VideoState reference.
- */
-VideoPicture* alloc_picture(void * userdata)
+
+void
+init_picture(void *userdata, VideoPicture *videoPicture)
 {
 	// retrieve global VideoState reference.
 	VideoState * videoState = (VideoState *)userdata;
 
 	// retrieve the VideoPicture pointed by the queue write index
-	VideoPicture * videoPicture = NULL;
-	videoPicture = malloc(sizeof(VideoPicture));
+	/* VideoPicture * videoPicture = NULL; */
+	/* videoPicture = malloc(sizeof(VideoPicture)); */
 	memset(videoPicture, 0, sizeof(VideoPicture));
 	// check if the SDL_Overlay is allocated
 	/* if (videoPicture->frame) */
@@ -767,12 +762,12 @@ VideoPicture* alloc_picture(void * userdata)
 	videoPicture->frame = av_frame_alloc();
 	if (videoPicture->frame == NULL) {
 		printf("Could not allocate frame.\n");
-		return NULL;
+		return;
 	}
 	videoPicture->rgb_frame = av_frame_alloc();
 	if (videoPicture->rgb_frame == NULL) {
 		printf("Could not allocate rgb frame.\n");
-		return NULL;
+		return;
 	}
 	av_image_fill_arrays(
 			videoPicture->frame->data,
@@ -795,7 +790,6 @@ VideoPicture* alloc_picture(void * userdata)
 	videoPicture->width = videoState->video_ctx->width;
 	videoPicture->height = videoState->video_ctx->height;
 	videoPicture->allocated = 1;
-	return videoPicture;
 }
 
 
@@ -804,39 +798,20 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 	if (videoState->quit) {
 		return -1;
 	}
-	VideoPicture * videoPicture;
-	videoPicture = alloc_picture(videoState);
-	if (videoPicture == NULL) {
-		LOG("failed to allocate video picture");
-		return -1;
-	}
-	// if the VideoPicture SDL_Overlay is not allocated or has a different width/height
-	/* if (!videoPicture->frame || */
-		/* videoPicture->width != videoState->video_ctx->width || */
-		/* videoPicture->height != videoState->video_ctx->height) */
-	/* { */
-		/* // set SDL_Overlay not allocated */
-		/* videoPicture->allocated = 0; */
-		/* // allocate a new SDL_Overlay for the VideoPicture struct */
-		/* alloc_picture(videoState); */
-		/* // check global quit flag */
-		/* if(videoState->quit) */
-		/* { */
-			/* return -1; */
-		/* } */
-	/* } */
+	VideoPicture videoPicture;
+	init_picture(videoState, &videoPicture);
 	// set pts value for the last decode frame in the VideoPicture queu (pctq)
-	videoPicture->pts = pts;
-	if (videoPicture->frame) {
+	videoPicture.pts = pts;
+	if (videoPicture.frame) {
 		// set VideoPicture AVFrame info using the last decoded frame
-		videoPicture->frame->pict_type = pFrame->pict_type;
-		videoPicture->frame->pts = pFrame->pts;
-		videoPicture->frame->pkt_dts = pFrame->pkt_dts;
-		videoPicture->frame->key_frame = pFrame->key_frame;
-		videoPicture->frame->coded_picture_number = pFrame->coded_picture_number;
-		videoPicture->frame->display_picture_number = pFrame->display_picture_number;
-		videoPicture->frame->width = pFrame->width;
-		videoPicture->frame->height = pFrame->height;
+		videoPicture.frame->pict_type = pFrame->pict_type;
+		videoPicture.frame->pts = pFrame->pts;
+		videoPicture.frame->pkt_dts = pFrame->pkt_dts;
+		videoPicture.frame->key_frame = pFrame->key_frame;
+		videoPicture.frame->coded_picture_number = pFrame->coded_picture_number;
+		videoPicture.frame->display_picture_number = pFrame->display_picture_number;
+		videoPicture.frame->width = pFrame->width;
+		videoPicture.frame->height = pFrame->height;
 		// scale the image in pFrame->data and put the resulting scaled image in pict->data
 		sws_scale(
 				videoState->sws_ctx,
@@ -844,34 +819,34 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 				pFrame->linesize,
 				0,
 				videoState->video_ctx->height,
-				videoPicture->frame->data,
-				videoPicture->frame->linesize
+				videoPicture.frame->data,
+				videoPicture.frame->linesize
 		);
 	}
-	if (videoPicture->rgb_frame) {
-		videoPicture->rgb_frame->pict_type = pFrame->pict_type;
-		videoPicture->rgb_frame->pts = pFrame->pts;
-		videoPicture->rgb_frame->pkt_dts = pFrame->pkt_dts;
-		videoPicture->rgb_frame->key_frame = pFrame->key_frame;
-		videoPicture->rgb_frame->coded_picture_number = pFrame->coded_picture_number;
-		videoPicture->rgb_frame->display_picture_number = pFrame->display_picture_number;
-		videoPicture->rgb_frame->width = pFrame->width;
-		videoPicture->rgb_frame->height = pFrame->height;
+	if (videoPicture.rgb_frame) {
+		videoPicture.rgb_frame->pict_type = pFrame->pict_type;
+		videoPicture.rgb_frame->pts = pFrame->pts;
+		videoPicture.rgb_frame->pkt_dts = pFrame->pkt_dts;
+		videoPicture.rgb_frame->key_frame = pFrame->key_frame;
+		videoPicture.rgb_frame->coded_picture_number = pFrame->coded_picture_number;
+		videoPicture.rgb_frame->display_picture_number = pFrame->display_picture_number;
+		videoPicture.rgb_frame->width = pFrame->width;
+		videoPicture.rgb_frame->height = pFrame->height;
 		sws_scale(
 				videoState->rgb_ctx,
 				(uint8_t const * const *)pFrame->data,
 				pFrame->linesize,
 				0,
 				videoState->video_ctx->height,
-				videoPicture->rgb_frame->data,
-				videoPicture->rgb_frame->linesize
+				videoPicture.rgb_frame->data,
+				videoPicture.rgb_frame->linesize
 		);
 	}
-	LOG("==> sending decoded video frame with pts %f to picture queue ...", videoPicture->pts);
+	LOG("==> sending decoded video frame with pts %f to picture queue ...", videoPicture.pts);
 	/* sendp(videoState->pictq, videoPicture); */
-	int sendret = send(videoState->pictq, videoPicture);
+	int sendret = send(videoState->pictq, &videoPicture);
 	if (sendret == 1) {
-		LOG("<== sending decoded video frame with pts %f to picture queue succeeded.", videoPicture->pts);
+		LOG("<== sending decoded video frame with pts %f to picture queue succeeded.", videoPicture.pts);
 	}
 	else if (sendret == -1) {
 		LOG("<== sending decoded video frame to picture queue interrupted");
