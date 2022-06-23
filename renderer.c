@@ -38,6 +38,7 @@
 //      -> stream_component_open (video)
 //         -> video_thread
 //      -> stream_component_open (audio)
+//         -> audio_thread
 //   -> event loop
 //   -> display pictures
 
@@ -703,6 +704,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			memset(&videoState->audio_pkt, 0, sizeof(videoState->audio_pkt));
 			/* videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
 			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
+			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
 			// FIXME disabling sdl audio for now ...
 			/* LOG("calling sdl_pauseaudio(0) ..."); */
 			/* SDL_PauseAudio(0); */
@@ -724,7 +726,6 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			videoState->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE);
 			videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
 			videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE);
-			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
 			LOG("Video thread created with id: %i", videoState->video_tid);
 			videoState->sws_ctx = sws_getContext(videoState->video_ctx->width,
 												 videoState->video_ctx->height,
