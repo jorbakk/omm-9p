@@ -536,6 +536,7 @@ void decode_thread(void * arg)
 		if (ret < 0) {
 			LOG("failed to read av packet: %s", av_err2str(ret));
 			if (ret == AVERROR_EOF) {
+				LOG("EOF");
 				// media EOF reached, quit
 				videoState->quit = 1;
 				break;
@@ -598,6 +599,8 @@ void decode_thread(void * arg)
 	/* } */
 	avformat_close_input(&pFormatCtx);
 	// in case of failure, push the FF_QUIT_EVENT and return
+	LOG("quitting decode thread");
+	threadexitsall("end of file");
 	fail:
 	{
 		// create an SDL_Event of type FF_QUIT_EVENT
