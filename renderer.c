@@ -371,6 +371,8 @@ threadmain(int argc, char **argv)
 			break;
 		}
 	}
+	// FIXME never reached ... need to shut down the renderer properly
+	LOG("freeing video state");
 	av_free(videoState);
 	return;
 }
@@ -604,6 +606,15 @@ void decode_thread(void * arg)
 	if (pFormatCtx) {
 		avformat_free_context(pFormatCtx);
 	}
+	if (videoState->videoq) {
+		chanfree(videoState->videoq);
+	}
+	if (videoState->audioq) {
+		chanfree(videoState->audioq);
+	}
+	if (videoState->pictq) {
+		chanfree(videoState->pictq);
+	}
 	// in case of failure, push the FF_QUIT_EVENT and return
 	LOG("quitting decode thread");
 	threadexitsall("end of file");
@@ -622,8 +633,10 @@ void decode_thread(void * arg)
 	};
 }
 
+
 int stream_component_open(VideoState * videoState, int stream_index)
 {
+	LOG("opening stream component");
 	AVFormatContext * pFormatCtx = videoState->pFormatCtx;
 	if (stream_index < 0 || stream_index >= pFormatCtx->nb_streams) {
 		printf("Invalid stream index.");
@@ -651,6 +664,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 		wanted_specs.channels = codecCtx->channels;
 		wanted_specs.silence = 0;
 		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
+		// FIXME SDL threading when entering the audio_callback might crash ...
 		wanted_specs.callback = audio_callback;
 		wanted_specs.userdata = videoState;
 		ret = SDL_OpenAudio(&wanted_specs, &specs);
@@ -1616,7 +1630,8 @@ int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_siz
 		/* int ret = packet_queue_get(&videoState->audioq, avPacket, 1); */
 		/* avPacket = recvp(videoState->audioq); */
 		int recret = recv(videoState->audioq, avPacket);
-		if (recret == 1) { LOG("<== received av packet of size %i from audio queue.", avPacket->size);
+		if (recret == 1) {
+			LOG("<== received av packet of size %i from audio queue.", avPacket->size);
 		}
 		else if (recret == -1) {
 			LOG("<== reveiving av packet from audio queue interrupted");
