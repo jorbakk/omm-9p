@@ -363,9 +363,9 @@ threadmain(int argc, char **argv)
 	flush_pkt.data = (uint8_t*)"FLUSH";
 	for(;;)
 	{
-		LOG("threadmain yielding ...");
+		/* LOG("threadmain yielding ..."); */
 		yield();
-		LOG("threadmain yielded.");
+		/* LOG("threadmain yielded."); */
 		video_refresh_timer(videoState);
 		if (videoState->quit) {
 			break;
@@ -1122,7 +1122,7 @@ int synchronize_audio(VideoState * videoState, short * samples, int samples_size
 
 void video_refresh_timer(void * userdata)
 {
-	LOG("refresh timer ...");
+	LOG("refresh timer");
 	VideoState * videoState = (VideoState *)userdata;
 	VideoPicture * videoPicture = NULL;
 	videoPicture = malloc(sizeof(VideoPicture));
@@ -1156,12 +1156,12 @@ void video_refresh_timer(void * userdata)
 			}
 			if (_DEBUG_) {
 				LOG("Current Frame PTS:\t\t%f", videoPicture->pts);
-				LOG("Last Frame PTS:\t\t\t%f", videoState->frame_last_pts);
+				LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
 			}
 			// get last frame pts
 			pts_delay = videoPicture->pts - videoState->frame_last_pts;
 			if (_DEBUG_) {
-				LOG("PTS Delay:\t\t\t\t%f", pts_delay);
+				LOG("PTS Delay:\t\t\t%f", pts_delay);
 			}
 			// if the obtained delay is incorrect
 			if (pts_delay <= 0 || pts_delay >= 1.0) {
@@ -1169,7 +1169,7 @@ void video_refresh_timer(void * userdata)
 				pts_delay = videoState->frame_last_delay;
 			}
 			if (_DEBUG_) {
-				LOG("Corrected PTS Delay:\t%f", pts_delay);
+				LOG("Corrected PTS Delay:\t\t%f", pts_delay);
 			}
 			// save delay information for the next time
 			videoState->frame_last_delay = pts_delay;
@@ -1179,7 +1179,7 @@ void video_refresh_timer(void * userdata)
 				// update delay to stay in sync with the master clock: audio or video
 				audio_ref_clock = get_master_clock(videoState);
 				if (_DEBUG_) {
-					LOG("Ref Clock:\t\t\t\t%f", audio_ref_clock);
+					LOG("Ref Clock:\t\t\t%f", audio_ref_clock);
 				}
 				// calculate audio video delay accordingly to the master clock
 				audio_video_delay = videoPicture->pts - audio_ref_clock;
@@ -1189,7 +1189,7 @@ void video_refresh_timer(void * userdata)
 				// skip or repeat the frame taking into account the delay
 				sync_threshold = (pts_delay > AV_SYNC_THRESHOLD) ? pts_delay : AV_SYNC_THRESHOLD;
 				if (_DEBUG_) {
-					LOG("Sync Threshold:\t\t\t%f", sync_threshold);
+					LOG("Sync Threshold:\t\t%f", sync_threshold);
 				}
 				// check audio video delay absolute value is below sync threshold
 				if (fabs(audio_video_delay) < AV_NOSYNC_THRESHOLD) {
@@ -1202,23 +1202,23 @@ void video_refresh_timer(void * userdata)
 				}
 			}
 			if (_DEBUG_) {
-				LOG("Corrected PTS delay:\t%f", pts_delay);
+				LOG("Corrected PTS delay:\t\t%f", pts_delay);
 			}
 			videoState->frame_timer += pts_delay;
 			// compute the real delay
 			real_delay = videoState->frame_timer - (av_gettime() / 1000000.0);
 			if (_DEBUG_) {
-				LOG("Real Delay:\t\t\t\t%f", real_delay);
+				LOG("Real Delay:\t\t\t%f", real_delay);
 			}
 			if (real_delay < 0.010) {
 				real_delay = 0.010;
 			}
 			if (_DEBUG_) {
-				LOG("Corrected Real Delay:\t%f", real_delay);
+				LOG("Corrected Real Delay:\t\t%f", real_delay);
 			}
 			schedule_refresh(videoState, (Uint32)(real_delay * 1000 + 0.5));
 			if (_DEBUG_) {
-				LOG("Next Scheduled Refresh:\t%f\n", (real_delay * 1000 + 0.5));
+				LOG("Next Scheduled Refresh:\t%f", (real_delay * 1000 + 0.5));
 			}
 			video_display(videoState, videoPicture);
 		/* } */
@@ -1226,7 +1226,7 @@ void video_refresh_timer(void * userdata)
 	else {
 		schedule_refresh(videoState, 100);
 	}
-	LOG("refresh timer finished.");
+	/* LOG("refresh timer finished."); */
 }
 
 
