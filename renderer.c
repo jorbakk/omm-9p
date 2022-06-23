@@ -1127,9 +1127,8 @@ void video_refresh_timer(void * userdata)
 {
 	LOG("refresh timer");
 	VideoState * videoState = (VideoState *)userdata;
-	VideoPicture * videoPicture = NULL;
-	videoPicture = malloc(sizeof(VideoPicture));
-	memset(videoPicture, 0, sizeof(VideoPicture));
+	VideoPicture videoPicture;
+	memset(&videoPicture, 0, sizeof(VideoPicture));
 	double pts_delay;
 	double audio_ref_clock;
 	double sync_threshold;
@@ -1147,9 +1146,9 @@ void video_refresh_timer(void * userdata)
 		/* { */
 			// get VideoPicture reference using the queue read index
 			/* videoPicture = recvp(videoState->pictq); */
-			int recret = recv(videoState->pictq, videoPicture);
+			int recret = recv(videoState->pictq, &videoPicture);
 			if (recret == 1) {
-				LOG("<== received decoded video frame with pts %f from picture queue.", videoPicture->pts);
+				LOG("<== received decoded video frame with pts %f from picture queue.", videoPicture.pts);
 			}
 			else if (recret == -1) {
 				LOG("<== reveiving decoded video frame from picture queue interrupted");
@@ -1158,11 +1157,11 @@ void video_refresh_timer(void * userdata)
 				LOG("<== unforseen error when receiving decoded video frame from picture queue");
 			}
 			if (_DEBUG_) {
-				LOG("Current Frame PTS:\t\t%f", videoPicture->pts);
+				LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
 				LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
 			}
 			// get last frame pts
-			pts_delay = videoPicture->pts - videoState->frame_last_pts;
+			pts_delay = videoPicture.pts - videoState->frame_last_pts;
 			if (_DEBUG_) {
 				LOG("PTS Delay:\t\t\t%f", pts_delay);
 			}
@@ -1176,7 +1175,7 @@ void video_refresh_timer(void * userdata)
 			}
 			// save delay information for the next time
 			videoState->frame_last_delay = pts_delay;
-			videoState->frame_last_pts = videoPicture->pts;
+			videoState->frame_last_pts = videoPicture.pts;
 			// in case the external clock is not used
 			if (videoState->av_sync_type != AV_SYNC_VIDEO_MASTER) {
 				// update delay to stay in sync with the master clock: audio or video
@@ -1185,7 +1184,7 @@ void video_refresh_timer(void * userdata)
 					LOG("Ref Clock:\t\t\t%f", audio_ref_clock);
 				}
 				// calculate audio video delay accordingly to the master clock
-				audio_video_delay = videoPicture->pts - audio_ref_clock;
+				audio_video_delay = videoPicture.pts - audio_ref_clock;
 				if (_DEBUG_) {
 					LOG("Audio Video Delay:\t\t%f", audio_video_delay);
 				}
@@ -1223,7 +1222,7 @@ void video_refresh_timer(void * userdata)
 			if (_DEBUG_) {
 				LOG("Next Scheduled Refresh:\t%f", (real_delay * 1000 + 0.5));
 			}
-			video_display(videoState, videoPicture);
+			video_display(videoState, &videoPicture);
 		/* } */
 	}
 	else {
