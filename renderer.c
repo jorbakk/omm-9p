@@ -501,52 +501,13 @@ void demuxer_thread(void * arg)
 		if (videoState->quit) {
 			break;
 		}
-		// seek stuff goes here
-		if(videoState->seek_req)
-		{
-			int video_stream_index = -1;
-			int audio_stream_index = -1;
-			int64_t seek_target_video = videoState->seek_pos;
-			int64_t seek_target_audio = videoState->seek_pos;
-			if (videoState->videoStream >= 0) {
-				video_stream_index = videoState->videoStream;
-			}
-			if (videoState->audioStream >= 0) {
-				audio_stream_index = videoState->audioStream;
-			}
-			if(video_stream_index >= 0 && audio_stream_index >= 0) {
-				seek_target_video = av_rescale_q(seek_target_video, AV_TIME_BASE_Q, pFormatCtx->streams[video_stream_index]->time_base);
-				seek_target_audio = av_rescale_q(seek_target_audio, AV_TIME_BASE_Q, pFormatCtx->streams[audio_stream_index]->time_base);
-			}
-			ret = av_seek_frame(videoState->pFormatCtx, video_stream_index, seek_target_video, videoState->seek_flags);
-			ret &= av_seek_frame(videoState->pFormatCtx, audio_stream_index, seek_target_audio, videoState->seek_flags);
-			if (ret < 0) {
-				// ... warning about FormatCtx->filename is depricated ... should vanish when switching to 9P
-				/* fprintf(stderr, "%s: error while seeking\n", videoState->pFormatCtx->filename); */
-			}
-			else {
-				if (videoState->videoStream >= 0) {
-					// FIXME need some means to flush a channel?
-					/* packet_queue_flush(&videoState->videoq); */
-					/* packet_queue_put(&videoState->videoq, &flush_pkt); */
-				}
-				if (videoState->audioStream >= 0) {
-					// FIXME need some means to flush a channel?
-					/* packet_queue_flush(&videoState->audioq); */
-					/* packet_queue_put(&videoState->audioq, &flush_pkt); */
-				}
-			}
-			videoState->seek_req = 0;
+		AVPacket *packet = av_packet_alloc();
+		if (packet == NULL) {
+			LOG("Could not allocate AVPacket.");
+			goto fail;
 		}
-		// check audio and video packets queues size
-		// FIXME audioq and videoq now are Channels with unknown size, need to track the size separately ...?
-		/* if (videoState->audioq.size > MAX_AUDIOQ_SIZE || videoState->videoq.size > MAX_VIDEOQ_SIZE) */
-		/* { */
-			/* // wait for audio and video queues to decrease size */
-			/* SDL_Delay(10); */
-
-			/* continue; */
-		/* } */
+		// FIXME seek stuff goes here ... see end of this file
+		// ...
 		ret = av_read_frame(videoState->pFormatCtx, packet);
 		LOG("read av packet of size: %i", packet->size);
 		if (ret < 0) {
@@ -557,14 +518,6 @@ void demuxer_thread(void * arg)
 				videoState->quit = 1;
 				break;
 			}
-			/* else if (videoState->pFormatCtx->pb->error == 0) */
-			/* { */
-				/* // no read error; wait for user input */
-				/* // FIXME need a replacement ...? */
-				/* SDL_Delay(10); */
-
-				/* continue; */
-			/* } */
 			else {
 				// exit for loop in case of error
 				break;
@@ -604,7 +557,7 @@ void demuxer_thread(void * arg)
 			}
 		}
 		/* else { */
-			/* av_packet_unref(packet); */
+		/* av_packet_unref(packet); */
 		/* } */
 	}
 	av_packet_unref(packet);
@@ -2031,3 +1984,51 @@ void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex)
     fclose(pFile);
 	LOG("saved video picture.");
 }
+
+
+// ... seek stuff:
+		/* if(videoState->seek_req) */
+		/* { */
+			/* int video_stream_index = -1; */
+			/* int audio_stream_index = -1; */
+			/* int64_t seek_target_video = videoState->seek_pos; */
+			/* int64_t seek_target_audio = videoState->seek_pos; */
+			/* if (videoState->videoStream >= 0) { */
+				/* video_stream_index = videoState->videoStream; */
+			/* } */
+			/* if (videoState->audioStream >= 0) { */
+				/* audio_stream_index = videoState->audioStream; */
+			/* } */
+			/* if(video_stream_index >= 0 && audio_stream_index >= 0) { */
+				/* seek_target_video = av_rescale_q(seek_target_video, AV_TIME_BASE_Q, pFormatCtx->streams[video_stream_index]->time_base); */
+				/* seek_target_audio = av_rescale_q(seek_target_audio, AV_TIME_BASE_Q, pFormatCtx->streams[audio_stream_index]->time_base); */
+			/* } */
+			/* ret = av_seek_frame(videoState->pFormatCtx, video_stream_index, seek_target_video, videoState->seek_flags); */
+			/* ret &= av_seek_frame(videoState->pFormatCtx, audio_stream_index, seek_target_audio, videoState->seek_flags); */
+			/* if (ret < 0) { */
+				/* // ... warning about FormatCtx->filename is depricated ... should vanish when switching to 9P */
+				/* //fprintf(stderr, "%s: error while seeking\n", videoState->pFormatCtx->filename); */
+			/* } */
+			/* else { */
+				/* if (videoState->videoStream >= 0) { */
+					/* // FIXME need some means to flush a channel? */
+					/* //packet_queue_flush(&videoState->videoq); */
+					/* //packet_queue_put(&videoState->videoq, &flush_pkt); */
+				/* } */
+				/* if (videoState->audioStream >= 0) { */
+					/* // FIXME need some means to flush a channel? */
+					/* //packet_queue_flush(&videoState->audioq); */
+					/* //packet_queue_put(&videoState->audioq, &flush_pkt); */
+				/* } */
+			/* } */
+			/* videoState->seek_req = 0; */
+		/* } */
+		// check audio and video packets queues size
+		// FIXME audioq and videoq now are Channels with unknown size, need to track the size separately ...?
+		/* if (videoState->audioq.size > MAX_AUDIOQ_SIZE || videoState->videoq.size > MAX_VIDEOQ_SIZE) */
+		/* { */
+			/* // wait for audio and video queues to decrease size */
+			/* SDL_Delay(10); */
+
+			/* continue; */
+		/* } */
