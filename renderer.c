@@ -24,7 +24,7 @@
 // TODO
 // 1. Random crashes when playing mp4 files, reproducible with iron.mp4
 //    - no issues with transport streams
-//    - most likely connected to freeing avframes
+//    - maybe also connected to freeing avframes
 // 2. Crash on opening / processing audio stream
 //    - most likely the sdl audio callback
 // 3. AV sync
@@ -472,7 +472,7 @@ void decode_thread(void * arg)
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 		// FIXME!!! not opening audio at the moment ... if we do, we crash
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		/* ret = stream_component_open(videoState, audioStream); */
+		ret = stream_component_open(videoState, audioStream);
 		/* ret = 0; */
 
 		// check audio codec was opened correctly
@@ -577,13 +577,13 @@ void decode_thread(void * arg)
 			/* sendp(videoState->videoq, packet); */
 			int sendret = send(videoState->videoq, packet);
 			if (sendret == 1) {
-				LOG("<== sending av packet of size %i to video queue succeeded.", packet->size);
+				LOG("==> sending av packet of size %i to video queue succeeded.", packet->size);
 			}
 			else if (sendret == -1) {
-				LOG("<== sending av packet to video queue interrupted");
+				LOG("==> sending av packet to video queue interrupted");
 			}
 			else {
-				LOG("<== unforseen error when sending av packet to video queue");
+				LOG("==> unforseen error when sending av packet to video queue");
 			}
 		}
 		else if (packet->stream_index == videoState->audioStream) {
@@ -591,13 +591,13 @@ void decode_thread(void * arg)
 			/* sendp(videoState->audioq, packet); */
 			int sendret = send(videoState->audioq, packet);
 			if (sendret == 1) {
-				LOG("<== sending av packet of size %i to audio queue succeeded.", packet->size);
+				LOG("==> sending av packet of size %i to audio queue succeeded.", packet->size);
 			}
 			else if (sendret == -1) {
-				LOG("<== sending av packet to audio queue interrupted");
+				LOG("==> sending av packet to audio queue interrupted");
 			}
 			else {
-				LOG("<== unforseen error when sending av packet to audio queue");
+				LOG("==> unforseen error when sending av packet to audio queue");
 			}
 		}
 		else {
@@ -667,23 +667,24 @@ int stream_component_open(VideoState * videoState, int stream_index)
 		return -1;
 	}
 	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
-		LOG("setting up audio device ...");
-		SDL_AudioSpec wanted_specs;
-		SDL_AudioSpec specs;
-		wanted_specs.freq = codecCtx->sample_rate;
-		wanted_specs.format = AUDIO_S16SYS;
-		wanted_specs.channels = codecCtx->channels;
-		wanted_specs.silence = 0;
-		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
-		// FIXME SDL threading when entering the audio_callback might crash ...
-		wanted_specs.callback = audio_callback;
-		wanted_specs.userdata = videoState;
-		ret = SDL_OpenAudio(&wanted_specs, &specs);
-		if (ret < 0) {
-			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
-			return -1;
-		}
-		LOG("audio device opened successfully");
+		// FIXME disabling sdl audio for now ...
+		/* LOG("setting up audio device ..."); */
+		/* SDL_AudioSpec wanted_specs; */
+		/* SDL_AudioSpec specs; */
+		/* wanted_specs.freq = codecCtx->sample_rate; */
+		/* wanted_specs.format = AUDIO_S16SYS; */
+		/* wanted_specs.channels = codecCtx->channels; */
+		/* wanted_specs.silence = 0; */
+		/* wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE; */
+		/* // FIXME SDL threading when entering the audio_callback might crash ... */
+		/* wanted_specs.callback = audio_callback; */
+		/* wanted_specs.userdata = videoState; */
+		/* ret = SDL_OpenAudio(&wanted_specs, &specs); */
+		/* if (ret < 0) { */
+			/* printf("SDL_OpenAudio: %s.\n", SDL_GetError()); */
+			/* return -1; */
+		/* } */
+		/* LOG("audio device opened successfully"); */
 	}
 	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
 		printf("Unsupported codec.\n");
@@ -700,9 +701,10 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			memset(&videoState->audio_pkt, 0, sizeof(videoState->audio_pkt));
 			/* videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
 			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
-			LOG("calling sdl_pauseaudio(0) ...");
-			SDL_PauseAudio(0);
-			LOG("sdl_pauseaudio(0) called.");
+			// FIXME disabling sdl audio for now ...
+			/* LOG("calling sdl_pauseaudio(0) ..."); */
+			/* SDL_PauseAudio(0); */
+			/* LOG("sdl_pauseaudio(0) called."); */
 		}
 			break;
 		case AVMEDIA_TYPE_VIDEO:
