@@ -327,14 +327,12 @@ threadmain(int argc, char **argv)
 {
 	if (_DEBUG_)
 		chatty9pclient = 1;
-	if ( argc != 3 )
-	{
+	if ( argc != 3 ) {
 		printHelp();
 		return;
 	}
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
-	if (ret != 0)
-	{
+	if (ret != 0) {
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
 		return;
 	}
@@ -368,8 +366,7 @@ threadmain(int argc, char **argv)
 		yield();
 		LOG("threadmain yielded.");
 		video_refresh_timer(videoState);
-		if (videoState->quit)
-		{
+		if (videoState->quit) {
 			break;
 		}
 	}
@@ -412,8 +409,7 @@ void decode_thread(void * arg)
 	pFormatCtx->pb = pIOCtx;
 	LOG("opening stream input ...");
 	int ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
-	if (ret < 0)
-	{
+	if (ret < 0) {
 		sysfatal("Could not open file %s", videoState->filename);
 	}
 	LOG("opened stream input");
@@ -424,8 +420,7 @@ void decode_thread(void * arg)
 	global_video_state = videoState;
 	videoState->pFormatCtx = pFormatCtx;
 	ret = avformat_find_stream_info(pFormatCtx, NULL);
-	if (ret < 0)
-	{
+	if (ret < 0) {
 		LOG("Could not find stream information: %s.", videoState->filename);
 		return;
 	}
@@ -442,23 +437,20 @@ void decode_thread(void * arg)
 			audioStream = i;
 		}
 	}
-	if (videoStream == -1)
-	{
+	if (videoStream == -1) {
 		LOG("Could not find video stream.");
 		/* goto fail; */
 	}
 	else
 	{
 		ret = stream_component_open(videoState, videoStream);
-		if (ret < 0)
-		{
+		if (ret < 0) {
 			printf("Could not open video codec.\n");
 			goto fail;
 		}
 		LOG("video stream component opened successfully.");
 	}
-	if (audioStream == -1)
-	{
+	if (audioStream == -1) {
 		LOG("Could not find audio stream.");
 		/* goto fail; */
 	}
@@ -472,30 +464,26 @@ void decode_thread(void * arg)
 		/* ret = 0; */
 
 		// check audio codec was opened correctly
-		if (ret < 0)
-		{
+		if (ret < 0) {
 			LOG("Could not open audio codec.");
 			goto fail;
 		}
 		LOG("audio stream component opened successfully.");
 	}
 	/* if (videoState->videoStream < 0 || videoState->audioStream < 0) */
-	if (videoState->videoStream < 0 && videoState->audioStream < 0)
-	{
+	if (videoState->videoStream < 0 && videoState->audioStream < 0) {
 		/* printf("Could not open codecs: %s.\n", videoState->filename); */
 		LOG("both video and audio stream missing");
 		goto fail;
 	}
 	AVPacket * packet = av_packet_alloc();
-	if (packet == NULL)
-	{
+	if (packet == NULL) {
 		LOG("Could not allocate AVPacket.");
 		goto fail;
 	}
 	for (;;)
 	{
-		if (videoState->quit)
-		{
+		if (videoState->quit) {
 			break;
 		}
 		// seek stuff goes here
@@ -523,14 +511,12 @@ void decode_thread(void * arg)
 			}
 			else
 			{
-				if (videoState->videoStream >= 0)
-				{
+				if (videoState->videoStream >= 0) {
 					// FIXME need some means to flush a channel?
 					/* packet_queue_flush(&videoState->videoq); */
 					/* packet_queue_put(&videoState->videoq, &flush_pkt); */
 				}
-				if (videoState->audioStream >= 0)
-				{
+				if (videoState->audioStream >= 0) {
 					// FIXME need some means to flush a channel?
 					/* packet_queue_flush(&videoState->audioq); */
 					/* packet_queue_put(&videoState->audioq, &flush_pkt); */
@@ -549,11 +535,9 @@ void decode_thread(void * arg)
 		/* } */
 		ret = av_read_frame(videoState->pFormatCtx, packet);
 		LOG("read av packet of size: %i", packet->size);
-		if (ret < 0)
-		{
+		if (ret < 0) {
 			LOG("failed to read av packet: %s", av_err2str(ret));
-			if (ret == AVERROR_EOF)
-			{
+			if (ret == AVERROR_EOF) {
 				// media EOF reached, quit
 				videoState->quit = 1;
 				break;
@@ -577,8 +561,7 @@ void decode_thread(void * arg)
 			LOG("packet size is zero, exiting decoder thread");
 			break;
 		}
-		if (packet->stream_index == videoState->videoStream)
-		{
+		if (packet->stream_index == videoState->videoStream) {
 			LOG("==> sending av packet of size %i to video queue ...", packet->size);
 			/* sendp(videoState->videoq, packet); */
 			int sendret = send(videoState->videoq, packet);
@@ -591,8 +574,7 @@ void decode_thread(void * arg)
 				LOG("<== unforseen error when sending av packet to video queue");
 			}
 		}
-		else if (packet->stream_index == videoState->audioStream)
-		{
+		else if (packet->stream_index == videoState->audioStream) {
 			LOG("==> sending av packet of size %i to audio queue ...", packet->size);
 			/* sendp(videoState->audioq, packet); */
 			int sendret = send(videoState->audioq, packet);
@@ -636,28 +618,24 @@ void decode_thread(void * arg)
 int stream_component_open(VideoState * videoState, int stream_index)
 {
 	AVFormatContext * pFormatCtx = videoState->pFormatCtx;
-	if (stream_index < 0 || stream_index >= pFormatCtx->nb_streams)
-	{
+	if (stream_index < 0 || stream_index >= pFormatCtx->nb_streams) {
 		printf("Invalid stream index.");
 		return -1;
 	}
 	AVCodec * codec = NULL;
 	codec = avcodec_find_decoder(pFormatCtx->streams[stream_index]->codecpar->codec_id);
-	if (codec == NULL)
-	{
+	if (codec == NULL) {
 		printf("Unsupported codec.\n");
 		return -1;
 	}
 	AVCodecContext * codecCtx = NULL;
 	codecCtx = avcodec_alloc_context3(codec);
 	int ret = avcodec_parameters_to_context(codecCtx, pFormatCtx->streams[stream_index]->codecpar);
-	if (ret != 0)
-	{
+	if (ret != 0) {
 		printf("Could not copy codec context.\n");
 		return -1;
 	}
-	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO)
-	{
+	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
 		LOG("setting up audio device ...");
 		SDL_AudioSpec wanted_specs;
 		SDL_AudioSpec specs;
@@ -669,15 +647,13 @@ int stream_component_open(VideoState * videoState, int stream_index)
 		wanted_specs.callback = audio_callback;
 		wanted_specs.userdata = videoState;
 		ret = SDL_OpenAudio(&wanted_specs, &specs);
-		if (ret < 0)
-		{
+		if (ret < 0) {
 			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
 			return -1;
 		}
 		LOG("audio device opened successfully");
 	}
-	if (avcodec_open2(codecCtx, codec, NULL) < 0)
-	{
+	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
 		printf("Unsupported codec.\n");
 		return -1;
 	}
@@ -788,14 +764,12 @@ VideoPicture* alloc_picture(void * userdata)
 	uint8_t * rgb_buffer = NULL;
 	rgb_buffer = (uint8_t *) av_malloc(rgb_numBytes * sizeof(uint8_t));
 	videoPicture->frame = av_frame_alloc();
-	if (videoPicture->frame == NULL)
-	{
+	if (videoPicture->frame == NULL) {
 		printf("Could not allocate frame.\n");
 		return NULL;
 	}
 	videoPicture->rgb_frame = av_frame_alloc();
-	if (videoPicture->rgb_frame == NULL)
-	{
+	if (videoPicture->rgb_frame == NULL) {
 		printf("Could not allocate rgb frame.\n");
 		return NULL;
 	}
@@ -826,8 +800,7 @@ VideoPicture* alloc_picture(void * userdata)
 
 int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 {
-	if (videoState->quit)
-	{
+	if (videoState->quit) {
 		return -1;
 	}
 	VideoPicture * videoPicture;
@@ -853,8 +826,7 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 	/* } */
 	// set pts value for the last decode frame in the VideoPicture queu (pctq)
 	videoPicture->pts = pts;
-	if (videoPicture->frame)
-	{
+	if (videoPicture->frame) {
 		// set VideoPicture AVFrame info using the last decoded frame
 		videoPicture->frame->pict_type = pFrame->pict_type;
 		videoPicture->frame->pts = pFrame->pts;
@@ -875,8 +847,7 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 				videoPicture->frame->linesize
 		);
 	}
-	if (videoPicture->rgb_frame)
-	{
+	if (videoPicture->rgb_frame) {
 		videoPicture->rgb_frame->pict_type = pFrame->pict_type;
 		videoPicture->rgb_frame->pts = pFrame->pts;
 		videoPicture->rgb_frame->pkt_dts = pFrame->pkt_dts;
@@ -923,8 +894,7 @@ void video_thread(void * arg)
 	int frameFinished = 0;
 	static AVFrame * pFrame = NULL;
 	pFrame = av_frame_alloc();
-	if (!pFrame)
-	{
+	if (!pFrame) {
 		printf("Could not allocate AVFrame.\n");
 		return;
 	}
@@ -971,13 +941,11 @@ void video_thread(void * arg)
 			LOG("receiving decoded frame from decoder ...");
 			ret = avcodec_receive_frame(videoState->video_ctx, pFrame);
 			LOG("receiving returns: %d", ret);
-			if (ret < 0)
-			{
+			if (ret < 0) {
 				LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
 			}
 			// check if entire frame was decoded
-			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-			{
+			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
 				if (ret == AVERROR(EAGAIN)) {
 					LOG("video stream: AVERROR = EAGAIN");
 				}
@@ -986,8 +954,7 @@ void video_thread(void * arg)
 				}
 				break;
 			}
-			else if (ret < 0)
-			{
+			else if (ret < 0) {
 				LOG("Error while decoding: %s", av_err2str(ret));
 				return;
 			}
@@ -1000,8 +967,7 @@ void video_thread(void * arg)
 			pts = guess_correct_pts(videoState->video_ctx, pFrame->pts, pFrame->pkt_dts);
 			LOG("guess_correct_pts() returns pts: %f", pts);
 			// in case we get an undefined timestamp value
-			if (pts == AV_NOPTS_VALUE)
-			{
+			if (pts == AV_NOPTS_VALUE) {
 				LOG("pts is an undefined timestamp value");
 				// set pts to the default value of 0
 				pts = 0;
@@ -1009,8 +975,7 @@ void video_thread(void * arg)
 			pts *= av_q2d(videoState->video_st->time_base);
 			LOG("corrected pts: %f", pts);
 			// did we get an entire video frame?
-			if (frameFinished)
-			{
+			if (frameFinished) {
 				LOG("video frame is complete, synchronizing ...");
 				pts = synchronize_video(videoState, pFrame, pts);
 				LOG("synched pts: %f", pts);
@@ -1164,8 +1129,7 @@ void video_refresh_timer(void * userdata)
 	double sync_threshold;
 	double real_delay;
 	double audio_video_delay;
-	if (videoState->video_st)
-	{
+	if (videoState->video_st) {
 		// check the VideoPicture queue contains decoded frames
 		/* if (videoState->pictq_size == 0) */
 		/* { */
@@ -1700,8 +1664,7 @@ static int audio_resampling(VideoState * videoState, AVFrame * decoded_audio_fra
 	if (videoState->audio_ctx->channels == 1) {
 		arState->out_channel_layout = AV_CH_LAYOUT_MONO;
 	}
-	else if (videoState->audio_ctx->channels == 2)
-	{
+	else if (videoState->audio_ctx->channels == 2) {
 		arState->out_channel_layout = AV_CH_LAYOUT_STEREO;
 	} else {
 		arState->out_channel_layout = AV_CH_LAYOUT_SURROUND;
@@ -1885,8 +1848,7 @@ AudioResamplingState * getAudioResampling(uint64_t channel_layout)
 
 void stream_seek(VideoState * videoState, int64_t pos, int rel)
 {
-	if (!videoState->seek_req)
-	{
+	if (!videoState->seek_req) {
 		videoState->seek_pos = pos;
 		videoState->seek_flags = rel < 0 ? AVSEEK_FLAG_BACKWARD : 0;
 		videoState->seek_req = 1;
