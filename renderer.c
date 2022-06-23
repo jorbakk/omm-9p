@@ -22,8 +22,9 @@
 
 
 // TODO:
-// 1. Random crashes when playing mp4 files, reproducible with iron.mp4
-//    - no issues with transport streams (also bunny_xxx.mp4 seem to be ok)
+// 1. Crash when playing iron.mp4
+//    - malloc(): unsorted double linked list corrupted
+//    - no issues with transport streams (also bunny_xxx.mp4 seems to be ok)
 //    - maybe connected to freeing avframes, or sending packets through the channel
 //    - no crashes in valgrind
 //    - other possible causes: threading related, function returning s.th. w/o return statement
@@ -31,6 +32,8 @@
 //    - valgrind with no options works best, otherwise also frames seem to be dropped
 //    - the size of the video packets sent to the decoder are very small in the beginning
 //      of the stream
+//    - it seems to be always the same packet where sending to the decoder fails
+//      packet size sequence: 382, 21318, 114, 56, 53, 89, 56, 80, 53, 66, 53, 53, 66, 53, crash
 // 2. Crash on writing audio stream to the pcm device using the SDL callback
 //    - writing decoded audio to file works
 //    - use a different audio output method w/o callback (that might use pthreads)
@@ -41,7 +44,7 @@
 
 // Current thread layout:
 //   main_thread
-//   -> decode_thread
+//   -> demuxer_thread
 //      -> stream_component_open (video)
 //         -> video_thread
 //      -> stream_component_open (audio)
@@ -211,7 +214,7 @@ char *aname;
 
 void printHelp();
 void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex);
-void decode_thread(void * arg);
+void demuxer_thread(void * arg);
 int stream_component_open(
 		VideoState * videoState,
 		int stream_index
@@ -370,7 +373,7 @@ threadmain(int argc, char **argv)
 	CFid *fid = xopen(videoState->filename, OREAD);
 	videoState->fid = fid;
 	// start the decoding thread to read data from the AVFormatContext
-	videoState->decode_tid = threadcreate(decode_thread, videoState, THREAD_STACK_SIZE);
+	videoState->decode_tid = threadcreate(demuxer_thread, videoState, THREAD_STACK_SIZE);
 	if(!videoState->decode_tid)
 	{
 		printf("Could not start decoding SDL_Thread: %s.\n", SDL_GetError());
@@ -405,9 +408,9 @@ void printHelp()
 }
 
 
-void decode_thread(void * arg)
+void demuxer_thread(void * arg)
 {
-	LOG("decode thread started");
+	LOG("demuxer thread started");
 	VideoState * videoState = (VideoState *)arg;
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
@@ -476,13 +479,7 @@ void decode_thread(void * arg)
 		/* goto fail; */
 	}
 	else {
-		// open audio stream component codec
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		// FIXME!!! not opening audio at the moment ... if we do, we crash
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 		ret = stream_component_open(videoState, audioStream);
-		/* ret = 0; */
-
 		// check audio codec was opened correctly
 		if (ret < 0) {
 			LOG("Could not open audio codec.");
@@ -490,9 +487,7 @@ void decode_thread(void * arg)
 		}
 		LOG("audio stream component opened successfully.");
 	}
-	/* if (videoState->videoStream < 0 || videoState->audioStream < 0) */
 	if (videoState->videoStream < 0 && videoState->audioStream < 0) {
-		/* printf("Could not open codecs: %s.\n", videoState->filename); */
 		LOG("both video and audio stream missing");
 		goto fail;
 	}
@@ -575,9 +570,9 @@ void decode_thread(void * arg)
 				break;
 			}
 		}
-		// FIXME added exiting when av packet size is zero in the decoder thread
+		// FIXME added exiting when av packet size is zero in the demuxer thread
 		if (packet->size == 0) {
-			LOG("packet size is zero, exiting decoder thread");
+			LOG("packet size is zero, exiting demuxer thread");
 			break;
 		}
 		if (packet->stream_index == videoState->videoStream) {
@@ -635,7 +630,7 @@ void decode_thread(void * arg)
 		chanfree(videoState->pictq);
 	}
 	// in case of failure, push the FF_QUIT_EVENT and return
-	LOG("quitting decode thread");
+	LOG("quitting demuxer thread");
 	threadexitsall("end of file");
 	fail:
 	{
@@ -857,7 +852,7 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 	}
 	VideoPicture videoPicture;
 	init_picture(videoState, &videoPicture);
-	// set pts value for the last decode frame in the VideoPicture queu (pctq)
+	// set pts value for the last decoded frame in the VideoPicture queue (pctq)
 	videoPicture.pts = pts;
 	if (videoPicture.frame) {
 		// set VideoPicture AVFrame info using the last decoded frame
@@ -927,7 +922,7 @@ void video_thread(void *arg)
 		printf("Could not allocate AVPacket.\n");
 		return;
 	}
-	// set this when we are done decoding an entire frame
+	/* // set this when we are done decoding an entire frame */
 	int frameFinished = 0;
 	static AVFrame *pFrame = NULL;
 	pFrame = av_frame_alloc();
@@ -943,6 +938,11 @@ void video_thread(void *arg)
 	videoState->video_ctx->debug = 1;
 	for (;;)
 	{
+		/* AVPacket * packet = av_packet_alloc(); */
+		/* if (packet == NULL) { */
+			/* printf("Could not allocate AVPacket.\n"); */
+			/* return; */
+		/* } */
 		LOG("video_thread looping ...");
 		/* packet = recvp(videoState->videoq); */
 		/* int recret = recv(videoState->videoq, &packet); */
@@ -1035,6 +1035,7 @@ void video_thread(void *arg)
 				}
 			}
 		}
+		/* av_packet_unref(packet); */
 	}
 	av_packet_unref(packet);
 	/* av_packet_unref(&packet); */
@@ -1525,7 +1526,6 @@ void video_display(VideoState * videoState, VideoPicture *videoPicture)
 		// TODO: Add full screen support
 		x = (screen_width - w);
 		y = (screen_height - h);
-		// check the number of frames to decode was not exceeded
 		if (_DEBUG_) {
 			// dump information about the frame being rendered
 			LOG(
