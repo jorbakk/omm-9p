@@ -21,12 +21,12 @@
  */
 
 
-// TODO
+// TODO:
 // 1. Random crashes when playing mp4 files, reproducible with iron.mp4
-//    - no issues with transport streams
-//    - maybe also connected to freeing avframes
+//    - no issues with transport streams (also bunny_xxx.mp4 seem to be ok)
+//    - maybe connected to freeing avframes, or sending packets through the channel
 // 2. Crash on opening / processing audio stream
-//    - most likely the sdl audio callback
+//    - most likely the sdl audio callback using threads in libsdl
 // 3. AV sync
 // 4. Proper shutdown of renderer
 // 5. Keyboard events
@@ -44,9 +44,7 @@
 
 
 #include <u.h>
-
-#include <time.h>
-
+#include <time.h>  // posix std headers should be included between u.h and libc.h
 #include <libc.h>
 #include <signal.h>
 #include <bio.h>
@@ -705,7 +703,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			/* videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
 			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
 			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
-			// FIXME disabling sdl audio for now ...
+			// FIXME disabling SDL audio for now ...
 			/* LOG("calling sdl_pauseaudio(0) ..."); */
 			/* SDL_PauseAudio(0); */
 			/* LOG("sdl_pauseaudio(0) called."); */
@@ -898,13 +896,13 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 	/* sendp(videoState->pictq, videoPicture); */
 	int sendret = send(videoState->pictq, &videoPicture);
 	if (sendret == 1) {
-		LOG("<== sending decoded video frame with pts %f to picture queue succeeded.", videoPicture.pts);
+		LOG("==> sending decoded video frame with pts %f to picture queue succeeded.", videoPicture.pts);
 	}
 	else if (sendret == -1) {
-		LOG("<== sending decoded video frame to picture queue interrupted");
+		LOG("==> sending decoded video frame to picture queue interrupted");
 	}
 	else {
-		LOG("<== unforseen error when sending decoded video frame to picture queue");
+		LOG("==> unforseen error when sending decoded video frame to picture queue");
 	}
 	return 0;
 }
@@ -970,6 +968,9 @@ void video_thread(void *arg)
 		/* LOG("sending video packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet.size, videoState->video_ctx->width, videoState->video_ctx->height); */
 		/* int ret = avcodec_send_packet(videoState->video_ctx, &packet); */
 		LOG("sending video packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet->size, videoState->video_ctx->width, videoState->video_ctx->height);
+
+		// FIXME we get a SIGABRT with "malloc(): unsorted double linked list corrupted" on iron.mp4
+		// after decoding some packets successfully
 		int ret = avcodec_send_packet(videoState->video_ctx, packet);
 		LOG("sending returns: %d", ret);
 		if (ret < 0) {
