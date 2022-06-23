@@ -26,11 +26,13 @@
 //    - no issues with transport streams (also bunny_xxx.mp4 seem to be ok)
 //    - maybe connected to freeing avframes, or sending packets through the channel
 // 2. Crash on opening / processing audio stream
-//    - most likely the sdl audio callback using threads in libsdl
-// 3. AV sync
-// 4. Proper shutdown of renderer
-// 5. Keyboard events
-// 6. 9P control server
+//    - most likely the SDL audio callback using threads in libsdl
+//    -> decoding audio works without SDL audio callback
+// 3. Write decoded audio to a file
+// 4. AV sync
+// 5. Proper shutdown of renderer
+// 6. Keyboard events
+// 7. 9P control server
 
 // Current thread layout:
 //   main_thread
