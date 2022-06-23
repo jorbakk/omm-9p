@@ -34,6 +34,10 @@
 //      of the stream
 //    - it seems to be always the same packet where sending to the decoder fails
 //      packet size sequence: 382, 21318, 114, 56, 53, 89, 56, 80, 53, 66, 53, 53, 66, 53, crash
+//    - need to check if the demuxer video and audio packet queues contain all the same pointer
+//      of the one AVPacket that is allocated before the demuxer loop
+//      ... checked: only received packet in audio queue changes, all other pointers remain
+//      the same (in orig. sources).
 // 2. Crash on writing audio stream to the pcm device using the SDL callback
 //    - writing decoded audio to file works
 //    - use a different audio output method w/o callback (that might use pthreads)
@@ -505,6 +509,8 @@ void demuxer_thread(void * arg)
 		// NOTE AVPacket must be one object for the whole demuxing
 		// process so this might be the reason, why sending over
 		// the Channel doesn't always work
+		// This means, that the video and audio packet queues contain all the same
+		// pointer (need to double check this)
 		/////////////////////////////////////////////////////////////////////////////
 		/* AVPacket *packet = av_packet_alloc(); */
 		/* if (packet == NULL) { */
