@@ -152,6 +152,7 @@ typedef struct VideoState
 	// Threads.
 	int decode_tid;
 	int video_tid;
+	int audio_tid;
 	// Input file name and plan 9 file reference
 	char filename[1024];
 	CFid *fid;
@@ -217,6 +218,7 @@ int queue_picture(
 		double pts
 );
 void video_thread(void * arg);
+void audio_thread(void * arg);
 static int64_t guess_correct_pts(
 		AVCodecContext * ctx,
 		int64_t reordered_pts,
@@ -722,6 +724,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			videoState->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE);
 			videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
 			videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE);
+			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
 			LOG("Video thread created with id: %i", videoState->video_tid);
 			videoState->sws_ctx = sws_getContext(videoState->video_ctx->width,
 												 videoState->video_ctx->height,
@@ -956,17 +959,17 @@ void video_thread(void * arg)
 			continue;
 		}
 		// give the decoder raw compressed data in an AVPacket
-		LOG("sending packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet->size, videoState->video_ctx->width, videoState->video_ctx->height);
+		LOG("sending video packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet->size, videoState->video_ctx->width, videoState->video_ctx->height);
 		int ret = avcodec_send_packet(videoState->video_ctx, packet);
 		LOG("sending returns: %d", ret);
 		if (ret < 0) {
-			LOG("error sending packet for decoding: %s", av_err2str(ret));
+			LOG("error sending video packet for decoding: %s", av_err2str(ret));
 			return;
 		}
 		while (ret >= 0)
 		{
 			// get decoded output data from decoder
-			LOG("receiving decoded frame from decoder ...");
+			LOG("receiving decoded video frame from decoder ...");
 			ret = avcodec_receive_frame(videoState->video_ctx, pFrame);
 			LOG("receiving returns: %d", ret);
 			if (ret < 0) {
@@ -1019,6 +1022,89 @@ void video_thread(void * arg)
 	av_frame_unref(pFrame);
 	/* av_frame_free(&pFrame); */
 	/* av_free(pFrame); */
+	return;
+}
+
+
+void audio_thread(void * arg)
+{
+	LOG("audio thread ...");
+	VideoState *videoState = (VideoState*)arg;
+	AVPacket *packet = av_packet_alloc();
+	if (packet == NULL) {
+		printf("Could not allocate AVPacket.\n");
+		return;
+	}
+	static AVFrame * pFrame = NULL;
+	pFrame = av_frame_alloc();
+	if (!pFrame) {
+		printf("Could not allocate AVFrame.\n");
+		return;
+	}
+	/* double pts; */
+	for (;;)
+	{
+		LOG("audio_thread looping ...");
+		int recret = recv(videoState->audioq, packet);
+		if (recret == 1) { LOG("<== received av packet of size %i from audio queue.", packet->size);
+		}
+		else if (recret == -1) {
+			LOG("<== reveiving av packet from audio queue interrupted");
+		}
+		else {
+			LOG("<== unforseen error when receiving av packet from audio queue");
+		}
+		if (packet == NULL) {
+			break;
+		}
+		// Added this check because there were packets of size 0 popping out of the Channel
+		// before changing from sendp/recvp to send/recv
+		if (packet->size == 0) { 
+			LOG("PACKET SIZE IS 0");
+			/* continue; */
+		}
+		if (packet->data == flush_pkt.data) {
+			avcodec_flush_buffers(videoState->audio_ctx);
+			continue;
+		}
+		// give the decoder raw compressed data in an AVPacket
+		LOG("sending audio packet of size %d to decoder", packet->size);
+		int ret = avcodec_send_packet(videoState->audio_ctx, packet);
+		LOG("sending audio returns: %d", ret);
+		if (ret < 0) {
+			LOG("error sending audio packet for decoding: %s", av_err2str(ret));
+			return;
+		}
+		while (ret >= 0)
+		{
+			// get decoded output data from decoder
+			LOG("receiving decoded audio frame from decoder ...");
+			ret = avcodec_receive_frame(videoState->audio_ctx, pFrame);
+			LOG("receiving returns: %d", ret);
+			if (ret < 0) {
+				LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
+			}
+			// check if entire frame was decoded
+			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+				if (ret == AVERROR(EAGAIN)) {
+					LOG("audio stream: AVERROR = EAGAIN");
+				}
+				if (ret == AVERROR_EOF) {
+					LOG("audio stream: AVERROR = EOF");
+				}
+				break;
+			}
+			else if (ret < 0) {
+				LOG("Error while decoding: %s", av_err2str(ret));
+				return;
+			}
+			else {
+				LOG("audio frame finished");
+			}
+		}
+		av_packet_unref(packet);
+	}
+	av_frame_unref(pFrame);
 	return;
 }
 
