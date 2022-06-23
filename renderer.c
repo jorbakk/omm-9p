@@ -21,6 +21,16 @@
  */
 
 
+// TODO
+// 1. Random crashes when playing mp4 files, reproducible with iron.mp4
+//    - no issues with transport streams
+// 2. Crash on opening / processing audio stream
+//    - most likely the sdl audio callback
+// 3. AV sync
+// 4. Proper shutdown of renderer
+// 5. Keyboard events
+// 6. 9P control server
+
 // Current thread layout:
 //   main_thread
 //   -> decode_thread
