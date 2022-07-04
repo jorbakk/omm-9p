@@ -155,7 +155,7 @@ typedef struct VideoState
 	Channel		 *videoq;
 	Channel		*pictq;
 	struct SwsContext * sws_ctx;
-	/* struct SwsContext * rgb_ctx; */
+	struct SwsContext * rgb_ctx;
 	double			  frame_timer;
 	double			  frame_last_pts;
 	double			  frame_last_delay;
@@ -426,6 +426,7 @@ void printHelp()
 void decoder_thread(void * arg)
 {
 	LOG("decoder thread started");
+	FILE *audio_out = fopen("/tmp/out.pcm", "wb");
 	VideoState * videoState = (VideoState *)arg;
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
@@ -517,6 +518,28 @@ void decoder_thread(void * arg)
 		printf("Could not allocate AVFrame.\n");
 		return;
 	}
+
+    static AVFrame *pFrameRGB = NULL;
+    pFrameRGB = av_frame_alloc();
+    uint8_t * buffer = NULL;
+    int numBytes;
+    numBytes = av_image_get_buffer_size(
+		AV_PIX_FMT_RGB24,
+		videoState->video_ctx->width,
+		videoState->video_ctx->height,
+		32
+		);
+    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+    av_image_fill_arrays(
+		pFrameRGB->data,
+		pFrameRGB->linesize,
+		buffer,
+		AV_PIX_FMT_RGB24,
+		videoState->video_ctx->width,
+		videoState->video_ctx->height,
+		32
+    );
+
 	// Main decoder loop
 	for (;;) {
 		if (videoState->quit) {
@@ -599,8 +622,44 @@ void decoder_thread(void * arg)
 		}
 		// TODO it would be nicer to check for the frame type instead for the codec context
 		if (codecCtx == videoState->video_ctx) {
+			if (codecCtx->frame_number > videoState->maxFramesToDecode) {
+				threadexitsall("max frames reached");
+			}
+            sws_scale(
+                videoState->rgb_ctx,
+                (uint8_t const * const *)pFrame->data,
+                pFrame->linesize,
+                0,
+                codecCtx->height,
+                pFrameRGB->data,
+                pFrameRGB->linesize
+            );
+            // save the read AVFrame into ppm file
+            /* saveFrame(pFrameRGB, videoState, codecCtx->frame_number); */
+            // print log information
+            printf(
+                "Frame %c (%d) pts %ld dts %ld key_frame %d "
+	"[coded_picture_number %d, display_picture_number %d,"
+	" %dx%d]\n",
+                av_get_picture_type_char(pFrame->pict_type),
+                codecCtx->frame_number,
+                pFrameRGB->pts,
+                pFrameRGB->pkt_dts,
+                pFrameRGB->key_frame,
+                pFrameRGB->coded_picture_number,
+                pFrameRGB->display_picture_number,
+                codecCtx->width,
+                codecCtx->height
+            );
 		}
 		else if (codecCtx == videoState->audio_ctx) {
+			/* int data_size = audio_resampling( */
+					/* videoState, */
+					/* pFrame, */
+					/* AV_SAMPLE_FMT_S16, */
+					/* videoState->audio_buf); */
+			/* LOG("resampled audio bytes: %d", data_size); */
+			/* fwrite(videoState->audio_buf, 1, data_size, audio_out); */
 		}
 		av_frame_unref(pFrame);
 		av_packet_unref(packet);
@@ -622,6 +681,7 @@ void decoder_thread(void * arg)
 	if (videoState->pictq) {
 		chanfree(videoState->pictq);
 	}
+	fclose(audio_out);
 	// in case of failure, push the FF_QUIT_EVENT and return
 	LOG("quitting demuxer thread");
 	threadexitsall("end of file");
@@ -723,17 +783,17 @@ int stream_component_open(VideoState * videoState, int stream_index)
 												 NULL,
 												 NULL
 			);
-			/* videoState->rgb_ctx = sws_getContext(videoState->video_ctx->width, */
-												 /* videoState->video_ctx->height, */
-												 /* videoState->video_ctx->pix_fmt, */
-												 /* videoState->video_ctx->width, */
-												 /* videoState->video_ctx->height, */
-												 /* AV_PIX_FMT_RGB24, */
-												 /* SWS_BILINEAR, */
-												 /* NULL, */
-												 /* NULL, */
-												 /* NULL */
-			/* ); */
+			videoState->rgb_ctx = sws_getContext(videoState->video_ctx->width,
+												 videoState->video_ctx->height,
+												 videoState->video_ctx->pix_fmt,
+												 videoState->video_ctx->width,
+												 videoState->video_ctx->height,
+												 AV_PIX_FMT_RGB24,
+												 SWS_BILINEAR,
+												 NULL,
+												 NULL,
+												 NULL
+			);
 		}
 			break;
 		default:
