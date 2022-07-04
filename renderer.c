@@ -260,6 +260,7 @@ int synchronize_audio(
 		int samples_size
 );
 void video_refresh_timer(void * userdata);
+void display(VideoState *videoState);
 double get_audio_clock(VideoState * videoState);
 double get_video_clock(VideoState * videoState);
 double get_external_clock(VideoState * videoState);
@@ -388,6 +389,8 @@ threadmain(int argc, char **argv)
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
 	videoState->fid = fid;
+	// Create picture queue
+	videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
 	// start the decoding thread to read data from the AVFormatContext
 	videoState->decode_tid = threadcreate(decoder_thread, videoState, THREAD_STACK_SIZE);
 	if(!videoState->decode_tid)
@@ -401,10 +404,7 @@ threadmain(int argc, char **argv)
 	flush_pkt.data = (uint8_t*)"FLUSH";
 	for(;;)
 	{
-		/* LOG("threadmain yielding ..."); */
-		yield();
-		/* LOG("threadmain yielded."); */
-		/* video_refresh_timer(videoState); */
+		display(videoState);
 		if (videoState->quit) {
 			break;
 		}
@@ -573,22 +573,22 @@ void decoder_thread(void * arg)
 			LOG("sending audio packet of size %d to decoder", packet->size);
 			codecCtx = videoState->audio_ctx;
 		}
-		int send_ret = avcodec_send_packet(codecCtx, packet);
-		LOG("sending packet of size %d to decoder returned %d: ", packet->size, send_ret);
-		if (send_ret == AVERROR(EAGAIN)) {
+		int decsend_ret = avcodec_send_packet(codecCtx, packet);
+		LOG("sending packet of size %d to decoder returned %d: ", packet->size, decsend_ret);
+		if (decsend_ret == AVERROR(EAGAIN)) {
 			LOG("AVERROR = EAGAIN: input not accepted, receive frame from decoder first");
 		}
-		if (send_ret == AVERROR(EINVAL)) {
+		if (decsend_ret == AVERROR(EINVAL)) {
 			LOG("AVERROR = EINVAL: codec not opened or requires flush");
 		}
-		if (send_ret == AVERROR(ENOMEM)) {
+		if (decsend_ret == AVERROR(ENOMEM)) {
 			LOG("AVERROR = ENOMEM: failed to queue packet");
 		}
-		if (send_ret == AVERROR_EOF) {
+		if (decsend_ret == AVERROR_EOF) {
 			LOG("AVERROR = EOF: decoder has been flushed");
 		}
-		if (send_ret < 0) {
-			LOG("error sending packet to decoder: %s", av_err2str(send_ret));
+		if (decsend_ret < 0) {
+			LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
 			return;
 		}
 		// This loop is only needed when we get more than one decoded frame out
@@ -633,23 +633,23 @@ void decoder_thread(void * arg)
 	                pFrameRGB->data,
 	                pFrameRGB->linesize
 	            );
-	            // save the read AVFrame into ppm file
-	            saveFrame(pFrameRGB, codecCtx->width, codecCtx->height, codecCtx->frame_number);
-	            // print log information
-	            LOG(
-	                "Frame %c (%d) pts %ld dts %ld key_frame %d "
-		"[coded_picture_number %d, display_picture_number %d,"
-		" %dx%d]",
-	                av_get_picture_type_char(pFrame->pict_type),
-	                codecCtx->frame_number,
-	                pFrameRGB->pts,
-	                pFrameRGB->pkt_dts,
-	                pFrameRGB->key_frame,
-	                pFrameRGB->coded_picture_number,
-	                pFrameRGB->display_picture_number,
-	                codecCtx->width,
-	                codecCtx->height
-	            );
+				VideoPicture videoPicture = {
+					.frame = pFrameRGB,
+					.width = codecCtx->width,
+					.height = codecCtx->height,
+					.pts = codecCtx->frame_number
+					};
+				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
+				int sendret = send(videoState->pictq, &videoPicture);
+				if (sendret == 1) {
+					LOG("==> sending picture with pts %f to picture queue succeeded.", videoPicture.pts);
+				}
+				else if (sendret == -1) {
+					LOG("==> sending picture to picture queue interrupted");
+				}
+				else {
+					LOG("==> unforseen error when sending picture to picture queue");
+				}
 			}
 			else if (codecCtx == videoState->audio_ctx) {
 				int data_size = audio_resampling(
@@ -660,9 +660,13 @@ void decoder_thread(void * arg)
 				LOG("resampled audio bytes: %d", data_size);
 				fwrite(videoState->audio_buf, 1, data_size, audio_out);
 			}
+			else {
+				LOG("non AV packet from demuxer, ignoring");
+			}
 		}
-		av_frame_unref(pFrame);
 		av_packet_unref(packet);
+		// FIXME: can't unref pFrame if it is send through a channel
+		av_frame_unref(pFrame);
 	}
 	// Clean up the decoder thread
 	if (pIOCtx) {
@@ -768,8 +772,8 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			videoState->video_current_pts_time = av_gettime();
 			/* videoState->videoq = chancreate(sizeof(AVPacket*), MAX_VIDEOQ_SIZE); */
 			/* videoState->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
-			videoState->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE);
-			videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
+			/* videoState->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE); */
+			/* videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE); */
 			/* videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE); */
 			LOG("Video thread created with id: %i", videoState->video_tid);
 			videoState->sws_ctx = sws_getContext(videoState->video_ctx->width,
@@ -805,6 +809,61 @@ int stream_component_open(VideoState * videoState, int stream_index)
 	return 0;
 }
 
+
+void
+display(VideoState *videoState)
+{
+	LOG("receiving picture from picture queue and displaying video frame ...");
+	VideoPicture videoPicture;
+	int recret = recv(videoState->pictq, &videoPicture);
+	if (recret == 1) {
+		LOG("<== received decoded video frame with pts %f from picture queue.", videoPicture.pts);
+	}
+	else if (recret == -1) {
+		LOG("<== reveiving decoded video frame from picture queue interrupted");
+	}
+	else {
+		LOG("<== unforseen error when receiving decoded video frame from picture queue");
+	}
+	if (_DEBUG_) {
+		LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
+		LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
+	}
+	AVFrame *pFrameRGB = videoPicture.frame;
+    // save the read AVFrame into ppm file
+	saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts);
+    // print log information
+    LOG(
+        "Frame %c (%d) pts %ld dts %ld key_frame %d "
+"[coded_picture_number %d, display_picture_number %d,"
+" %dx%d]",
+        av_get_picture_type_char(pFrameRGB->pict_type),
+        (int)videoPicture.pts,
+        pFrameRGB->pts,
+        pFrameRGB->pkt_dts,
+        pFrameRGB->key_frame,
+        pFrameRGB->coded_picture_number,
+        pFrameRGB->display_picture_number,
+        videoPicture.width,
+        videoPicture.height
+    );
+	LOG("receiving picture from picture queue and displaying video frame finished.");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 void
 init_picture(void *userdata, VideoPicture *videoPicture)
