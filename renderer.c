@@ -541,15 +541,16 @@ void decoder_thread(void * arg)
 			break;
 		}
 		int ret = 0;
+		AVCodecContext *codecCtx = NULL;
 		if (packet->stream_index == videoState->videoStream) {
 			LOG("sending video packet of size %d to decoder", packet->size);
-			ret = avcodec_send_packet(videoState->video_ctx, packet);
+			codecCtx = videoState->video_ctx;
 		}
 		else {
 			LOG("sending audio packet of size %d to decoder", packet->size);
-			LOG("... skipped for now");
-			/* ret = avcodec_send_packet(videoState->audio_ctx, packet); */
+			codecCtx = videoState->audio_ctx;
 		}
+		ret = avcodec_send_packet(codecCtx, packet);
 		LOG("sending packet of size %d to decoder returned %d: ", packet->size, ret);
 		if (ret == AVERROR(EAGAIN)) {
 			LOG("AVERROR = EAGAIN: input not accepted, receive frame from decoder first");
@@ -567,34 +568,32 @@ void decoder_thread(void * arg)
 			LOG("error sending packet to decoder: %s", av_err2str(ret));
 			return;
 		}
-		if (packet->stream_index == videoState->videoStream) {
-			for (;;) {
-				/* int frameFinished = 0; */
-				// get decoded output data from decoder
-				LOG("receiving decoded video frame from decoder ...");
-				ret = avcodec_receive_frame(videoState->video_ctx, pFrame);
-				LOG("receiving returns: %d", ret);
-				// check if entire frame was decoded
-				if (ret == AVERROR(EAGAIN)) {
-					LOG("av frame not ready: AVERROR = EAGAIN");
-					break;
-				}
-				if (ret == AVERROR_EOF) {
-					LOG("end of file: AVERROR = EOF");
-					break; // got error ...
-				}
-				if (ret == AVERROR(EINVAL)) {
-					LOG("decoding error: AVERROR = EINVAL");
-					break; // got error ...
-				}
-				if (ret < 0) {
-					LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
-					break; // got error ...
-				}
-				LOG("decoding frame finished");
+		for (;;) {
+			/* int frameFinished = 0; */
+			// get decoded output data from decoder
+			LOG("receiving decoded frame from decoder ...");
+			ret = avcodec_receive_frame(codecCtx, pFrame);
+			LOG("receiving returns: %d", ret);
+			// check if entire frame was decoded
+			if (ret == AVERROR(EAGAIN)) {
+				LOG("av frame not ready: AVERROR = EAGAIN");
 				break;
-				/* frameFinished = 1; */
 			}
+			if (ret == AVERROR_EOF) {
+				LOG("end of file: AVERROR = EOF");
+				return;
+			}
+			if (ret == AVERROR(EINVAL)) {
+				LOG("decoding error: AVERROR = EINVAL");
+				return;
+			}
+			if (ret < 0) {
+				LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
+				return;
+			}
+			LOG("decoding frame finished");
+			break;
+			/* frameFinished = 1; */
 		}
 	}
 	av_frame_unref(pFrame);
