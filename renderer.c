@@ -229,7 +229,7 @@ char *addr = "tcp!localhost!5640";
 char *aname;
 
 void printHelp();
-void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex);
+void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
 void decoder_thread(void * arg);
 int stream_component_open(
 		VideoState * videoState,
@@ -619,47 +619,47 @@ void decoder_thread(void * arg)
 			}
 			LOG("decoding frame finished");
 			/* frameFinished = 1; */
-		}
-		// TODO it would be nicer to check for the frame type instead for the codec context
-		if (codecCtx == videoState->video_ctx) {
-			if (codecCtx->frame_number > videoState->maxFramesToDecode) {
-				threadexitsall("max frames reached");
+			// TODO it would be nicer to check for the frame type instead for the codec context
+			if (codecCtx == videoState->video_ctx) {
+				if (codecCtx->frame_number > videoState->maxFramesToDecode) {
+					threadexitsall("max frames reached");
+				}
+	            sws_scale(
+	                videoState->rgb_ctx,
+	                (uint8_t const * const *)pFrame->data,
+	                pFrame->linesize,
+	                0,
+	                codecCtx->height,
+	                pFrameRGB->data,
+	                pFrameRGB->linesize
+	            );
+	            // save the read AVFrame into ppm file
+	            saveFrame(pFrameRGB, codecCtx->width, codecCtx->height, codecCtx->frame_number);
+	            // print log information
+	            printf(
+	                "Frame %c (%d) pts %ld dts %ld key_frame %d "
+		"[coded_picture_number %d, display_picture_number %d,"
+		" %dx%d]\n",
+	                av_get_picture_type_char(pFrame->pict_type),
+	                codecCtx->frame_number,
+	                pFrameRGB->pts,
+	                pFrameRGB->pkt_dts,
+	                pFrameRGB->key_frame,
+	                pFrameRGB->coded_picture_number,
+	                pFrameRGB->display_picture_number,
+	                codecCtx->width,
+	                codecCtx->height
+	            );
 			}
-            sws_scale(
-                videoState->rgb_ctx,
-                (uint8_t const * const *)pFrame->data,
-                pFrame->linesize,
-                0,
-                codecCtx->height,
-                pFrameRGB->data,
-                pFrameRGB->linesize
-            );
-            // save the read AVFrame into ppm file
-            /* saveFrame(pFrameRGB, videoState, codecCtx->frame_number); */
-            // print log information
-            printf(
-                "Frame %c (%d) pts %ld dts %ld key_frame %d "
-	"[coded_picture_number %d, display_picture_number %d,"
-	" %dx%d]\n",
-                av_get_picture_type_char(pFrame->pict_type),
-                codecCtx->frame_number,
-                pFrameRGB->pts,
-                pFrameRGB->pkt_dts,
-                pFrameRGB->key_frame,
-                pFrameRGB->coded_picture_number,
-                pFrameRGB->display_picture_number,
-                codecCtx->width,
-                codecCtx->height
-            );
-		}
-		else if (codecCtx == videoState->audio_ctx) {
-			/* int data_size = audio_resampling( */
-					/* videoState, */
-					/* pFrame, */
-					/* AV_SAMPLE_FMT_S16, */
-					/* videoState->audio_buf); */
-			/* LOG("resampled audio bytes: %d", data_size); */
-			/* fwrite(videoState->audio_buf, 1, data_size, audio_out); */
+			else if (codecCtx == videoState->audio_ctx) {
+				/* int data_size = audio_resampling( */
+						/* videoState, */
+						/* pFrame, */
+						/* AV_SAMPLE_FMT_S16, */
+						/* videoState->audio_buf); */
+				/* LOG("resampled audio bytes: %d", data_size); */
+				/* fwrite(videoState->audio_buf, 1, data_size, audio_out); */
+			}
 		}
 		av_frame_unref(pFrame);
 		av_packet_unref(packet);
@@ -1819,8 +1819,7 @@ void stream_seek(VideoState * videoState, int64_t pos, int rel)
 }
 
 
-/* void saveFrame(AVFrame *pFrame, int width, int height, int pix_fmt, int frameIndex) */
-void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex)
+void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex)
 {
 	LOG("saving video picture to file ...");
     FILE * pFile;
@@ -1832,12 +1831,10 @@ void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex)
     if (pFile == NULL) {
         return;
     }
-    /* fprintf(pFile, "P6\n%d %d\n255\n", width, height); */
-    fprintf(pFile, "P6\n%d %d\n255\n", videoState->video_ctx->width, videoState->video_ctx->height);
-    for (y = 0; y < videoState->video_ctx->height; y++)
+    fprintf(pFile, "P6\n%d %d\n255\n", width, height);
+    for (y = 0; y < height; y++)
     {
-        /* fwrite(avFrame->data[0] + y * avFrame->linesize[0], 1, width * 3, pFile); */
-        fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, videoState->video_ctx->width * 3, pFile);
+        fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 3, pFile);
     }
     fclose(pFile);
 	LOG("saved video picture.");
