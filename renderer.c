@@ -517,6 +517,7 @@ void decoder_thread(void * arg)
 		printf("Could not allocate AVFrame.\n");
 		return;
 	}
+	// Main decoding loop
 	for (;;) {
 		if (videoState->quit) {
 			break;
@@ -567,6 +568,8 @@ void decoder_thread(void * arg)
 			LOG("error sending packet to decoder: %s", av_err2str(send_ret));
 			return;
 		}
+		// This loop is only needed when we get more than one decoded frame out
+		// of on packet read from the demuxer
 		int decoder_ret = 0;
 		while (decoder_ret >= 0) {
 			/* int frameFinished = 0; */
@@ -595,6 +598,7 @@ void decoder_thread(void * arg)
 			/* frameFinished = 1; */
 		}
 	}
+	// Clean up the decoder thread
 	av_frame_unref(pFrame);
 	av_packet_unref(packet);
 
