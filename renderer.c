@@ -244,11 +244,11 @@ int queue_picture(
 );
 void video_thread(void * arg);
 void audio_thread(void * arg);
-static int64_t guess_correct_pts(
-		AVCodecContext * ctx,
-		int64_t reordered_pts,
-		int64_t dts
-);
+/* static int64_t guess_correct_pts( */
+		/* AVCodecContext * ctx, */
+		/* int64_t reordered_pts, */
+		/* int64_t dts */
+/* ); */
 double synchronize_video(
 		VideoState * videoState,
 		AVFrame * src_frame,
@@ -517,7 +517,7 @@ void decoder_thread(void * arg)
 		printf("Could not allocate AVFrame.\n");
 		return;
 	}
-	// Main decoding loop
+	// Main decoder loop
 	for (;;) {
 		if (videoState->quit) {
 			break;
@@ -597,11 +597,15 @@ void decoder_thread(void * arg)
 			LOG("decoding frame finished");
 			/* frameFinished = 1; */
 		}
+		// TODO it would be nicer to check for the frame type instead for the codec context
+		if (codecCtx == videoState->video_ctx) {
+		}
+		else if (codecCtx == videoState->audio_ctx) {
+		}
 		av_frame_unref(pFrame);
 		av_packet_unref(packet);
 	}
 	// Clean up the decoder thread
-
 	if (pIOCtx) {
 		avio_context_free(&pIOCtx);
 	}
@@ -891,31 +895,31 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 }
 
 
-static int64_t guess_correct_pts(AVCodecContext * ctx, int64_t reordered_pts, int64_t dts)
-{
-	int64_t pts;
-	if (dts != AV_NOPTS_VALUE) {
-		ctx->pts_correction_num_faulty_dts += dts <= ctx->pts_correction_last_dts;
-		ctx->pts_correction_last_dts = dts;
-	}
-	else if (reordered_pts != AV_NOPTS_VALUE) {
-		ctx->pts_correction_last_dts = reordered_pts;
-	}
-	if (reordered_pts != AV_NOPTS_VALUE) {
-		ctx->pts_correction_num_faulty_pts += reordered_pts <= ctx->pts_correction_last_pts;
-		ctx->pts_correction_last_pts = reordered_pts;
-	}
-	else if (dts != AV_NOPTS_VALUE) {
-		ctx->pts_correction_last_pts = dts;
-	}
-	if ((ctx->pts_correction_num_faulty_pts <= ctx->pts_correction_num_faulty_dts || dts == AV_NOPTS_VALUE) && reordered_pts != AV_NOPTS_VALUE) {
-		pts = reordered_pts;
-	}
-	else {
-		pts = dts;
-	}
-	return pts;
-}
+/* static int64_t guess_correct_pts(AVCodecContext * ctx, int64_t reordered_pts, int64_t dts) */
+/* { */
+	/* int64_t pts; */
+	/* if (dts != AV_NOPTS_VALUE) { */
+		/* ctx->pts_correction_num_faulty_dts += dts <= ctx->pts_correction_last_dts; */
+		/* ctx->pts_correction_last_dts = dts; */
+	/* } */
+	/* else if (reordered_pts != AV_NOPTS_VALUE) { */
+		/* ctx->pts_correction_last_dts = reordered_pts; */
+	/* } */
+	/* if (reordered_pts != AV_NOPTS_VALUE) { */
+		/* ctx->pts_correction_num_faulty_pts += reordered_pts <= ctx->pts_correction_last_pts; */
+		/* ctx->pts_correction_last_pts = reordered_pts; */
+	/* } */
+	/* else if (dts != AV_NOPTS_VALUE) { */
+		/* ctx->pts_correction_last_pts = dts; */
+	/* } */
+	/* if ((ctx->pts_correction_num_faulty_pts <= ctx->pts_correction_num_faulty_dts || dts == AV_NOPTS_VALUE) && reordered_pts != AV_NOPTS_VALUE) { */
+		/* pts = reordered_pts; */
+	/* } */
+	/* else { */
+		/* pts = dts; */
+	/* } */
+	/* return pts; */
+/* } */
 
 
 double synchronize_video(VideoState * videoState, AVFrame * src_frame, double pts)
