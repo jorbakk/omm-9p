@@ -212,6 +212,13 @@ typedef struct VideoPicture
     double      pts;
 } VideoPicture;
 
+typedef struct AudioSample
+{
+	/* uint8_t			 sample[(MAX_AUDIO_FRAME_SIZE * 3) /2]; */
+	uint8_t	*sample;
+	int size;
+} AudioSample;
+
 enum
 {
 	// Sync to audio clock.
@@ -261,6 +268,7 @@ int synchronize_audio(
 );
 void video_refresh_timer(void * userdata);
 void display(VideoState *videoState);
+void playaudio(VideoState *videoState);
 double get_audio_clock(VideoState * videoState);
 double get_video_clock(VideoState * videoState);
 double get_external_clock(VideoState * videoState);
@@ -361,6 +369,7 @@ xopen(char *name, int mode)
 	return fid;
 }
 
+static FILE *audio_out;
 
 void
 threadmain(int argc, char **argv)
@@ -389,8 +398,10 @@ threadmain(int argc, char **argv)
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
 	videoState->fid = fid;
-	// Create picture queue
+	// Create picture and audio sample queue
 	videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
+	videoState->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE);
+	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
 	videoState->decode_tid = threadcreate(decoder_thread, videoState, THREAD_STACK_SIZE);
 	if(!videoState->decode_tid)
@@ -405,6 +416,7 @@ threadmain(int argc, char **argv)
 	for(;;)
 	{
 		display(videoState);
+		playaudio(videoState);
 		if (videoState->quit) {
 			break;
 		}
@@ -426,7 +438,6 @@ void printHelp()
 void decoder_thread(void * arg)
 {
 	LOG("decoder thread started");
-	FILE *audio_out = fopen("/tmp/out.pcm", "wb");
 	VideoState * videoState = (VideoState *)arg;
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
@@ -658,7 +669,21 @@ void decoder_thread(void * arg)
 						AV_SAMPLE_FMT_S16,
 						videoState->audio_buf);
 				LOG("resampled audio bytes: %d", data_size);
-				fwrite(videoState->audio_buf, 1, data_size, audio_out);
+				AudioSample audioSample = {
+					.sample = videoState->audio_buf,
+					.size = data_size
+					};
+				int sendret = send(videoState->audioq, &audioSample);
+				if (sendret == 1) {
+					/* LOG("==> sending audio sample with pts %f to audio queue succeeded.", videoPicture.pts); */
+					LOG("==> sending audio sample to audio queue succeeded.");
+				}
+				else if (sendret == -1) {
+					LOG("==> sending audio sample to audio queue interrupted");
+				}
+				else {
+					LOG("==> unforseen error when sending audio sample to audio queue");
+				}
 			}
 			else {
 				LOG("non AV packet from demuxer, ignoring");
@@ -752,7 +777,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			videoState->audio_buf_index = 0;
 			memset(&videoState->audio_pkt, 0, sizeof(videoState->audio_pkt));
 			/* videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
-			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
+			/* videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE); */
 			/* videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE); */
 			// FIXME disabling SDL audio for now ...
 			/* LOG("calling sdl_pauseaudio(0) ..."); */
@@ -817,13 +842,13 @@ display(VideoState *videoState)
 	VideoPicture videoPicture;
 	int recret = recv(videoState->pictq, &videoPicture);
 	if (recret == 1) {
-		LOG("<== received decoded video frame with pts %f from picture queue.", videoPicture.pts);
+		LOG("<== received picture with pts %f from picture queue.", videoPicture.pts);
 	}
 	else if (recret == -1) {
-		LOG("<== reveiving decoded video frame from picture queue interrupted");
+		LOG("<== reveiving picture from picture queue interrupted");
 	}
 	else {
-		LOG("<== unforseen error when receiving decoded video frame from picture queue");
+		LOG("<== unforseen error when receiving picture from picture queue");
 	}
 	if (_DEBUG_) {
 		LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
@@ -851,7 +876,24 @@ display(VideoState *videoState)
 }
 
 
-
+void
+playaudio(VideoState *videoState)
+{
+	LOG("receiving and playing sample from audio queue ...");
+	AudioSample audioSample;
+	int recret = recv(videoState->audioq, &audioSample);
+	if (recret == 1) {
+		/* LOG("<== received audio sample with pts %f from audio queue.", videoPicture.pts); */
+		LOG("<== received audio sample from audio queue.");
+	}
+	else if (recret == -1) {
+		LOG("<== reveiving audio sample from audio queue interrupted");
+	}
+	else {
+		LOG("<== unforseen error when receiving audio sample from audio queue");
+	}
+	fwrite(audioSample.sample, 1, audioSample.size, audio_out);
+}
 
 
 
