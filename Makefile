@@ -7,11 +7,15 @@ SDL2CFLAGS  := $(shell pkg-config --cflags sdl2)
 LIBS   += $(9PLIBS) $(AVLIBS) $(SDL2LIBS)
 CFLAGS += $(SDL2CFLAGS)
 
-all: build/renderer
+all: build/renderer build/renderer7
 
 build/renderer: renderer.c
 	9c -g -o build/renderer.o $(CFLAGS) renderer.c
 	9l -g -o build/renderer build/renderer.o $(LIBS)
+
+build/renderer7: renderer7.c
+	9c -g -o build/renderer7.o $(CFLAGS) renderer7.c
+	9l -g -o build/renderer7 build/renderer7.o $(LIBS)
 
 clean:
 	rm -r build/*

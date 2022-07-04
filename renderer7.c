@@ -46,7 +46,7 @@
 // 5. Keyboard events
 // 6. 9P control server
 
-// Tutorial thread layout:
+// Current thread layout:
 //   main_thread
 //   -> demuxer_thread
 //      -> stream_component_open (video)
@@ -56,18 +56,6 @@
 //   -> event loop
 //   -> display pictures
 
-// Simplified thread layout:
-//   main_thread
-//   -> decoder_thread
-//      -> video_thread
-//      -> audio_thread
-//         -> clock_thread (display/render)
-//   -> event loop
-
-// Current thread layout:
-//   main_thread (event loop)
-//   -> decoder_thread
-//   -> display_thread
 
 #include <u.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
@@ -230,7 +218,7 @@ char *aname;
 
 void printHelp();
 void saveFrame(AVFrame *pFrame, VideoState *videoState, int frameIndex);
-void decoder_thread(void * arg);
+void demuxer_thread(void * arg);
 int stream_component_open(
 		VideoState * videoState,
 		int stream_index
@@ -389,7 +377,7 @@ threadmain(int argc, char **argv)
 	CFid *fid = xopen(videoState->filename, OREAD);
 	videoState->fid = fid;
 	// start the decoding thread to read data from the AVFormatContext
-	videoState->decode_tid = threadcreate(decoder_thread, videoState, THREAD_STACK_SIZE);
+	videoState->decode_tid = threadcreate(demuxer_thread, videoState, THREAD_STACK_SIZE);
 	if(!videoState->decode_tid)
 	{
 		printf("Could not start decoding SDL_Thread: %s.\n", SDL_GetError());
@@ -404,7 +392,7 @@ threadmain(int argc, char **argv)
 		/* LOG("threadmain yielding ..."); */
 		yield();
 		/* LOG("threadmain yielded."); */
-		/* video_refresh_timer(videoState); */
+		video_refresh_timer(videoState);
 		if (videoState->quit) {
 			break;
 		}
@@ -419,13 +407,14 @@ threadmain(int argc, char **argv)
 void printHelp()
 {
 	printf("Invalid arguments.\n\n");
-	printf("Usage: renderer <filename> <max-frames-to-decode>\n\n");
+	printf("Usage: ./tutorial07 <filename> <max-frames-to-decode>\n\n");
+	printf("e.g: ./tutorial07 /home/rambodrahmani/Videos/video.mp4 200\n");
 }
 
 
-void decoder_thread(void * arg)
+void demuxer_thread(void * arg)
 {
-	LOG("decoder thread started");
+	LOG("demuxer thread started");
 	VideoState * videoState = (VideoState *)arg;
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
@@ -511,16 +500,25 @@ void decoder_thread(void * arg)
 		LOG("Could not allocate AVPacket.");
 		goto fail;
 	}
-	static AVFrame *pFrame = NULL;
-	pFrame = av_frame_alloc();
-	if (!pFrame) {
-		printf("Could not allocate AVFrame.\n");
-		return;
-	}
-	for (;;) {
+	for (;;)
+	{
 		if (videoState->quit) {
 			break;
 		}
+		/////////////////////////////////////////////////////////////////////////////
+		// NOTE AVPacket must be one object for the whole demuxing
+		// process so this might be the reason, why sending over
+		// the Channel doesn't always work
+		// This means, that the video and audio packet queues contain all the same
+		// pointer (need to double check this)
+		/////////////////////////////////////////////////////////////////////////////
+		/* AVPacket *packet = av_packet_alloc(); */
+		/* if (packet == NULL) { */
+			/* LOG("Could not allocate AVPacket."); */
+			/* goto fail; */
+		/* } */
+		// FIXME seek stuff goes here ... see end of this file
+		// ...
 		ret = av_read_frame(videoState->pFormatCtx, packet);
 		LOG("read av packet of size: %i", packet->size);
 		if (ret < 0) {
@@ -536,70 +534,49 @@ void decoder_thread(void * arg)
 				break;
 			}
 		}
+		// FIXME added exiting when av packet size is zero in the demuxer thread
 		if (packet->size == 0) {
 			LOG("packet size is zero, exiting demuxer thread");
 			break;
 		}
-		int ret = 0;
 		if (packet->stream_index == videoState->videoStream) {
-			LOG("sending video packet of size %d to decoder", packet->size);
-			ret = avcodec_send_packet(videoState->video_ctx, packet);
-		}
-		else {
-			LOG("sending audio packet of size %d to decoder", packet->size);
-			LOG("... skipped for now");
-			/* ret = avcodec_send_packet(videoState->audio_ctx, packet); */
-		}
-		LOG("sending packet of size %d to decoder returned %d: ", packet->size, ret);
-		if (ret == AVERROR(EAGAIN)) {
-			LOG("AVERROR = EAGAIN: input not accepted, receive frame from decoder first");
-		}
-		if (ret == AVERROR(EINVAL)) {
-			LOG("AVERROR = EINVAL: codec not opened or requires flush");
-		}
-		if (ret == AVERROR(ENOMEM)) {
-			LOG("AVERROR = ENOMEM: failed to queue packet");
-		}
-		if (ret == AVERROR_EOF) {
-			LOG("AVERROR = EOF: decoder has been flushed");
-		}
-		if (ret < 0) {
-			LOG("error sending packet to decoder: %s", av_err2str(ret));
-			return;
-		}
-		if (packet->stream_index == videoState->videoStream) {
-			for (;;) {
-				/* int frameFinished = 0; */
-				// get decoded output data from decoder
-				LOG("receiving decoded video frame from decoder ...");
-				ret = avcodec_receive_frame(videoState->video_ctx, pFrame);
-				LOG("receiving returns: %d", ret);
-				// check if entire frame was decoded
-				if (ret == AVERROR(EAGAIN)) {
-					LOG("av frame not ready: AVERROR = EAGAIN");
-					break;
-				}
-				if (ret == AVERROR_EOF) {
-					LOG("end of file: AVERROR = EOF");
-					break; // got error ...
-				}
-				if (ret == AVERROR(EINVAL)) {
-					LOG("decoding error: AVERROR = EINVAL");
-					break; // got error ...
-				}
-				if (ret < 0) {
-					LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
-					break; // got error ...
-				}
-				LOG("decoding frame finished");
-				break;
-				/* frameFinished = 1; */
+			LOG("==> sending av packet of size %i to video queue ...", packet->size);
+			/* sendp(videoState->videoq, packet); */
+			int sendret = send(videoState->videoq, packet);
+			if (sendret == 1) {
+				LOG("==> sending av packet of size %i to video queue succeeded.", packet->size);
+			}
+			else if (sendret == -1) {
+				LOG("==> sending av packet to video queue interrupted");
+			}
+			else {
+				LOG("==> unforseen error when sending av packet to video queue");
 			}
 		}
+		else if (packet->stream_index == videoState->audioStream) {
+			LOG("==> sending av packet of size %i to audio queue ...", packet->size);
+			/* sendp(videoState->audioq, packet); */
+			int sendret = send(videoState->audioq, packet);
+			if (sendret == 1) {
+				LOG("==> sending av packet of size %i to audio queue succeeded.", packet->size);
+			}
+			else if (sendret == -1) {
+				LOG("==> sending av packet to audio queue interrupted");
+			}
+			else {
+				LOG("==> unforseen error when sending av packet to audio queue");
+			}
+		}
+		/* av_packet_unref(packet); */
 	}
-	av_frame_unref(pFrame);
 	av_packet_unref(packet);
 
+	// wait for the rest of the program to end
+	// FIXME need a replacement ...?
+	/* while (!videoState->quit) */
+	/* { */
+		/* SDL_Delay(100); */
+	/* } */
 	if (pIOCtx) {
 		avio_context_free(&pIOCtx);
 	}
@@ -621,7 +598,15 @@ void decoder_thread(void * arg)
 	threadexitsall("end of file");
 	fail:
 	{
-		// create a quit event
+		// create an SDL_Event of type FF_QUIT_EVENT
+		// FIXME need a replacement for FF_QUIT_EVENT...?
+		/* SDL_Event event; */
+		/* event.type = FF_QUIT_EVENT; */
+		/* event.user.data1 = videoState; */
+		// push the event to the events queue
+		/* SDL_PushEvent(&event); */
+		// return with error
+		/* return -1; */
 		return;
 	};
 }
@@ -683,7 +668,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			memset(&videoState->audio_pkt, 0, sizeof(videoState->audio_pkt));
 			/* videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
 			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
-			/* videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE); */
+			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
 			// FIXME disabling SDL audio for now ...
 			/* LOG("calling sdl_pauseaudio(0) ..."); */
 			/* SDL_PauseAudio(0); */
@@ -704,7 +689,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			/* videoState->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
 			videoState->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE);
 			videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-			/* videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE); */
+			videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE);
 			LOG("Video thread created with id: %i", videoState->video_tid);
 			videoState->sws_ctx = sws_getContext(videoState->video_ctx->width,
 												 videoState->video_ctx->height,
@@ -886,6 +871,238 @@ int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
 		LOG("==> unforseen error when sending decoded video frame to picture queue");
 	}
 	return 0;
+}
+
+
+void video_thread(void *arg)
+{
+	LOG("video thread ...");
+	VideoState *videoState = (VideoState*)arg;
+	// Allocating AVPacket on the stack leads to a crash when sending the
+	// packet to the decoder after some successfull decoded packets
+	/* AVPacket packet; */
+	AVPacket * packet = av_packet_alloc();
+	if (packet == NULL) {
+		printf("Could not allocate AVPacket.\n");
+		return;
+	}
+	/* // set this when we are done decoding an entire frame */
+	int frameFinished = 0;
+	static AVFrame *pFrame = NULL;
+	pFrame = av_frame_alloc();
+	if (!pFrame) {
+		printf("Could not allocate AVFrame.\n");
+		return;
+	}
+	// each decoded frame carries its PTS in the VideoPicture queue
+	double pts;
+	// Setting decoder threading parameter that might have an influence in the 9P threading environment
+	videoState->video_ctx->thread_count = 1;
+	videoState->video_ctx->thread_type = FF_THREAD_FRAME;
+	videoState->video_ctx->debug = 1;
+	for (;;)
+	{
+		/* AVPacket * packet = av_packet_alloc(); */
+		/* if (packet == NULL) { */
+			/* printf("Could not allocate AVPacket.\n"); */
+			/* return; */
+		/* } */
+		LOG("video_thread looping ...");
+		/* packet = recvp(videoState->videoq); */
+		/* int recret = recv(videoState->videoq, &packet); */
+		/* if (recret == 1) { LOG("<== received av packet of size %i from video queue.", packet.size); */
+		int recret = recv(videoState->videoq, packet);
+		if (recret == 1) { LOG("<== received av packet of size %i from video queue.", packet->size);
+		}
+		else if (recret == -1) {
+			LOG("<== reveiving av packet from video queue interrupted");
+		}
+		else {
+			LOG("<== unforseen error when receiving av packet from video queue");
+		}
+		if (packet == NULL) {
+			break;
+		}
+		// Added this check because there were packets of size 0 popping out of the Channel
+		// before changing from sendp/recvp to send/recv
+		/* if (packet.size == 0) {  */
+		if (packet->size == 0) {
+			LOG("PACKET SIZE IS 0");
+			/* continue; */
+		}
+		/* if (packet.data == flush_pkt.data) { */
+		if (packet->data == flush_pkt.data) {
+			avcodec_flush_buffers(videoState->video_ctx);
+			continue;
+		}
+		// give the decoder raw compressed data in an AVPacket
+		/* LOG("sending video packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet.size, videoState->video_ctx->width, videoState->video_ctx->height); */
+		/* int ret = avcodec_send_packet(videoState->video_ctx, &packet); */
+		LOG("sending video packet of size %d to decoder, video_ctx frame width: %d, height: %d", packet->size, videoState->video_ctx->width, videoState->video_ctx->height);
+
+		// FIXME we get a SIGABRT with "malloc(): unsorted double linked list corrupted" on iron.mp4
+		// after decoding some packets successfully
+		int ret = avcodec_send_packet(videoState->video_ctx, packet);
+		LOG("sending returns: %d", ret);
+		if (ret < 0) {
+			LOG("error sending video packet for decoding: %s", av_err2str(ret));
+			return;
+		}
+		while (ret >= 0)
+		{
+			// get decoded output data from decoder
+			LOG("receiving decoded video frame from decoder ...");
+			ret = avcodec_receive_frame(videoState->video_ctx, pFrame);
+			LOG("receiving returns: %d", ret);
+			if (ret < 0) {
+				LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
+			}
+			// check if entire frame was decoded
+			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+				if (ret == AVERROR(EAGAIN)) {
+					LOG("video stream: AVERROR = EAGAIN");
+				}
+				if (ret == AVERROR_EOF) {
+					LOG("video stream: AVERROR = EOF");
+				}
+				break;
+			}
+			else if (ret < 0) {
+				LOG("Error while decoding: %s", av_err2str(ret));
+				return;
+			}
+			else {
+				LOG("video frame finished");
+				frameFinished = 1;
+			}
+			// attempt to guess proper monotonic timestamps for decoded video frames
+			pts = guess_correct_pts(videoState->video_ctx, pFrame->pts, pFrame->pkt_dts);
+			LOG("guess_correct_pts() returns pts: %f", pts);
+			// in case we get an undefined timestamp value
+			if (pts == AV_NOPTS_VALUE) {
+				LOG("pts is an undefined timestamp value");
+				// set pts to the default value of 0
+				pts = 0;
+			}
+			pts *= av_q2d(videoState->video_st->time_base);
+			LOG("corrected pts: %f", pts);
+			// did we get an entire video frame?
+			if (frameFinished) {
+				LOG("video frame is complete, synchronizing ...");
+				pts = synchronize_video(videoState, pFrame, pts);
+				LOG("synched pts: %f", pts);
+				/* saveFrame(pFrame, videoState->video_ctx->width, videoState->video_ctx->height, videoState->video_ctx->pix_fmt, (int)1000*pts); */
+				LOG("queueing decoded frame for display ...");
+				if (queue_picture(videoState, pFrame, pts) < 0) {
+					LOG("error queueing decoded frame for display.");
+					break;
+				}
+			}
+		}
+		/* av_packet_unref(packet); */
+	}
+	av_packet_unref(packet);
+	/* av_packet_unref(&packet); */
+	av_frame_unref(pFrame);
+	/* av_frame_free(&pFrame); */
+	/* av_free(pFrame); */
+	return;
+}
+
+
+void audio_thread(void * arg)
+{
+	LOG("audio thread ...");
+	VideoState *videoState = (VideoState*)arg;
+	FILE *audio_out = fopen("/tmp/out.pcm", "wb");
+	AVPacket *packet = av_packet_alloc();
+	if (packet == NULL) {
+		printf("Could not allocate AVPacket.\n");
+		return;
+	}
+	static AVFrame * pFrame = NULL;
+	pFrame = av_frame_alloc();
+	if (!pFrame) {
+		printf("Could not allocate AVFrame.\n");
+		return;
+	}
+	/* double pts; */
+	for (;;)
+	{
+		LOG("audio_thread looping ...");
+		int recret = recv(videoState->audioq, packet);
+		if (recret == 1) { LOG("<== received av packet of size %i from audio queue.", packet->size);
+		}
+		else if (recret == -1) {
+			LOG("<== reveiving av packet from audio queue interrupted");
+		}
+		else {
+			LOG("<== unforseen error when receiving av packet from audio queue");
+		}
+		if (packet == NULL) {
+			break;
+		}
+		// Added this check because there were packets of size 0 popping out of the Channel
+		// before changing from sendp/recvp to send/recv
+		if (packet->size == 0) { 
+			LOG("PACKET SIZE IS 0");
+			/* continue; */
+		}
+		if (packet->data == flush_pkt.data) {
+			avcodec_flush_buffers(videoState->audio_ctx);
+			continue;
+		}
+		// give the decoder raw compressed data in an AVPacket
+		LOG("sending audio packet of size %d to decoder", packet->size);
+		int ret = avcodec_send_packet(videoState->audio_ctx, packet);
+		LOG("sending audio returns: %d", ret);
+		if (ret < 0) {
+			LOG("error sending audio packet for decoding: %s", av_err2str(ret));
+			return;
+		}
+		while (ret >= 0)
+		{
+			// get decoded output data from decoder
+			LOG("receiving decoded audio frame from decoder ...");
+			ret = avcodec_receive_frame(videoState->audio_ctx, pFrame);
+			LOG("receiving returns: %d", ret);
+			if (ret < 0) {
+				LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
+			}
+			// check if entire frame was decoded
+			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+				if (ret == AVERROR(EAGAIN)) {
+					LOG("audio stream: AVERROR = EAGAIN");
+				}
+				if (ret == AVERROR_EOF) {
+					LOG("audio stream: AVERROR = EOF");
+				}
+				break;
+			}
+			else if (ret < 0) {
+				LOG("Error while decoding: %s", av_err2str(ret));
+				return;
+			}
+			else {
+				LOG("audio frame finished");
+				/* // output silence */
+				/* videoState->audio_buf_size = 1024; */
+				/* // clear memory */
+				/* memset(videoState->audio_buf, 0, videoState->audio_buf_size); */
+				int data_size = audio_resampling(
+						videoState,
+						pFrame,
+						AV_SAMPLE_FMT_S16,
+						videoState->audio_buf);
+				LOG("resampled audio bytes: %d", data_size);
+				fwrite(videoState->audio_buf, 1, data_size, audio_out);
+			}
+		}
+	}
+	av_packet_unref(packet);
+	av_frame_unref(pFrame);
+	fclose(audio_out);
+	return;
 }
 
 
