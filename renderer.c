@@ -521,11 +521,11 @@ void decoder_thread(void * arg)
 		if (videoState->quit) {
 			break;
 		}
-		ret = av_read_frame(videoState->pFormatCtx, packet);
+		int demuxer_ret = av_read_frame(videoState->pFormatCtx, packet);
 		LOG("read av packet of size: %i", packet->size);
-		if (ret < 0) {
-			LOG("failed to read av packet: %s", av_err2str(ret));
-			if (ret == AVERROR_EOF) {
+		if (demuxer_ret < 0) {
+			LOG("failed to read av packet: %s", av_err2str(demuxer_ret));
+			if (demuxer_ret == AVERROR_EOF) {
 				LOG("EOF");
 				// media EOF reached, quit
 				videoState->quit = 1;
@@ -540,7 +540,6 @@ void decoder_thread(void * arg)
 			LOG("packet size is zero, exiting demuxer thread");
 			break;
 		}
-		int ret = 0;
 		AVCodecContext *codecCtx = NULL;
 		if (packet->stream_index == videoState->videoStream) {
 			LOG("sending video packet of size %d to decoder", packet->size);
@@ -550,49 +549,49 @@ void decoder_thread(void * arg)
 			LOG("sending audio packet of size %d to decoder", packet->size);
 			codecCtx = videoState->audio_ctx;
 		}
-		ret = avcodec_send_packet(codecCtx, packet);
-		LOG("sending packet of size %d to decoder returned %d: ", packet->size, ret);
-		if (ret == AVERROR(EAGAIN)) {
+		int send_ret = avcodec_send_packet(codecCtx, packet);
+		LOG("sending packet of size %d to decoder returned %d: ", packet->size, send_ret);
+		if (send_ret == AVERROR(EAGAIN)) {
 			LOG("AVERROR = EAGAIN: input not accepted, receive frame from decoder first");
 		}
-		if (ret == AVERROR(EINVAL)) {
+		if (send_ret == AVERROR(EINVAL)) {
 			LOG("AVERROR = EINVAL: codec not opened or requires flush");
 		}
-		if (ret == AVERROR(ENOMEM)) {
+		if (send_ret == AVERROR(ENOMEM)) {
 			LOG("AVERROR = ENOMEM: failed to queue packet");
 		}
-		if (ret == AVERROR_EOF) {
+		if (send_ret == AVERROR_EOF) {
 			LOG("AVERROR = EOF: decoder has been flushed");
 		}
-		if (ret < 0) {
-			LOG("error sending packet to decoder: %s", av_err2str(ret));
+		if (send_ret < 0) {
+			LOG("error sending packet to decoder: %s", av_err2str(send_ret));
 			return;
 		}
-		for (;;) {
+		int decoder_ret = 0;
+		while (decoder_ret >= 0) {
 			/* int frameFinished = 0; */
 			// get decoded output data from decoder
 			LOG("receiving decoded frame from decoder ...");
-			ret = avcodec_receive_frame(codecCtx, pFrame);
-			LOG("receiving returns: %d", ret);
+			decoder_ret = avcodec_receive_frame(codecCtx, pFrame);
+			LOG("receiving returns: %d", decoder_ret);
 			// check if entire frame was decoded
-			if (ret == AVERROR(EAGAIN)) {
+			if (decoder_ret == AVERROR(EAGAIN)) {
 				LOG("av frame not ready: AVERROR = EAGAIN");
 				break;
 			}
-			if (ret == AVERROR_EOF) {
+			if (decoder_ret == AVERROR_EOF) {
 				LOG("end of file: AVERROR = EOF");
 				return;
 			}
-			if (ret == AVERROR(EINVAL)) {
+			if (decoder_ret == AVERROR(EINVAL)) {
 				LOG("decoding error: AVERROR = EINVAL");
 				return;
 			}
-			if (ret < 0) {
-				LOG("error receiving decoded frame from decoder: %s", av_err2str(ret));
+			if (decoder_ret < 0) {
+				LOG("error receiving decoded frame from decoder: %s", av_err2str(decoder_ret));
 				return;
 			}
 			LOG("decoding frame finished");
-			break;
 			/* frameFinished = 1; */
 		}
 	}
