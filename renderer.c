@@ -652,13 +652,13 @@ void decoder_thread(void * arg)
 	            );
 			}
 			else if (codecCtx == videoState->audio_ctx) {
-				/* int data_size = audio_resampling( */
-						/* videoState, */
-						/* pFrame, */
-						/* AV_SAMPLE_FMT_S16, */
-						/* videoState->audio_buf); */
-				/* LOG("resampled audio bytes: %d", data_size); */
-				/* fwrite(videoState->audio_buf, 1, data_size, audio_out); */
+				int data_size = audio_resampling(
+						videoState,
+						pFrame,
+						AV_SAMPLE_FMT_S16,
+						videoState->audio_buf);
+				LOG("resampled audio bytes: %d", data_size);
+				fwrite(videoState->audio_buf, 1, data_size, audio_out);
 			}
 		}
 		av_frame_unref(pFrame);
