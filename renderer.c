@@ -597,10 +597,10 @@ void decoder_thread(void * arg)
 			LOG("decoding frame finished");
 			/* frameFinished = 1; */
 		}
+		av_frame_unref(pFrame);
+		av_packet_unref(packet);
 	}
 	// Clean up the decoder thread
-	av_frame_unref(pFrame);
-	av_packet_unref(packet);
 
 	if (pIOCtx) {
 		avio_context_free(&pIOCtx);
