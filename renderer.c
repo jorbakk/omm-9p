@@ -636,10 +636,10 @@ void decoder_thread(void * arg)
 	            // save the read AVFrame into ppm file
 	            saveFrame(pFrameRGB, codecCtx->width, codecCtx->height, codecCtx->frame_number);
 	            // print log information
-	            printf(
+	            LOG(
 	                "Frame %c (%d) pts %ld dts %ld key_frame %d "
 		"[coded_picture_number %d, display_picture_number %d,"
-		" %dx%d]\n",
+		" %dx%d]",
 	                av_get_picture_type_char(pFrame->pict_type),
 	                codecCtx->frame_number,
 	                pFrameRGB->pts,
