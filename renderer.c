@@ -41,6 +41,9 @@
 // 2. Crash on writing audio stream to the pcm device using the SDL callback
 //    - writing decoded audio to file works
 //    - use a different audio output method w/o callback (that might use pthreads)
+
+// 1. Copy audio and video frame data before sending to channels
+// 2. Create two more threads reading from audio and video channels
 // 3. AV sync
 // 4. Proper shutdown of renderer
 // 5. Keyboard events
@@ -249,8 +252,8 @@ int queue_picture(
 		AVFrame * pFrame,
 		double pts
 );
-void video_thread(void * arg);
-void audio_thread(void * arg);
+void video_thread(void *arg);
+void audio_thread(void *arg);
 /* static int64_t guess_correct_pts( */
 		/* AVCodecContext * ctx, */
 		/* int64_t reordered_pts, */
@@ -376,7 +379,7 @@ threadmain(int argc, char **argv)
 {
 	if (_DEBUG_)
 		chatty9pclient = 1;
-	if ( argc != 3 ) {
+	if (argc != 3) {
 		printHelp();
 		return;
 	}
@@ -392,31 +395,32 @@ threadmain(int argc, char **argv)
 	// parse max frames to decode input by the user
 	char * pEnd;
 	videoState->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
-	schedule_refresh(videoState, 100);
+	/* schedule_refresh(videoState, 100); */
 	videoState->av_sync_type = DEFAULT_AV_SYNC_TYPE;
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
 	videoState->fid = fid;
 	// Create picture and audio sample queue
-	videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-	videoState->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE);
+	/* videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE); */
+	/* videoState->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE); */
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
 	videoState->decode_tid = threadcreate(decoder_thread, videoState, THREAD_STACK_SIZE);
-	if(!videoState->decode_tid)
-	{
-		printf("Could not start decoding SDL_Thread: %s.\n", SDL_GetError());
+	if (!videoState->decode_tid) {
+		printf("Could not start decoder thread: %s.\n", SDL_GetError());
 		av_free(videoState);
 		return;
 	}
-	LOG("decode thread created with id: %i", videoState->decode_tid);
+	LOG("decoder thread created with id: %i", videoState->decode_tid);
 	av_init_packet(&flush_pkt);
 	flush_pkt.data = (uint8_t*)"FLUSH";
-	for(;;)
-	{
-		display(videoState);
-		playaudio(videoState);
+	for (;;) {
+		yield();
+		/* video_thread(videoState); */
+		// FIXME receiving audio and video frames from their queues is not balanced
+		/* audio_thread(videoState); */
+		/* audio_thread(videoState); */
 		if (videoState->quit) {
 			break;
 		}
@@ -668,6 +672,7 @@ void decoder_thread(void * arg)
 						pFrame,
 						AV_SAMPLE_FMT_S16,
 						videoState->audio_buf);
+				av_frame_unref(pFrame);
 				LOG("resampled audio bytes: %d", data_size);
 				AudioSample audioSample = {
 					.sample = videoState->audio_buf,
@@ -691,7 +696,7 @@ void decoder_thread(void * arg)
 		}
 		av_packet_unref(packet);
 		// FIXME: can't unref pFrame if it is send through a channel
-		av_frame_unref(pFrame);
+		/* av_frame_unref(pFrame); */
 	}
 	// Clean up the decoder thread
 	if (pIOCtx) {
@@ -777,8 +782,8 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			videoState->audio_buf_index = 0;
 			memset(&videoState->audio_pkt, 0, sizeof(videoState->audio_pkt));
 			/* videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
-			/* videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE); */
-			/* videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE); */
+			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
+			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
 			// FIXME disabling SDL audio for now ...
 			/* LOG("calling sdl_pauseaudio(0) ..."); */
 			/* SDL_PauseAudio(0); */
@@ -798,8 +803,8 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			/* videoState->videoq = chancreate(sizeof(AVPacket*), MAX_VIDEOQ_SIZE); */
 			/* videoState->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
 			/* videoState->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE); */
-			/* videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE); */
-			/* videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE); */
+			videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
+			videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE);
 			LOG("Video thread created with id: %i", videoState->video_tid);
 			videoState->sws_ctx = sws_getContext(videoState->video_ctx->width,
 												 videoState->video_ctx->height,
@@ -836,63 +841,73 @@ int stream_component_open(VideoState * videoState, int stream_index)
 
 
 void
-display(VideoState *videoState)
+/* display(VideoState *videoState) */
+video_thread(void *arg)
 {
-	LOG("receiving picture from picture queue and displaying video frame ...");
-	VideoPicture videoPicture;
-	int recret = recv(videoState->pictq, &videoPicture);
-	if (recret == 1) {
-		LOG("<== received picture with pts %f from picture queue.", videoPicture.pts);
+	VideoState *videoState = arg;
+	for (;;) {
+		LOG("receiving picture from picture queue and displaying video frame ...");
+		VideoPicture videoPicture;
+		int recret = recv(videoState->pictq, &videoPicture);
+		if (recret == 1) {
+			LOG("<== received picture with pts %f from picture queue.", videoPicture.pts);
+		}
+		else if (recret == -1) {
+			LOG("<== reveiving picture from picture queue interrupted");
+		}
+		else {
+			LOG("<== unforseen error when receiving picture from picture queue");
+		}
+		if (_DEBUG_) {
+			LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
+			LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
+		}
+		AVFrame *pFrameRGB = videoPicture.frame;
+	    // save the read AVFrame into ppm file
+		saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts);
+	    // print log information
+	    LOG(
+	        "Frame %c (%d) pts %ld dts %ld key_frame %d "
+	"[coded_picture_number %d, display_picture_number %d,"
+	" %dx%d]",
+	        av_get_picture_type_char(pFrameRGB->pict_type),
+	        (int)videoPicture.pts,
+	        pFrameRGB->pts,
+	        pFrameRGB->pkt_dts,
+	        pFrameRGB->key_frame,
+	        pFrameRGB->coded_picture_number,
+	        pFrameRGB->display_picture_number,
+	        videoPicture.width,
+	        videoPicture.height
+	    );
+		// FIXME unreffing queued frames probably doesn't work
+		/* av_frame_unref(pFrameRGB); */
+		LOG("receiving picture from picture queue and displaying video frame finished.");
 	}
-	else if (recret == -1) {
-		LOG("<== reveiving picture from picture queue interrupted");
-	}
-	else {
-		LOG("<== unforseen error when receiving picture from picture queue");
-	}
-	if (_DEBUG_) {
-		LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
-		LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
-	}
-	AVFrame *pFrameRGB = videoPicture.frame;
-    // save the read AVFrame into ppm file
-	saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts);
-    // print log information
-    LOG(
-        "Frame %c (%d) pts %ld dts %ld key_frame %d "
-"[coded_picture_number %d, display_picture_number %d,"
-" %dx%d]",
-        av_get_picture_type_char(pFrameRGB->pict_type),
-        (int)videoPicture.pts,
-        pFrameRGB->pts,
-        pFrameRGB->pkt_dts,
-        pFrameRGB->key_frame,
-        pFrameRGB->coded_picture_number,
-        pFrameRGB->display_picture_number,
-        videoPicture.width,
-        videoPicture.height
-    );
-	LOG("receiving picture from picture queue and displaying video frame finished.");
 }
 
 
 void
-playaudio(VideoState *videoState)
+/* playaudio(VideoState *videoState) */
+audio_thread(void *arg)
 {
-	LOG("receiving and playing sample from audio queue ...");
-	AudioSample audioSample;
-	int recret = recv(videoState->audioq, &audioSample);
-	if (recret == 1) {
-		/* LOG("<== received audio sample with pts %f from audio queue.", videoPicture.pts); */
-		LOG("<== received audio sample from audio queue.");
+	VideoState *videoState = arg;
+	for (;;) {
+		LOG("receiving and playing sample from audio queue ...");
+		AudioSample audioSample;
+		int recret = recv(videoState->audioq, &audioSample);
+		if (recret == 1) {
+			/* LOG("<== received audio sample with pts %f from audio queue.", videoPicture.pts); */
+			LOG("<== received audio sample from audio queue.");
+		}
+		else if (recret == -1) {
+			LOG("<== reveiving audio sample from audio queue interrupted");
+		}
+		else {
+			LOG("<== unforseen error when receiving audio sample from audio queue");
+		}
+		fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 	}
-	else if (recret == -1) {
-		LOG("<== reveiving audio sample from audio queue interrupted");
-	}
-	else {
-		LOG("<== unforseen error when receiving audio sample from audio queue");
-	}
-	fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 }
 
 
