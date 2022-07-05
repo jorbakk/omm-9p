@@ -270,8 +270,6 @@ int synchronize_audio(
 		int samples_size
 );
 void video_refresh_timer(void * userdata);
-void display(VideoState *videoState);
-void playaudio(VideoState *videoState);
 double get_audio_clock(VideoState * videoState);
 double get_video_clock(VideoState * videoState);
 double get_external_clock(VideoState * videoState);
@@ -675,9 +673,11 @@ void decoder_thread(void * arg)
 				av_frame_unref(pFrame);
 				LOG("resampled audio bytes: %d", data_size);
 				AudioSample audioSample = {
-					.sample = videoState->audio_buf,
+					/* .sample = videoState->audio_buf, */
 					.size = data_size
 					};
+				audioSample.sample = malloc(sizeof(videoState->audio_buf));
+				memcpy(audioSample.sample, videoState->audio_buf, sizeof(videoState->audio_buf));
 				int sendret = send(videoState->audioq, &audioSample);
 				if (sendret == 1) {
 					/* LOG("==> sending audio sample with pts %f to audio queue succeeded.", videoPicture.pts); */
@@ -841,7 +841,6 @@ int stream_component_open(VideoState * videoState, int stream_index)
 
 
 void
-/* display(VideoState *videoState) */
 video_thread(void *arg)
 {
 	VideoState *videoState = arg;
@@ -888,7 +887,6 @@ video_thread(void *arg)
 
 
 void
-/* playaudio(VideoState *videoState) */
 audio_thread(void *arg)
 {
 	VideoState *videoState = arg;
@@ -907,6 +905,7 @@ audio_thread(void *arg)
 			LOG("<== unforseen error when receiving audio sample from audio queue");
 		}
 		fwrite(audioSample.sample, 1, audioSample.size, audio_out);
+		free(audioSample.sample);
 	}
 }
 
