@@ -641,6 +641,7 @@ void decoder_thread(void * arg)
 	                pFrameRGB->data,
 	                pFrameRGB->linesize
 	            );
+				/* av_frame_unref(pFrame); */
 				VideoPicture videoPicture = {
 					/* .frame = pFrameRGB, */
 					/* .frame = pFrameRGB->data[0], */
@@ -672,6 +673,7 @@ void decoder_thread(void * arg)
 			        videoPicture.width,
 			        videoPicture.height
 			    );
+				/* av_frame_unref(pFrameRGB); */
 				int sendret = send(videoState->pictq, &videoPicture);
 				if (sendret == 1) {
 					LOG("==> sending picture with pts %f to picture queue succeeded.", videoPicture.pts);
@@ -714,8 +716,7 @@ void decoder_thread(void * arg)
 			}
 		}
 		av_packet_unref(packet);
-		// FIXME: can't unref pFrame if it is send through a channel
-		/* av_frame_unref(pFrame); */
+		av_frame_unref(pFrame);
 	}
 	// Clean up the decoder thread
 	if (pIOCtx) {
@@ -884,6 +885,7 @@ video_thread(void *arg)
 	    // save the read AVFrame into ppm file
 		/* saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts); */
 		savePicture(&videoPicture, (int)videoPicture.pts);
+		free(videoPicture.frame);
 	    // print log information
 	    /* LOG( */
 	        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
