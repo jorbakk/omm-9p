@@ -42,8 +42,8 @@
 //    - writing decoded audio to file works
 //    - use a different audio output method w/o callback (that might use pthreads)
 
-// 1. Copy audio and video frame data before sending to channels
-// 2. Create two more threads reading from audio and video channels
+// 1. Write video pictures to framebuffer
+// 2. Write audio samples to sound device
 // 3. AV sync
 // 4. Proper shutdown of renderer
 // 5. Keyboard events
