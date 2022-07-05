@@ -132,6 +132,10 @@ void printloginfo(void)
 #define THREAD_STACK_SIZE 1024 * 1024 * 10
 #define avctxBufferSize 8192 * 10
 
+#define FRAME_FMT_PRISTINE 0
+#define FRAME_FMT_RGB 1
+#define FRAME_FMT_YUV 2
+
 
 typedef struct VideoState
 {
@@ -189,6 +193,7 @@ typedef struct VideoState
 	// Maximum number of frames to be decoded.
 	long	maxFramesToDecode;
 	int	 currentFrameIndex;
+	int frame_fmt;
 } VideoState;
 
 typedef struct AudioResamplingState
@@ -212,8 +217,13 @@ typedef struct VideoPicture
     /* AVFrame *   rgb_frame; */
     uint8_t     *frame;
     int         linesize;
+    /* uint8_t     *planes[AV_NUM_DATA_POINTERS]; */
+    /* int         linesizes[AV_NUM_DATA_POINTERS]; */
+    uint8_t     *planes[4];
+    int         linesizes[4];
     int         width;
     int         height;
+    int         pix_fmt;
     double      pts;
 } VideoPicture;
 
@@ -242,7 +252,7 @@ char *aname;
 
 void printHelp();
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
-void savePicture(VideoPicture *pPic, int frameIndex);
+void savePicture(VideoState* videoState, VideoPicture *pPic, int frameIndex);
 void decoder_thread(void * arg);
 int stream_component_open(
 		VideoState * videoState,
@@ -390,6 +400,7 @@ threadmain(int argc, char **argv)
 	videoState->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
 	/* schedule_refresh(videoState, 100); */
 	videoState->av_sync_type = DEFAULT_AV_SYNC_TYPE;
+	videoState->frame_fmt = FRAME_FMT_RGB;
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
@@ -633,47 +644,86 @@ void decoder_thread(void * arg)
 					LOG("max frames reached");
 					threadexitsall("max frames reached");
 				}
-	            sws_scale(
-	                videoState->rgb_ctx,
-	                (uint8_t const * const *)pFrame->data,
-	                pFrame->linesize,
-	                0,
-	                codecCtx->height,
-	                pFrameRGB->data,
-	                pFrameRGB->linesize
-	            );
-				/* av_frame_unref(pFrame); */
 				VideoPicture videoPicture = {
-					/* .frame = pFrameRGB, */
-					/* .frame = pFrameRGB->data[0], */
-					.linesize = pFrameRGB->linesize[0],
+					.frame = NULL,
+					.planes = NULL,
 					.width = codecCtx->width,
 					.height = codecCtx->height,
 					.pts = codecCtx->frame_number
 					};
-			    int numBytes = av_image_get_buffer_size(
-					AV_PIX_FMT_RGB24,
-					codecCtx->width,
-					codecCtx->height,
-					32
+				if (videoState->frame_fmt == FRAME_FMT_PRISTINE) {
+					// FIXME sending pristine frames over the video picture channel doesn't work
+					videoPicture.pix_fmt = codecCtx->pix_fmt;
+					LOG("AV_NUM_DATA_POINTERS: %d", AV_NUM_DATA_POINTERS);
+					/* memcpy(videoPicture.linesizes, pFrame->linesize, 4 * sizeof(uint8_t*) / 8); */
+					/* memcpy(videoPicture.linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS); */
+					/* memcpy(videoPicture.linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
+					/* memcpy(videoPicture.linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*) / 8); */
+					/* memcpy(videoPicture.planes, pFrame->data, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
+					/* memcpy(videoPicture.planes, pFrame->data, 4 * sizeof(uint8_t*) / 8); */
+
+					// FIXME avoid hardcoding parameter align to 32 ...
+					LOG("allocating video picture for queueing ...");
+					int frame_size = av_image_alloc(
+						videoPicture.planes,
+						pFrame->linesize,
+						codecCtx->width,
+						codecCtx->height,
+						codecCtx->pix_fmt,
+						32
 					);
-			    videoPicture.frame = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-			    memcpy(videoPicture.frame, pFrameRGB->data[0], numBytes);
+					USED(frame_size);
+					LOG("copying video picture for queueing ...");
+					av_image_copy(
+						videoPicture.planes,
+						//videoPicture.linesizes,
+		                pFrame->linesize,
+		                (uint8_t const**)pFrame->data,
+		                pFrame->linesize,
+						codecCtx->pix_fmt,
+						codecCtx->width,
+						codecCtx->height
+					);
+
+					/* av_frame_copy(); */
+				}
+				else if (videoState->frame_fmt == FRAME_FMT_RGB) {
+		            sws_scale(
+		                videoState->rgb_ctx,
+		                (uint8_t const * const *)pFrame->data,
+		                pFrame->linesize,
+		                0,
+		                codecCtx->height,
+		                pFrameRGB->data,
+		                pFrameRGB->linesize
+		            );
+					// av_frame_unref(pFrame);
+					videoPicture.linesize = pFrameRGB->linesize[0];
+				    int numBytes = av_image_get_buffer_size(
+						AV_PIX_FMT_RGB24,
+						codecCtx->width,
+						codecCtx->height,
+						32
+						);
+				    videoPicture.frame = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+				    memcpy(videoPicture.frame, pFrameRGB->data[0], numBytes);
+			    }
 				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
-			    LOG(
-			        "Frame %c (%d) pts %ld dts %ld key_frame %d "
-			"[coded_picture_number %d, display_picture_number %d,"
-			" %dx%d]",
-			        av_get_picture_type_char(pFrameRGB->pict_type),
-			        (int)videoPicture.pts,
-			        pFrameRGB->pts,
-			        pFrameRGB->pkt_dts,
-			        pFrameRGB->key_frame,
-			        pFrameRGB->coded_picture_number,
-			        pFrameRGB->display_picture_number,
-			        videoPicture.width,
-			        videoPicture.height
-			    );
+			    /* LOG( */
+			        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
+			/* "[coded_picture_number %d, display_picture_number %d," */
+			/* " %dx%d]", */
+			        /* av_get_picture_type_char(pFrameRGB->pict_type), */
+			        /* (int)videoPicture.pts, */
+			        /* pFrameRGB->pts, */
+			        /* pFrameRGB->pkt_dts, */
+			        /* pFrameRGB->key_frame, */
+			        /* pFrameRGB->coded_picture_number, */
+			        /* pFrameRGB->display_picture_number, */
+			        /* videoPicture.width, */
+			        /* videoPicture.height */
+			    /* ); */
+
 				/* av_frame_unref(pFrameRGB); */
 				int sendret = send(videoState->pictq, &videoPicture);
 				if (sendret == 1) {
@@ -882,11 +932,18 @@ video_thread(void *arg)
 			LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
 			LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
 		}
+
 		/* AVFrame *pFrameRGB = videoPicture.frame; */
 	    // save the read AVFrame into ppm file
 		/* saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts); */
-		savePicture(&videoPicture, (int)videoPicture.pts);
-		free(videoPicture.frame);
+		savePicture(videoState, &videoPicture, (int)videoPicture.pts);
+		if (videoPicture.frame) {
+			free(videoPicture.frame);
+		}
+		/* if (videoPicture.planes) { */
+			/* free(videoPicture.planes); */
+		/* } */
+
 	    // print log information
 	    /* LOG( */
 	        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
@@ -1685,8 +1742,53 @@ void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex)
 }
 
 
-void savePicture(VideoPicture *pPic, int frameIndex)
+void savePicture(VideoState* videoState, VideoPicture *videoPicture, int frameIndex)
 {
+    AVFrame *pFrameRGB = NULL;
+    uint8_t *buffer = NULL;
+	if (videoState->frame_fmt == FRAME_FMT_PRISTINE) {
+		// Convert the video picture to the target format for saving to disk
+	    pFrameRGB = av_frame_alloc();
+	    int numBytes;
+	    const int align = 32;
+	    numBytes = av_image_get_buffer_size(
+			AV_PIX_FMT_RGB24,
+			videoPicture->width,
+			videoPicture->height,
+			align
+			);
+	    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+	    av_image_fill_arrays(
+			pFrameRGB->data,
+			pFrameRGB->linesize,
+			buffer,
+			AV_PIX_FMT_RGB24,
+			videoPicture->width,
+			videoPicture->height,
+			align
+	    );
+		struct SwsContext *rgb_ctx = sws_getContext(
+											videoPicture->width,
+											videoPicture->height,
+											videoPicture->pix_fmt,
+											videoPicture->width,
+											videoPicture->height,
+											AV_PIX_FMT_RGB24,
+											SWS_BILINEAR,
+											NULL,
+											NULL,
+											NULL
+											);
+	    sws_scale(
+	        rgb_ctx,
+	        (uint8_t const * const *)videoPicture->planes,
+	        videoPicture->linesizes,
+	        0,
+	        videoPicture->height,
+	        pFrameRGB->data,
+	        pFrameRGB->linesize
+	    );
+    }
 	LOG("saving video picture to file ...");
     FILE * pFile;
     char szFilename[32];
@@ -1697,12 +1799,22 @@ void savePicture(VideoPicture *pPic, int frameIndex)
     if (pFile == NULL) {
         return;
     }
-    fprintf(pFile, "P6\n%d %d\n255\n", pPic->width, pPic->height);
-    for (y = 0; y < pPic->height; y++)
-    {
-        fwrite(pPic->frame + y * pPic->linesize, 1, pPic->width * 3, pFile);
+    fprintf(pFile, "P6\n%d %d\n255\n", videoPicture->width, videoPicture->height);
+	if (videoState->frame_fmt == FRAME_FMT_PRISTINE) {
+	    for (y = 0; y < pFrameRGB->height; y++) {
+	        fwrite(pFrameRGB->data[0] + y * pFrameRGB->linesize[0], 1, videoPicture->width * 3, pFile);
+	    }
+    }
+    else if (videoState->frame_fmt == FRAME_FMT_RGB) {
+	    for (y = 0; y < videoPicture->height; y++) {
+	        fwrite(videoPicture->frame + y * videoPicture->linesize, 1, videoPicture->width * 3, pFile);
+	    }
     }
     fclose(pFile);
+    /* av_free_frame(pFrameRGB); */
+	if (buffer) {
+	    av_free(buffer);
+    }
 	LOG("saved video picture.");
 }
 
