@@ -643,12 +643,20 @@ void decoder_thread(void * arg)
 	            );
 				VideoPicture videoPicture = {
 					/* .frame = pFrameRGB, */
-					.frame = pFrameRGB->data[0],
+					/* .frame = pFrameRGB->data[0], */
 					.linesize = pFrameRGB->linesize[0],
 					.width = codecCtx->width,
 					.height = codecCtx->height,
 					.pts = codecCtx->frame_number
 					};
+			    int numBytes = av_image_get_buffer_size(
+					AV_PIX_FMT_RGB24,
+					codecCtx->width,
+					codecCtx->height,
+					32
+					);
+			    videoPicture.frame = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+			    memcpy(videoPicture.frame, pFrameRGB->data[0], numBytes);
 				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
 			    LOG(
 			        "Frame %c (%d) pts %ld dts %ld key_frame %d "
