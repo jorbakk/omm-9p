@@ -213,9 +213,8 @@ typedef struct AudioResamplingState
 
 typedef struct VideoPicture
 {
-    /* AVFrame *   frame; */
-    /* AVFrame *   rgb_frame; */
-    uint8_t     *frame;
+    AVFrame *   frame;
+    uint8_t     *rgbbuf;
     int         linesize;
     /* uint8_t     *planes[AV_NUM_DATA_POINTERS]; */
     /* int         linesizes[AV_NUM_DATA_POINTERS]; */
@@ -252,6 +251,7 @@ char *aname;
 
 void printHelp();
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
+void video_display(VideoState *videoState, VideoPicture *videoPicture);
 void savePicture(VideoState* videoState, VideoPicture *pPic, int frameIndex);
 void decoder_thread(void * arg);
 int stream_component_open(
@@ -400,7 +400,8 @@ threadmain(int argc, char **argv)
 	videoState->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
 	/* schedule_refresh(videoState, 100); */
 	videoState->av_sync_type = DEFAULT_AV_SYNC_TYPE;
-	videoState->frame_fmt = FRAME_FMT_RGB;
+	/* videoState->frame_fmt = FRAME_FMT_RGB; */
+	videoState->frame_fmt = FRAME_FMT_YUV;
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
@@ -646,6 +647,7 @@ void decoder_thread(void * arg)
 				}
 				VideoPicture videoPicture = {
 					.frame = NULL,
+					.rgbbuf = NULL,
 					.planes = NULL,
 					.width = codecCtx->width,
 					.height = codecCtx->height,
@@ -705,8 +707,36 @@ void decoder_thread(void * arg)
 						codecCtx->height,
 						32
 						);
-				    videoPicture.frame = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-				    memcpy(videoPicture.frame, pFrameRGB->data[0], numBytes);
+				    videoPicture.rgbbuf = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+				    memcpy(videoPicture.rgbbuf, pFrameRGB->data[0], numBytes);
+			    }
+				else if (videoState->frame_fmt == FRAME_FMT_YUV) {
+				    int numBytes = av_image_get_buffer_size(
+						AV_PIX_FMT_YUV420P,
+						codecCtx->width,
+						codecCtx->height,
+						32
+						);
+				    videoPicture.frame = av_frame_alloc();
+					uint8_t * buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+					av_image_fill_arrays(
+							videoPicture.frame->data,
+							videoPicture.frame->linesize,
+							buffer,
+							AV_PIX_FMT_YUV420P,
+							videoState->video_ctx->width,
+							videoState->video_ctx->height,
+							32
+					);
+		            sws_scale(
+		                videoState->sws_ctx,
+		                (uint8_t const * const *)pFrame->data,
+		                pFrame->linesize,
+		                0,
+		                codecCtx->height,
+		                videoPicture.frame->data,
+		                videoPicture.frame->linesize
+		            );
 			    }
 				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
 			    /* LOG( */
@@ -936,9 +966,14 @@ video_thread(void *arg)
 		/* AVFrame *pFrameRGB = videoPicture.frame; */
 	    // save the read AVFrame into ppm file
 		/* saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts); */
-		savePicture(videoState, &videoPicture, (int)videoPicture.pts);
-		if (videoPicture.frame) {
-			free(videoPicture.frame);
+		if (videoState->frame_fmt == FRAME_FMT_RGB) {
+			savePicture(videoState, &videoPicture, (int)videoPicture.pts);
+		}
+		else if (videoState->frame_fmt == FRAME_FMT_YUV) {
+			video_display(videoState, &videoPicture);
+		}
+		if (videoPicture.rgbbuf) {
+			free(videoPicture.rgbbuf);
 		}
 		/* if (videoPicture.planes) { */
 			/* free(videoPicture.planes); */
@@ -1351,7 +1386,6 @@ void video_display(VideoState *videoState, VideoPicture *videoPicture)
 	}
 	double aspect_ratio;
 	int w, h, x, y;
-	// Disabled saving frame to disc for now, it takes too much disc space ...
 	if (videoPicture->frame) {
 		if (videoState->video_ctx->sample_aspect_ratio.num == 0) {
 			aspect_ratio = 0;
@@ -1404,17 +1438,16 @@ void video_display(VideoState *videoState, VideoPicture *videoPicture)
 		rect.h = h;
 		USED(rect);
 		// update the texture with the new pixel data
-		// TODO need to add yuv format to VideoPicture, or queue unscaled frame and convert in video_thread
-		/* SDL_UpdateYUVTexture( */
-				/* videoState->texture, */
-				/* &rect, */
-				/* videoPicture->frame->data[0], */
-				/* videoPicture->frame->linesize[0], */
-				/* videoPicture->frame->data[1], */
-				/* videoPicture->frame->linesize[1], */
-				/* videoPicture->frame->data[2], */
-				/* videoPicture->frame->linesize[2] */
-		/* ); */
+		SDL_UpdateYUVTexture(
+				videoState->texture,
+				&rect,
+				videoPicture->frame->data[0],
+				videoPicture->frame->linesize[0],
+				videoPicture->frame->data[1],
+				videoPicture->frame->linesize[1],
+				videoPicture->frame->data[2],
+				videoPicture->frame->linesize[2]
+		);
 		// clear the current rendering target with the drawing color
 		SDL_RenderClear(videoState->renderer);
 		// copy a portion of the texture to the current rendering target
@@ -1807,7 +1840,7 @@ void savePicture(VideoState* videoState, VideoPicture *videoPicture, int frameIn
     }
     else if (videoState->frame_fmt == FRAME_FMT_RGB) {
 	    for (y = 0; y < videoPicture->height; y++) {
-	        fwrite(videoPicture->frame + y * videoPicture->linesize, 1, videoPicture->width * 3, pFile);
+	        fwrite(videoPicture->rgbbuf + y * videoPicture->linesize, 1, videoPicture->width * 3, pFile);
 	    }
     }
     fclose(pFile);
