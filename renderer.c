@@ -22,55 +22,20 @@
 
 
 // TODO:
-// 1. Crash when playing iron.mp4
-//    - malloc(): unsorted double linked list corrupted
-//    - no issues with transport streams (also bunny_xxx.mp4 seems to be ok)
-//    - maybe connected to freeing avframes, or sending packets through the channel
-//    - no crashes in valgrind
-//    - other possible causes: threading related, function returning s.th. w/o return statement
-//    - decoded images are shifted / skewed (at least running in valgrind)
-//    - valgrind with no options works best, otherwise also frames seem to be dropped
-//    - the size of the video packets sent to the decoder are very small in the beginning
-//      of the stream
-//    - it seems to be always the same packet where sending to the decoder fails
-//      packet size sequence: 382, 21318, 114, 56, 53, 89, 56, 80, 53, 66, 53, 53, 66, 53, crash
-//    - need to check if the demuxer video and audio packet queues contain all the same pointer
-//      of the one AVPacket that is allocated before the demuxer loop
-//      ... checked: only received packet in audio queue changes, all other pointers remain
-//      the same (in orig. sources).
-// 2. Crash on writing audio stream to the pcm device using the SDL callback
+// 1. Write audio samples to sound device
+//    - crash on writing audio stream to the pcm device using the SDL callback
 //    - writing decoded audio to file works
 //    - use a different audio output method w/o callback (that might use pthreads)
+// 2. AV sync
+// 3. Keyboard events
+// 4. 9P control server
 
-// 1. Write video pictures to framebuffer
-// 2. Write audio samples to sound device
-// 3. AV sync
-// 4. Proper shutdown of renderer
-// 5. Keyboard events
-// 6. 9P control server
-
-// Tutorial thread layout:
-//   main_thread
-//   -> demuxer_thread
-//      -> stream_component_open (video)
-//         -> video_thread
-//      -> stream_component_open (audio)
-//         -> audio_thread
-//   -> event loop
-//   -> display pictures
-
-// Simplified thread layout:
-//   main_thread
-//   -> decoder_thread
-//      -> video_thread
-//      -> audio_thread
-//         -> clock_thread (display/render)
-//   -> event loop
-
-// Current thread layout:
+// Thread layout:
 //   main_thread (event loop)
 //   -> decoder_thread
-//   -> display_thread
+//      -> video_thread reads from video channel
+//      -> audio_thread reads from audio channel
+
 
 #include <u.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
@@ -422,10 +387,6 @@ threadmain(int argc, char **argv)
 	flush_pkt.data = (uint8_t*)"FLUSH";
 	for (;;) {
 		yield();
-		/* video_thread(videoState); */
-		// FIXME receiving audio and video frames from their queues is not balanced
-		/* audio_thread(videoState); */
-		/* audio_thread(videoState); */
 		if (videoState->quit) {
 			break;
 		}
@@ -539,6 +500,8 @@ void decoder_thread(void * arg)
 		return;
 	}
 
+	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
+	// and creating a copy to be send through the video picture channel
     static AVFrame *pFrameRGB = NULL;
     pFrameRGB = av_frame_alloc();
     uint8_t * buffer = NULL;
@@ -559,6 +522,14 @@ void decoder_thread(void * arg)
 		videoState->video_ctx->height,
 		32
     );
+
+    int yuvNumBytes = av_image_get_buffer_size(
+		AV_PIX_FMT_YUV420P,
+		videoState->video_ctx->width,
+		videoState->video_ctx->height,
+		32
+		);
+	uint8_t * yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t));
 
 	// Main decoder loop
 	for (;;) {
@@ -711,21 +682,14 @@ void decoder_thread(void * arg)
 				    memcpy(videoPicture.rgbbuf, pFrameRGB->data[0], numBytes);
 			    }
 				else if (videoState->frame_fmt == FRAME_FMT_YUV) {
-				    int numBytes = av_image_get_buffer_size(
-						AV_PIX_FMT_YUV420P,
-						codecCtx->width,
-						codecCtx->height,
-						32
-						);
 				    videoPicture.frame = av_frame_alloc();
-					uint8_t * buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
 					av_image_fill_arrays(
 							videoPicture.frame->data,
 							videoPicture.frame->linesize,
-							buffer,
+							yuvbuffer,
 							AV_PIX_FMT_YUV420P,
-							videoState->video_ctx->width,
-							videoState->video_ctx->height,
+							codecCtx->width,
+							codecCtx->height,
 							32
 					);
 		            sws_scale(
@@ -973,7 +937,11 @@ video_thread(void *arg)
 			video_display(videoState, &videoPicture);
 		}
 		if (videoPicture.rgbbuf) {
-			free(videoPicture.rgbbuf);
+			av_free(videoPicture.rgbbuf);
+		}
+		if (videoPicture.frame) {
+			av_frame_unref(videoPicture.frame);
+			av_frame_free(&videoPicture.frame);
 		}
 		/* if (videoPicture.planes) { */
 			/* free(videoPicture.planes); */
@@ -994,7 +962,6 @@ video_thread(void *arg)
 	        /* videoPicture.width, */
 	        /* videoPicture.height */
 	    /* ); */
-		/* // FIXME unreffing queued frames probably doesn't work */
 		/* av_frame_unref(pFrameRGB); */
 		LOG("receiving picture from picture queue and displaying video frame finished.");
 	}
@@ -1890,7 +1857,6 @@ void savePicture(VideoState* videoState, VideoPicture *videoPicture, int frameIn
 			/* videoState->seek_req = 0; */
 		/* } */
 		// check audio and video packets queues size
-		// FIXME audioq and videoq now are Channels with unknown size, need to track the size separately ...?
 		/* if (videoState->audioq.size > MAX_AUDIOQ_SIZE || videoState->videoq.size > MAX_VIDEOQ_SIZE) */
 		/* { */
 			/* // wait for audio and video queues to decrease size */
