@@ -159,6 +159,7 @@ typedef struct VideoState
 	long	maxFramesToDecode;
 	int	 currentFrameIndex;
 	int frame_fmt;
+	SDL_AudioDeviceID audioDevId;
 } VideoState;
 
 typedef struct AudioResamplingState
@@ -815,23 +816,29 @@ int stream_component_open(VideoState * videoState, int stream_index)
 	}
 	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
 		// FIXME disabling sdl audio for now ...
-		/* LOG("setting up audio device ..."); */
-		/* SDL_AudioSpec wanted_specs; */
-		/* SDL_AudioSpec specs; */
-		/* wanted_specs.freq = codecCtx->sample_rate; */
-		/* wanted_specs.format = AUDIO_S16SYS; */
-		/* wanted_specs.channels = codecCtx->channels; */
-		/* wanted_specs.silence = 0; */
-		/* wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE; */
+		LOG("setting up audio device ...");
+		SDL_AudioSpec wanted_specs;
+		SDL_AudioSpec specs;
+		wanted_specs.freq = codecCtx->sample_rate;
+		wanted_specs.format = AUDIO_S16SYS;
+		wanted_specs.channels = codecCtx->channels;
+		wanted_specs.silence = 0;
+		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
 		/* // FIXME SDL threading when entering the audio_callback might crash ... */
 		/* wanted_specs.callback = audio_callback; */
-		/* wanted_specs.userdata = videoState; */
+		wanted_specs.callback = NULL;
+		wanted_specs.userdata = videoState;
 		/* ret = SDL_OpenAudio(&wanted_specs, &specs); */
 		/* if (ret < 0) { */
 			/* printf("SDL_OpenAudio: %s.\n", SDL_GetError()); */
 			/* return -1; */
 		/* } */
-		/* LOG("audio device opened successfully"); */
+		videoState->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &specs, 0);
+		if (videoState->audioDevId == 0) {
+			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
+			return -1;
+		}
+		LOG("audio device opened successfully");
 	}
 	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
 		printf("Unsupported codec.\n");
@@ -987,6 +994,10 @@ audio_thread(void *arg)
 			LOG("<== unforseen error when receiving audio sample from audio queue");
 		}
 		fwrite(audioSample.sample, 1, audioSample.size, audio_out);
+		int ret = SDL_QueueAudio(videoState->audioDevId, audioSample.sample, audioSample.size);
+		if (ret < 0) {
+			LOG("failed to queue audio sample: %s", SDL_GetError());
+		}
 		free(audioSample.sample);
 	}
 }
