@@ -234,8 +234,8 @@ enum
 	AV_SYNC_EXTERNAL_MASTER,
 };
 
-SDL_Window * screen;
-VideoState * global_video_state;
+SDL_Window *screen;
+/* VideoState * global_video_state; */
 AVPacket flush_pkt;
 char *addr = "tcp!localhost!5640";
 char *aname;
@@ -466,7 +466,7 @@ void decoder_thread(void * arg)
 	videoState->videoStream = -1;
 	videoState->audioStream = -1;
 	// set global VideoState reference
-	global_video_state = videoState;
+	/* global_video_state = videoState; */
 	videoState->pFormatCtx = pFormatCtx;
 	ret = avformat_find_stream_info(pFormatCtx, NULL);
 	if (ret < 0) {
@@ -630,6 +630,7 @@ void decoder_thread(void * arg)
 			// TODO it would be nicer to check for the frame type instead for the codec context
 			if (codecCtx == videoState->video_ctx) {
 				if (codecCtx->frame_number > videoState->maxFramesToDecode) {
+					LOG("max frames reached");
 					threadexitsall("max frames reached");
 				}
 	            sws_scale(
@@ -1259,70 +1260,70 @@ static void schedule_refresh(VideoState * videoState, Uint32 delay)
 /* } */
 
 
-/* void video_display(VideoState * videoState, VideoPicture *videoPicture) */
-/* { */
-	/* if (!screen) { */
-		/* // create a window with the specified position, dimensions, and flags. */
-		/* screen = SDL_CreateWindow( */
-			/* "FFmpeg SDL Video Player", */
-			/* SDL_WINDOWPOS_UNDEFINED, */
-			/* SDL_WINDOWPOS_UNDEFINED, */
-			/* videoState->video_ctx->width, */
-			/* videoState->video_ctx->height, */
-			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
-			/* ); */
-		/* SDL_GL_SetSwapInterval(1); */
-	/* } */
-	/* if (!screen) { */
-		/* printf("SDL: could not create window - exiting.\n"); */
-		/* return; */
-	/* } */
-	/* if (!videoState->renderer) { */
-		/* // create a 2D rendering context for the SDL_Window */
-		/* videoState->renderer = SDL_CreateRenderer(screen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE); */
-	/* } */
-	/* if (!videoState->texture) { */
-		/* // create a texture for a rendering context */
-		/* videoState->texture = SDL_CreateTexture( */
-			/* videoState->renderer, */
-			/* SDL_PIXELFORMAT_YV12, */
-			/* SDL_TEXTUREACCESS_STREAMING, */
-			/* videoState->video_ctx->width, */
-			/* videoState->video_ctx->height */
-			/* ); */
-	/* } */
-	/* double aspect_ratio; */
-	/* int w, h, x, y; */
-	/* // Disabled saving frame to disc for now, it takes too much disc space ... */
-	/* if (videoPicture->frame) { */
-		/* if (videoState->video_ctx->sample_aspect_ratio.num == 0) { */
-			/* aspect_ratio = 0; */
-		/* } */
-		/* else { */
-			/* aspect_ratio = av_q2d(videoState->video_ctx->sample_aspect_ratio) * videoState->video_ctx->width / videoState->video_ctx->height; */
-		/* } */
-		/* if (aspect_ratio <= 0.0) { */
-			/* aspect_ratio = (float)videoState->video_ctx->width / */
-						   /* (float)videoState->video_ctx->height; */
-		/* } */
-		/* // get the size of a window's client area */
-		/* int screen_width; */
-		/* int screen_height; */
-		/* SDL_GetWindowSize(screen, &screen_width, &screen_height); */
-		/* // global SDL_Surface height */
-		/* h = screen_height; */
-		/* // retrieve width using the calculated aspect ratio and the screen height */
-		/* w = ((int) rint(h * aspect_ratio)) & -3; */
-		/* // if the new width is bigger than the screen width */
-		/* if (w > screen_width) { */
-			/* // set the width to the screen width */
-			/* w = screen_width; */
-			/* // recalculate height using the calculated aspect ratio and the screen width */
-			/* h = ((int) rint(w / aspect_ratio)) & -3; */
-		/* } */
-		/* // TODO: Add full screen support */
-		/* x = (screen_width - w); */
-		/* y = (screen_height - h); */
+void video_display(VideoState *videoState, VideoPicture *videoPicture)
+{
+	if (!screen) {
+		// create a window with the specified position, dimensions, and flags.
+		screen = SDL_CreateWindow(
+			"FFmpeg SDL Video Player",
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			videoState->video_ctx->width,
+			videoState->video_ctx->height,
+			SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI
+			);
+		SDL_GL_SetSwapInterval(1);
+	}
+	if (!screen) {
+		printf("SDL: could not create window - exiting.\n");
+		return;
+	}
+	if (!videoState->renderer) {
+		// create a 2D rendering context for the SDL_Window
+		videoState->renderer = SDL_CreateRenderer(screen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+	}
+	if (!videoState->texture) {
+		// create a texture for a rendering context
+		videoState->texture = SDL_CreateTexture(
+			videoState->renderer,
+			SDL_PIXELFORMAT_YV12,
+			SDL_TEXTUREACCESS_STREAMING,
+			videoState->video_ctx->width,
+			videoState->video_ctx->height
+			);
+	}
+	double aspect_ratio;
+	int w, h, x, y;
+	// Disabled saving frame to disc for now, it takes too much disc space ...
+	if (videoPicture->frame) {
+		if (videoState->video_ctx->sample_aspect_ratio.num == 0) {
+			aspect_ratio = 0;
+		}
+		else {
+			aspect_ratio = av_q2d(videoState->video_ctx->sample_aspect_ratio) * videoState->video_ctx->width / videoState->video_ctx->height;
+		}
+		if (aspect_ratio <= 0.0) {
+			aspect_ratio = (float)videoState->video_ctx->width /
+						   (float)videoState->video_ctx->height;
+		}
+		// get the size of a window's client area
+		int screen_width;
+		int screen_height;
+		SDL_GetWindowSize(screen, &screen_width, &screen_height);
+		// global SDL_Surface height
+		h = screen_height;
+		// retrieve width using the calculated aspect ratio and the screen height
+		w = ((int) rint(h * aspect_ratio)) & -3;
+		// if the new width is bigger than the screen width
+		if (w > screen_width) {
+			// set the width to the screen width
+			w = screen_width;
+			// recalculate height using the calculated aspect ratio and the screen width
+			h = ((int) rint(w / aspect_ratio)) & -3;
+		}
+		// TODO: Add full screen support
+		x = (screen_width - w);
+		y = (screen_height - h);
 		/* if (_DEBUG_) { */
 			/* // dump information about the frame being rendered */
 			/* LOG( */
@@ -1338,13 +1339,15 @@ static void schedule_refresh(VideoState * videoState, Uint32 delay)
 					/* videoPicture->frame->height */
 			/* ); */
 		/* } */
-		/* // set blit area x and y coordinates, width and height */
-		/* SDL_Rect rect; */
-		/* rect.x = x; */
-		/* rect.y = y; */
-		/* rect.w = w; */
-		/* rect.h = h; */
-		/* // update the texture with the new pixel data */
+		// set blit area x and y coordinates, width and height
+		SDL_Rect rect;
+		rect.x = x;
+		rect.y = y;
+		rect.w = w;
+		rect.h = h;
+		USED(rect);
+		// update the texture with the new pixel data
+		// TODO need to add yuv format to VideoPicture, or queue unscaled frame and convert in video_thread
 		/* SDL_UpdateYUVTexture( */
 				/* videoState->texture, */
 				/* &rect, */
@@ -1355,14 +1358,14 @@ static void schedule_refresh(VideoState * videoState, Uint32 delay)
 				/* videoPicture->frame->data[2], */
 				/* videoPicture->frame->linesize[2] */
 		/* ); */
-		/* // clear the current rendering target with the drawing color */
-		/* SDL_RenderClear(videoState->renderer); */
-		/* // copy a portion of the texture to the current rendering target */
-		/* SDL_RenderCopy(videoState->renderer, videoState->texture, NULL, NULL); */
-		/* // update the screen with any rendering performed since the previous call */
-		/* SDL_RenderPresent(videoState->renderer); */
-	/* } */
-/* } */
+		// clear the current rendering target with the drawing color
+		SDL_RenderClear(videoState->renderer);
+		// copy a portion of the texture to the current rendering target
+		SDL_RenderCopy(videoState->renderer, videoState->texture, NULL, NULL);
+		// update the screen with any rendering performed since the previous call
+		SDL_RenderPresent(videoState->renderer);
+	}
+}
 
 
 /* static void packet_queue_flush(PacketQueue * queue) */
