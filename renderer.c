@@ -208,8 +208,10 @@ typedef struct AudioResamplingState
 
 typedef struct VideoPicture
 {
-    AVFrame *   frame;
+    /* AVFrame *   frame; */
     /* AVFrame *   rgb_frame; */
+    uint8_t     *frame;
+    int         linesize;
     int         width;
     int         height;
     double      pts;
@@ -240,17 +242,11 @@ char *aname;
 
 void printHelp();
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
+void savePicture(VideoPicture *pPic, int frameIndex);
 void decoder_thread(void * arg);
 int stream_component_open(
 		VideoState * videoState,
 		int stream_index
-);
-void init_picture(void * userdata, VideoPicture *videoPicture);
-void deinit_picture(void * userdata, VideoPicture *videoPicture);
-int queue_picture(
-		VideoState * videoState,
-		AVFrame * pFrame,
-		double pts
 );
 void video_thread(void *arg);
 void audio_thread(void *arg);
@@ -278,18 +274,17 @@ static void schedule_refresh(
 		VideoState * videoState,
 		Uint32 delay
 );
-void video_display(VideoState * videoState, VideoPicture *videoPicture);
-void audio_callback(
-		void * userdata,
-		Uint8 * stream,
-		int len
-);
-int audio_decode_frame(
-		VideoState * videoState,
-		uint8_t * audio_buf,
-		int buf_size,
-		double * pts_ptr
-);
+/* void audio_callback( */
+		/* void * userdata, */
+		/* Uint8 * stream, */
+		/* int len */
+/* ); */
+/* int audio_decode_frame( */
+		/* VideoState * videoState, */
+		/* uint8_t * audio_buf, */
+		/* int buf_size, */
+		/* double * pts_ptr */
+/* ); */
 static int audio_resampling(
 		VideoState * videoState,
 		AVFrame * decoded_audio_frame,
@@ -647,12 +642,28 @@ void decoder_thread(void * arg)
 	                pFrameRGB->linesize
 	            );
 				VideoPicture videoPicture = {
-					.frame = pFrameRGB,
+					/* .frame = pFrameRGB, */
+					.frame = pFrameRGB->data[0],
+					.linesize = pFrameRGB->linesize[0],
 					.width = codecCtx->width,
 					.height = codecCtx->height,
 					.pts = codecCtx->frame_number
 					};
 				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
+			    LOG(
+			        "Frame %c (%d) pts %ld dts %ld key_frame %d "
+			"[coded_picture_number %d, display_picture_number %d,"
+			" %dx%d]",
+			        av_get_picture_type_char(pFrameRGB->pict_type),
+			        (int)videoPicture.pts,
+			        pFrameRGB->pts,
+			        pFrameRGB->pkt_dts,
+			        pFrameRGB->key_frame,
+			        pFrameRGB->coded_picture_number,
+			        pFrameRGB->display_picture_number,
+			        videoPicture.width,
+			        videoPicture.height
+			    );
 				int sendret = send(videoState->pictq, &videoPicture);
 				if (sendret == 1) {
 					LOG("==> sending picture with pts %f to picture queue succeeded.", videoPicture.pts);
@@ -861,25 +872,26 @@ video_thread(void *arg)
 			LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
 			LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
 		}
-		AVFrame *pFrameRGB = videoPicture.frame;
+		/* AVFrame *pFrameRGB = videoPicture.frame; */
 	    // save the read AVFrame into ppm file
-		saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts);
+		/* saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts); */
+		savePicture(&videoPicture, (int)videoPicture.pts);
 	    // print log information
-	    LOG(
-	        "Frame %c (%d) pts %ld dts %ld key_frame %d "
-	"[coded_picture_number %d, display_picture_number %d,"
-	" %dx%d]",
-	        av_get_picture_type_char(pFrameRGB->pict_type),
-	        (int)videoPicture.pts,
-	        pFrameRGB->pts,
-	        pFrameRGB->pkt_dts,
-	        pFrameRGB->key_frame,
-	        pFrameRGB->coded_picture_number,
-	        pFrameRGB->display_picture_number,
-	        videoPicture.width,
-	        videoPicture.height
-	    );
-		// FIXME unreffing queued frames probably doesn't work
+	    /* LOG( */
+	        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
+	/* "[coded_picture_number %d, display_picture_number %d," */
+	/* " %dx%d]", */
+	        /* av_get_picture_type_char(pFrameRGB->pict_type), */
+	        /* (int)videoPicture.pts, */
+	        /* pFrameRGB->pts, */
+	        /* pFrameRGB->pkt_dts, */
+	        /* pFrameRGB->key_frame, */
+	        /* pFrameRGB->coded_picture_number, */
+	        /* pFrameRGB->display_picture_number, */
+	        /* videoPicture.width, */
+	        /* videoPicture.height */
+	    /* ); */
+		/* // FIXME unreffing queued frames probably doesn't work */
 		/* av_frame_unref(pFrameRGB); */
 		LOG("receiving picture from picture queue and displaying video frame finished.");
 	}
@@ -921,153 +933,6 @@ audio_thread(void *arg)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void
-init_picture(void *userdata, VideoPicture *videoPicture)
-{
-	LOG("init picture ...");
-	// retrieve global VideoState reference.
-	VideoState * videoState = (VideoState *)userdata;
-
-	// retrieve the VideoPicture pointed by the queue write index
-	/* VideoPicture * videoPicture = NULL; */
-	/* videoPicture = malloc(sizeof(VideoPicture)); */
-	memset(videoPicture, 0, sizeof(VideoPicture));
-	// check if the SDL_Overlay is allocated
-	/* if (videoPicture->frame) */
-	/* { */
-		/* // we already have an AVFrame allocated, free memory */
-		/* av_frame_free(&videoPicture->frame); */
-		/* av_free(videoPicture->frame); */
-	/* } */
-	int numBytes;
-	numBytes = av_image_get_buffer_size(
-			AV_PIX_FMT_YUV420P,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
-			32
-	);
-	/* int rgb_numBytes; */
-	/* rgb_numBytes = av_image_get_buffer_size( */
-			/* AV_PIX_FMT_RGB24, */
-			/* videoState->video_ctx->width, */
-			/* videoState->video_ctx->height, */
-			/* 32 */
-	/* ); */
-	uint8_t * buffer = NULL;
-	buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-	/* uint8_t * rgb_buffer = NULL; */
-	/* rgb_buffer = (uint8_t *) av_malloc(rgb_numBytes * sizeof(uint8_t)); */
-	videoPicture->frame = av_frame_alloc();
-	if (videoPicture->frame == NULL) {
-		printf("Could not allocate frame.\n");
-		return;
-	}
-	/* videoPicture->rgb_frame = av_frame_alloc(); */
-	/* if (videoPicture->rgb_frame == NULL) { */
-		/* printf("Could not allocate rgb frame.\n"); */
-		/* return; */
-	/* } */
-	av_image_fill_arrays(
-			videoPicture->frame->data,
-			videoPicture->frame->linesize,
-			buffer,
-			AV_PIX_FMT_YUV420P,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
-			32
-	);
-	/* av_image_fill_arrays( */
-			/* videoPicture->rgb_frame->data, */
-			/* videoPicture->rgb_frame->linesize, */
-			/* rgb_buffer, */
-			/* AV_PIX_FMT_RGB24, */
-			/* videoState->video_ctx->width, */
-			/* videoState->video_ctx->height, */
-			/* 32 */
-	/* ); */
-	av_free(buffer);
-	/* av_free(rgb_buffer); */
-	videoPicture->width = videoState->video_ctx->width;
-	videoPicture->height = videoState->video_ctx->height;
-}
-
-
-void
-deinit_picture(void *userdata, VideoPicture *videoPicture)
-{
-	LOG("deinit picture ...");
-	av_frame_unref(videoPicture->frame);
-	/* av_frame_free(&videoPicture->frame); */
-	/* av_free(videoPicture->frame); */
-
-	/* av_frame_free(&videoPicture->rgb_frame); */
-	/* av_free(videoPicture->rgb_frame); */
-}
-
-
-int queue_picture(VideoState * videoState, AVFrame * pFrame, double pts)
-{
-	if (videoState->quit) {
-		return -1;
-	}
-	VideoPicture videoPicture;
-	init_picture(videoState, &videoPicture);
-	// set pts value for the last decoded frame in the VideoPicture queue (pctq)
-	videoPicture.pts = pts;
-	if (videoPicture.frame) {
-		// set VideoPicture AVFrame info using the last decoded frame
-		videoPicture.frame->pict_type = pFrame->pict_type;
-		videoPicture.frame->pts = pFrame->pts;
-		videoPicture.frame->pkt_dts = pFrame->pkt_dts;
-		videoPicture.frame->key_frame = pFrame->key_frame;
-		videoPicture.frame->coded_picture_number = pFrame->coded_picture_number;
-		videoPicture.frame->display_picture_number = pFrame->display_picture_number;
-		videoPicture.frame->width = pFrame->width;
-		videoPicture.frame->height = pFrame->height;
-		// scale the image in pFrame->data and put the resulting scaled image in pict->data
-		sws_scale(
-				videoState->sws_ctx,
-				(uint8_t const * const *)pFrame->data,
-				pFrame->linesize,
-				0,
-				videoState->video_ctx->height,
-				videoPicture.frame->data,
-				videoPicture.frame->linesize
-		);
-	}
-	/* if (videoPicture.rgb_frame) { */
-		/* videoPicture.rgb_frame->pict_type = pFrame->pict_type; */
-		/* videoPicture.rgb_frame->pts = pFrame->pts; */
-		/* videoPicture.rgb_frame->pkt_dts = pFrame->pkt_dts; */
-		/* videoPicture.rgb_frame->key_frame = pFrame->key_frame; */
-		/* videoPicture.rgb_frame->coded_picture_number = pFrame->coded_picture_number; */
-		/* videoPicture.rgb_frame->display_picture_number = pFrame->display_picture_number; */
-		/* videoPicture.rgb_frame->width = pFrame->width; */
-		/* videoPicture.rgb_frame->height = pFrame->height; */
-		/* sws_scale( */
-				/* videoState->rgb_ctx, */
-				/* (uint8_t const * const *)pFrame->data, */
-				/* pFrame->linesize, */
-				/* 0, */
-				/* videoState->video_ctx->height, */
-				/* videoPicture.rgb_frame->data, */
-				/* videoPicture.rgb_frame->linesize */
-		/* ); */
-	/* } */
-	LOG("==> sending decoded video frame with pts %f to picture queue ...", videoPicture.pts);
-	/* sendp(videoState->pictq, videoPicture); */
-	int sendret = send(videoState->pictq, &videoPicture);
-	if (sendret == 1) {
-		LOG("==> sending decoded video frame with pts %f to picture queue succeeded.", videoPicture.pts);
-	}
-	else if (sendret == -1) {
-		LOG("==> sending decoded video frame to picture queue interrupted");
-	}
-	else {
-		LOG("==> unforseen error when sending decoded video frame to picture queue");
-	}
-	return 0;
-}
 
 
 /* static int64_t guess_correct_pts(AVCodecContext * ctx, int64_t reordered_pts, int64_t dts) */
@@ -1294,13 +1159,12 @@ void video_refresh_timer(void * userdata)
 			if (_DEBUG_) {
 				LOG("Next Scheduled Refresh:\t%f", (real_delay * 1000 + 0.5));
 			}
-			video_display(videoState, &videoPicture);
+			/* video_display(videoState, &videoPicture); */
 		/* } */
 	}
 	else {
 		schedule_refresh(videoState, 100);
 	}
-	deinit_picture(videoState, &videoPicture);
 	/* LOG("refresh timer finished."); */
 }
 
@@ -1385,115 +1249,110 @@ static void schedule_refresh(VideoState * videoState, Uint32 delay)
 /* } */
 
 
-void video_display(VideoState * videoState, VideoPicture *videoPicture)
-{
-	if (!screen) {
-		// create a window with the specified position, dimensions, and flags.
-		screen = SDL_CreateWindow(
-			"FFmpeg SDL Video Player",
-			SDL_WINDOWPOS_UNDEFINED,
-			SDL_WINDOWPOS_UNDEFINED,
-			/* videoState->video_ctx->width / 2, */
-			/* videoState->video_ctx->height / 2, */
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
-			SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI
-			);
-		SDL_GL_SetSwapInterval(1);
-	}
-	if (!screen) {
-		printf("SDL: could not create window - exiting.\n");
-		return;
-	}
-	if (!videoState->renderer) {
-		// create a 2D rendering context for the SDL_Window
-		videoState->renderer = SDL_CreateRenderer(screen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
-	}
-	if (!videoState->texture) {
-		// create a texture for a rendering context
-		videoState->texture = SDL_CreateTexture(
-			videoState->renderer,
-			SDL_PIXELFORMAT_YV12,
-			SDL_TEXTUREACCESS_STREAMING,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height
-			);
-	}
-	double aspect_ratio;
-	int w, h, x, y;
-	// Disabled saving frame to disc for now, it takes too much disc space ...
-	/* if (videoPicture->rgb_frame) { */
-		/* saveFrame(videoPicture->rgb_frame, videoState, (int)1000*(videoPicture->pts)); */
+/* void video_display(VideoState * videoState, VideoPicture *videoPicture) */
+/* { */
+	/* if (!screen) { */
+		/* // create a window with the specified position, dimensions, and flags. */
+		/* screen = SDL_CreateWindow( */
+			/* "FFmpeg SDL Video Player", */
+			/* SDL_WINDOWPOS_UNDEFINED, */
+			/* SDL_WINDOWPOS_UNDEFINED, */
+			/* videoState->video_ctx->width, */
+			/* videoState->video_ctx->height, */
+			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
+			/* ); */
+		/* SDL_GL_SetSwapInterval(1); */
 	/* } */
-	if (videoPicture->frame) {
-		if (videoState->video_ctx->sample_aspect_ratio.num == 0) {
-			aspect_ratio = 0;
-		}
-		else {
-			aspect_ratio = av_q2d(videoState->video_ctx->sample_aspect_ratio) * videoState->video_ctx->width / videoState->video_ctx->height;
-		}
-		if (aspect_ratio <= 0.0) {
-			aspect_ratio = (float)videoState->video_ctx->width /
-						   (float)videoState->video_ctx->height;
-		}
-		// get the size of a window's client area
-		int screen_width;
-		int screen_height;
-		SDL_GetWindowSize(screen, &screen_width, &screen_height);
-		// global SDL_Surface height
-		h = screen_height;
-		// retrieve width using the calculated aspect ratio and the screen height
-		w = ((int) rint(h * aspect_ratio)) & -3;
-		// if the new width is bigger than the screen width
-		if (w > screen_width) {
-			// set the width to the screen width
-			w = screen_width;
-			// recalculate height using the calculated aspect ratio and the screen width
-			h = ((int) rint(w / aspect_ratio)) & -3;
-		}
-		// TODO: Add full screen support
-		x = (screen_width - w);
-		y = (screen_height - h);
-		if (_DEBUG_) {
-			// dump information about the frame being rendered
-			LOG(
-					"Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]",
-					av_get_picture_type_char(videoPicture->frame->pict_type),
-					videoState->video_ctx->frame_number,
-					videoPicture->frame->pts,
-					videoPicture->frame->pkt_dts,
-					videoPicture->frame->key_frame,
-					videoPicture->frame->coded_picture_number,
-					videoPicture->frame->display_picture_number,
-					videoPicture->frame->width,
-					videoPicture->frame->height
-			);
-		}
-		// set blit area x and y coordinates, width and height
-		SDL_Rect rect;
-		rect.x = x;
-		rect.y = y;
-		rect.w = w;
-		rect.h = h;
-		// update the texture with the new pixel data
-		SDL_UpdateYUVTexture(
-				videoState->texture,
-				&rect,
-				videoPicture->frame->data[0],
-				videoPicture->frame->linesize[0],
-				videoPicture->frame->data[1],
-				videoPicture->frame->linesize[1],
-				videoPicture->frame->data[2],
-				videoPicture->frame->linesize[2]
-		);
-		// clear the current rendering target with the drawing color
-		SDL_RenderClear(videoState->renderer);
-		// copy a portion of the texture to the current rendering target
-		SDL_RenderCopy(videoState->renderer, videoState->texture, NULL, NULL);
-		// update the screen with any rendering performed since the previous call
-		SDL_RenderPresent(videoState->renderer);
-	}
-}
+	/* if (!screen) { */
+		/* printf("SDL: could not create window - exiting.\n"); */
+		/* return; */
+	/* } */
+	/* if (!videoState->renderer) { */
+		/* // create a 2D rendering context for the SDL_Window */
+		/* videoState->renderer = SDL_CreateRenderer(screen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE); */
+	/* } */
+	/* if (!videoState->texture) { */
+		/* // create a texture for a rendering context */
+		/* videoState->texture = SDL_CreateTexture( */
+			/* videoState->renderer, */
+			/* SDL_PIXELFORMAT_YV12, */
+			/* SDL_TEXTUREACCESS_STREAMING, */
+			/* videoState->video_ctx->width, */
+			/* videoState->video_ctx->height */
+			/* ); */
+	/* } */
+	/* double aspect_ratio; */
+	/* int w, h, x, y; */
+	/* // Disabled saving frame to disc for now, it takes too much disc space ... */
+	/* if (videoPicture->frame) { */
+		/* if (videoState->video_ctx->sample_aspect_ratio.num == 0) { */
+			/* aspect_ratio = 0; */
+		/* } */
+		/* else { */
+			/* aspect_ratio = av_q2d(videoState->video_ctx->sample_aspect_ratio) * videoState->video_ctx->width / videoState->video_ctx->height; */
+		/* } */
+		/* if (aspect_ratio <= 0.0) { */
+			/* aspect_ratio = (float)videoState->video_ctx->width / */
+						   /* (float)videoState->video_ctx->height; */
+		/* } */
+		/* // get the size of a window's client area */
+		/* int screen_width; */
+		/* int screen_height; */
+		/* SDL_GetWindowSize(screen, &screen_width, &screen_height); */
+		/* // global SDL_Surface height */
+		/* h = screen_height; */
+		/* // retrieve width using the calculated aspect ratio and the screen height */
+		/* w = ((int) rint(h * aspect_ratio)) & -3; */
+		/* // if the new width is bigger than the screen width */
+		/* if (w > screen_width) { */
+			/* // set the width to the screen width */
+			/* w = screen_width; */
+			/* // recalculate height using the calculated aspect ratio and the screen width */
+			/* h = ((int) rint(w / aspect_ratio)) & -3; */
+		/* } */
+		/* // TODO: Add full screen support */
+		/* x = (screen_width - w); */
+		/* y = (screen_height - h); */
+		/* if (_DEBUG_) { */
+			/* // dump information about the frame being rendered */
+			/* LOG( */
+					/* "Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]", */
+					/* av_get_picture_type_char(videoPicture->frame->pict_type), */
+					/* videoState->video_ctx->frame_number, */
+					/* videoPicture->frame->pts, */
+					/* videoPicture->frame->pkt_dts, */
+					/* videoPicture->frame->key_frame, */
+					/* videoPicture->frame->coded_picture_number, */
+					/* videoPicture->frame->display_picture_number, */
+					/* videoPicture->frame->width, */
+					/* videoPicture->frame->height */
+			/* ); */
+		/* } */
+		/* // set blit area x and y coordinates, width and height */
+		/* SDL_Rect rect; */
+		/* rect.x = x; */
+		/* rect.y = y; */
+		/* rect.w = w; */
+		/* rect.h = h; */
+		/* // update the texture with the new pixel data */
+		/* SDL_UpdateYUVTexture( */
+				/* videoState->texture, */
+				/* &rect, */
+				/* videoPicture->frame->data[0], */
+				/* videoPicture->frame->linesize[0], */
+				/* videoPicture->frame->data[1], */
+				/* videoPicture->frame->linesize[1], */
+				/* videoPicture->frame->data[2], */
+				/* videoPicture->frame->linesize[2] */
+		/* ); */
+		/* // clear the current rendering target with the drawing color */
+		/* SDL_RenderClear(videoState->renderer); */
+		/* // copy a portion of the texture to the current rendering target */
+		/* SDL_RenderCopy(videoState->renderer, videoState->texture, NULL, NULL); */
+		/* // update the screen with any rendering performed since the previous call */
+		/* SDL_RenderPresent(videoState->renderer); */
+	/* } */
+/* } */
 
 
 /* static void packet_queue_flush(PacketQueue * queue) */
@@ -1519,203 +1378,60 @@ void video_display(VideoState * videoState, VideoPicture *videoPicture)
 /* } */
 
 
-void audio_callback(void * userdata, Uint8 * stream, int len)
-{
-	LOG("audio_callback() for SDL audio output ...");
-	// retrieve the VideoState
-	VideoState * videoState = (VideoState *)userdata;
-	double pts;
-	// while the length of the audio data buffer is > 0
-	while (len > 0)
-	{
-		LOG("audio_callback() looping over audio data buffer");
-		// check global quit flag
-		if (global_video_state->quit) {
-			return;
-		}
-		// check how much audio is left to writes
-		if (videoState->audio_buf_index >= videoState->audio_buf_size) {
-			// we have already sent all avaialble data; get more
-			int audio_size = audio_decode_frame(
-									videoState,
-									videoState->audio_buf,
-									sizeof(videoState->audio_buf),
-									&pts
-							);
-			if (audio_size < 0) {
-				// output silence
-				videoState->audio_buf_size = 1024;
+/* void audio_callback(void * userdata, Uint8 * stream, int len) */
+/* { */
+	/* LOG("audio_callback() for SDL audio output ..."); */
+	/* // retrieve the VideoState */
+	/* VideoState * videoState = (VideoState *)userdata; */
+	/* double pts; */
+	/* // while the length of the audio data buffer is > 0 */
+	/* while (len > 0) */
+	/* { */
+		/* LOG("audio_callback() looping over audio data buffer"); */
+		/* // check global quit flag */
+		/* if (global_video_state->quit) { */
+			/* return; */
+		/* } */
+		/* // check how much audio is left to writes */
+		/* if (videoState->audio_buf_index >= videoState->audio_buf_size) { */
+			/* // we have already sent all avaialble data; get more */
+			/* int audio_size = audio_decode_frame( */
+									/* videoState, */
+									/* videoState->audio_buf, */
+									/* sizeof(videoState->audio_buf), */
+									/* &pts */
+							/* ); */
+			/* if (audio_size < 0) { */
+				/* // output silence */
+				/* videoState->audio_buf_size = 1024; */
 
-				// clear memory
-				memset(videoState->audio_buf, 0, videoState->audio_buf_size);
+				/* // clear memory */
+				/* memset(videoState->audio_buf, 0, videoState->audio_buf_size); */
 
-				printf("audio_decode_frame() failed.\n");
-			}
-			else {
-				audio_size = synchronize_audio(videoState, (int16_t *)videoState->audio_buf, audio_size);
+				/* printf("audio_decode_frame() failed.\n"); */
+			/* } */
+			/* else { */
+				/* audio_size = synchronize_audio(videoState, (int16_t *)videoState->audio_buf, audio_size); */
 
-				// cast to usigned just to get rid of annoying warning messages
-				videoState->audio_buf_size = (unsigned)audio_size;
-			}
-			videoState->audio_buf_index = 0;
-		}
-		int len1 = videoState->audio_buf_size - videoState->audio_buf_index;
-		if (len1 > len) {
-			len1 = len;
-		}
-		// copy data from audio buffer to the SDL stream
-		LOG("audio_callback() copy data to sdl audio buffer ...");
-		memcpy(stream, (uint8_t *)videoState->audio_buf + videoState->audio_buf_index, len1);
-		LOG("audio_callback() copied data to sdl audio buffer.");
-		len -= len1;
-		stream += len1;
-		// update global VideoState audio buffer index
-		videoState->audio_buf_index += len1;
-	}
-}
-
-
-int audio_decode_frame(VideoState * videoState, uint8_t * audio_buf, int buf_size, double * pts_ptr)
-{
-	LOG("audio_decode_frame() ...");
-	// allocate AVPacket to read from the audio PacketQueue (audioq)
-	AVPacket * avPacket = av_packet_alloc();
-	if (avPacket == NULL) {
-		printf("Could not allocate AVPacket.\n");
-		return -1;
-	}
-	static uint8_t * audio_pkt_data = NULL;
-	static int audio_pkt_size = 0;
-	double pts;
-	int n;
-	// allocate a new frame, used to decode audio packets
-	static AVFrame * avFrame = NULL;
-	avFrame = av_frame_alloc();
-	if (!avFrame) {
-		printf("Could not allocate AVFrame.\n");
-		return -1;
-	}
-	int len1 = 0;
-	int data_size = 0;
-	// infinite loop: read AVPackets from the audio PacketQueue, decode them into
-	// audio frames, resample the obtained frame and update the audio buffer
-	for (;;)
-	{
-		LOG("audio_decode_frame() looping");
-		// check global quit flag
-		if (videoState->quit) {
-			av_frame_unref(avFrame);
-			/* av_frame_free(&avFrame); */
-			return -1;
-		}
-		// check if we obtained an AVPacket from the audio PacketQueue
-		while (audio_pkt_size > 0)
-		{
-			int got_frame = 0;
-			// get decoded output data from decoder
-			int ret = avcodec_receive_frame(videoState->audio_ctx, avFrame);
-			// check and entire audio frame was decoded
-			if (ret == 0) {
-				got_frame = 1;
-			}
-			// check the decoder needs more AVPackets to be sent
-			if (ret == AVERROR(EAGAIN)) {
-				LOG("audio stream, avcodec_receive_frame: AVERROR = EAGAIN or EOF");
-				ret = 0;
-			}
-			if (ret == 0) {
-				// give the decoder raw compressed data in an AVPacket
-				ret = avcodec_send_packet(videoState->audio_ctx, avPacket);
-			}
-			// check the decoder needs more AVPackets to be sent
-			if (ret == AVERROR(EAGAIN)) {
-				LOG("audio stream, avcodec_send_packet: AVERROR = EAGAIN or EOF");
-				ret = 0;
-			}
-			else if (ret < 0) {
-				LOG("avcodec_receive_frame/send_packet decoding error: %s", av_err2str(ret));
-				av_frame_unref(avFrame);
-				/* av_frame_free(&avFrame); */
-				return -1;
-			}
-			else {
-				len1 = avPacket->size;
-			}
-
-			if (len1 < 0) {
-				// if error, skip frame
-				audio_pkt_size = 0;
-				break;
-			}
-			audio_pkt_data += len1;
-			audio_pkt_size -= len1;
-			data_size = 0;
-			// if we decoded an entire audio frame
-			if (got_frame) {
-				// apply audio resampling to the decoded frame
-				data_size = audio_resampling(
-						videoState,
-						avFrame,
-						AV_SAMPLE_FMT_S16,
-						audio_buf
-				);
-				assert(data_size <= buf_size);
-			}
-			if (data_size <= 0) {
-				// no data yet, get more frames
-				continue;
-			}
-			// keep audio_clock up-to-date
-			pts = videoState->audio_clock;
-			*pts_ptr = pts;
-			n = 2 * videoState->audio_ctx->channels;
-			videoState->audio_clock += (double)data_size / (double)(n * videoState->audio_ctx->sample_rate);
-			if (avPacket->data) {
-				// wipe the packet
-				av_packet_unref(avPacket);
-			}
-			av_frame_unref(avFrame);
-			/* av_frame_free(&avFrame); */
-			// we have the data, return it and come back for more later
-			return data_size;
-		}
-		if (avPacket->data) {
-			// wipe the packet
-			av_packet_unref(avPacket);
-		}
-		// get more audio AVPacket
-		/* int ret = packet_queue_get(&videoState->audioq, avPacket, 1); */
-		/* avPacket = recvp(videoState->audioq); */
-		int recret = recv(videoState->audioq, avPacket);
-		if (recret == 1) {
-			LOG("<== received av packet of size %i from audio queue.", avPacket->size);
-		}
-		else if (recret == -1) {
-			LOG("<== reveiving av packet from audio queue interrupted");
-		}
-		else {
-			LOG("<== unforseen error when receiving av packet from audio queue");
-		}
-		// if packet_queue_get returns < 0, the global quit flag was set
-		/* if (ret < 0) */
-		if (avPacket == NULL) {
-			return -1;
-		}
-		if (avPacket->data == flush_pkt.data) {
-			avcodec_flush_buffers(videoState->audio_ctx);
-			continue;
-		}
-		audio_pkt_data = avPacket->data;
-		audio_pkt_size = avPacket->size;
-		// keep audio_clock up-to-date
-		if (avPacket->pts != AV_NOPTS_VALUE) {
-			videoState->audio_clock = av_q2d(videoState->audio_st->time_base)*avPacket->pts;
-		}
-	}
-	av_frame_unref(avFrame);
-	/* av_frame_free(&avFrame); */
-	return 0;
-}
+				/* // cast to usigned just to get rid of annoying warning messages */
+				/* videoState->audio_buf_size = (unsigned)audio_size; */
+			/* } */
+			/* videoState->audio_buf_index = 0; */
+		/* } */
+		/* int len1 = videoState->audio_buf_size - videoState->audio_buf_index; */
+		/* if (len1 > len) { */
+			/* len1 = len; */
+		/* } */
+		/* // copy data from audio buffer to the SDL stream */
+		/* LOG("audio_callback() copy data to sdl audio buffer ..."); */
+		/* memcpy(stream, (uint8_t *)videoState->audio_buf + videoState->audio_buf_index, len1); */
+		/* LOG("audio_callback() copied data to sdl audio buffer."); */
+		/* len -= len1; */
+		/* stream += len1; */
+		/* // update global VideoState audio buffer index */
+		/* videoState->audio_buf_index += len1; */
+	/* } */
+/* } */
 
 
 static int audio_resampling(VideoState * videoState, AVFrame * decoded_audio_frame, enum AVSampleFormat out_sample_fmt, uint8_t * out_buf)
@@ -1950,6 +1666,28 @@ void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex)
     for (y = 0; y < height; y++)
     {
         fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 3, pFile);
+    }
+    fclose(pFile);
+	LOG("saved video picture.");
+}
+
+
+void savePicture(VideoPicture *pPic, int frameIndex)
+{
+	LOG("saving video picture to file ...");
+    FILE * pFile;
+    char szFilename[32];
+    int  y;
+    // Open file
+    sprintf(szFilename, "/tmp/%06d.ppm", frameIndex);
+    pFile = fopen(szFilename, "wb");
+    if (pFile == NULL) {
+        return;
+    }
+    fprintf(pFile, "P6\n%d %d\n255\n", pPic->width, pPic->height);
+    for (y = 0; y < pPic->height; y++)
+    {
+        fwrite(pPic->frame + y * pPic->linesize, 1, pPic->width * 3, pFile);
     }
     fclose(pFile);
 	LOG("saved video picture.");
