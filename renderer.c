@@ -368,6 +368,8 @@ threadmain(int argc, char **argv)
 	videoState->av_sync_type = DEFAULT_AV_SYNC_TYPE;
 	/* videoState->frame_fmt = FRAME_FMT_RGB; */
 	videoState->frame_fmt = FRAME_FMT_YUV;
+	videoState->video_ctx = NULL;
+	videoState->audio_ctx = NULL;
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
@@ -504,33 +506,36 @@ void decoder_thread(void * arg)
 	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
 	// and creating a copy to be send through the video picture channel
     static AVFrame *pFrameRGB = NULL;
-    pFrameRGB = av_frame_alloc();
     uint8_t * buffer = NULL;
-    int numBytes;
-    numBytes = av_image_get_buffer_size(
-		AV_PIX_FMT_RGB24,
-		videoState->video_ctx->width,
-		videoState->video_ctx->height,
-		32
-		);
-    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-    av_image_fill_arrays(
-		pFrameRGB->data,
-		pFrameRGB->linesize,
-		buffer,
-		AV_PIX_FMT_RGB24,
-		videoState->video_ctx->width,
-		videoState->video_ctx->height,
-		32
-    );
+    uint8_t * yuvbuffer = NULL;
+	if (videoState->video_ctx) {
+	    pFrameRGB = av_frame_alloc();
+	    int numBytes;
+	    numBytes = av_image_get_buffer_size(
+			AV_PIX_FMT_RGB24,
+			videoState->video_ctx->width,
+			videoState->video_ctx->height,
+			32
+			);
+	    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+	    av_image_fill_arrays(
+			pFrameRGB->data,
+			pFrameRGB->linesize,
+			buffer,
+			AV_PIX_FMT_RGB24,
+			videoState->video_ctx->width,
+			videoState->video_ctx->height,
+			32
+	    );
 
-    int yuvNumBytes = av_image_get_buffer_size(
-		AV_PIX_FMT_YUV420P,
-		videoState->video_ctx->width,
-		videoState->video_ctx->height,
-		32
-		);
-	uint8_t * yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t));
+	    int yuvNumBytes = av_image_get_buffer_size(
+			AV_PIX_FMT_YUV420P,
+			videoState->video_ctx->width,
+			videoState->video_ctx->height,
+			32
+			);
+		yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t));
+	}
 
 	// Main decoder loop
 	for (;;) {
@@ -838,7 +843,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
 			return -1;
 		}
-		LOG("audio device opened successfully");
+		LOG("audio device with id: %d opened successfully", videoState->audioDevId);
 	}
 	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
 		printf("Unsupported codec.\n");
@@ -856,6 +861,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			/* videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
 			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
 			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
+			LOG("Audio thread created with id: %i", videoState->audio_tid);
 			// FIXME disabling SDL audio for now ...
 			/* LOG("calling sdl_pauseaudio(0) ..."); */
 			/* SDL_PauseAudio(0); */
