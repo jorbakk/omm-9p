@@ -1395,28 +1395,27 @@ void video_display(VideoState *videoState, VideoPicture *videoPicture)
 		// TODO: Add full screen support
 		x = (screen_width - w);
 		y = (screen_height - h);
-		/* if (_DEBUG_) { */
-			/* // dump information about the frame being rendered */
-			/* LOG( */
-					/* "Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]", */
-					/* av_get_picture_type_char(videoPicture->frame->pict_type), */
-					/* videoState->video_ctx->frame_number, */
-					/* videoPicture->frame->pts, */
-					/* videoPicture->frame->pkt_dts, */
-					/* videoPicture->frame->key_frame, */
-					/* videoPicture->frame->coded_picture_number, */
-					/* videoPicture->frame->display_picture_number, */
-					/* videoPicture->frame->width, */
-					/* videoPicture->frame->height */
-			/* ); */
-		/* } */
+		if (videoPicture->frame) {
+			// dump information about the frame being rendered
+			LOG(
+					"Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]",
+					av_get_picture_type_char(videoPicture->frame->pict_type),
+					videoState->video_ctx->frame_number,
+					videoPicture->frame->pts,
+					videoPicture->frame->pkt_dts,
+					videoPicture->frame->key_frame,
+					videoPicture->frame->coded_picture_number,
+					videoPicture->frame->display_picture_number,
+					videoPicture->frame->width,
+					videoPicture->frame->height
+			);
+		}
 		// set blit area x and y coordinates, width and height
 		SDL_Rect rect;
 		rect.x = x;
 		rect.y = y;
 		rect.w = w;
 		rect.h = h;
-		USED(rect);
 		// update the texture with the new pixel data
 		SDL_UpdateYUVTexture(
 				videoState->texture,
