@@ -22,13 +22,9 @@
 
 
 // TODO:
-// 1. Write audio samples to sound device
-//    - crash on writing audio stream to the pcm device using the SDL callback
-//    - writing decoded audio to file works
-//    - use a different audio output method w/o callback (that might use pthreads)
-// 2. AV sync
-// 3. Keyboard events
-// 4. 9P control server
+// 1. AV sync
+// 2. Keyboard events
+// 3. 9P control server
 
 // Thread layout:
 //   main_thread (event loop)
