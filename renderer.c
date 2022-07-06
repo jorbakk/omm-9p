@@ -862,10 +862,10 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
 			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
 			LOG("Audio thread created with id: %i", videoState->audio_tid);
-			// FIXME disabling SDL audio for now ...
-			/* LOG("calling sdl_pauseaudio(0) ..."); */
+			LOG("calling sdl_pauseaudio(0) ...");
 			/* SDL_PauseAudio(0); */
-			/* LOG("sdl_pauseaudio(0) called."); */
+			SDL_PauseAudioDevice(videoState->audioDevId, 0);
+			LOG("sdl_pauseaudio(0) called.");
 		}
 			break;
 		case AVMEDIA_TYPE_VIDEO:
@@ -999,6 +999,7 @@ audio_thread(void *arg)
 		else {
 			LOG("<== unforseen error when receiving audio sample from audio queue");
 		}
+		LOG("writing audio sample of size: %d", audioSample.size);
 		fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 		int ret = SDL_QueueAudio(videoState->audioDevId, audioSample.sample, audioSample.size);
 		if (ret < 0) {
