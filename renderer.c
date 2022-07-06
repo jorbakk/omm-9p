@@ -705,22 +705,22 @@ void decoder_thread(void * arg)
 		            );
 			    }
 				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
-			    /* LOG( */
-			        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
-			/* "[coded_picture_number %d, display_picture_number %d," */
-			/* " %dx%d]", */
-			        /* av_get_picture_type_char(pFrameRGB->pict_type), */
-			        /* (int)videoPicture.pts, */
-			        /* pFrameRGB->pts, */
-			        /* pFrameRGB->pkt_dts, */
-			        /* pFrameRGB->key_frame, */
-			        /* pFrameRGB->coded_picture_number, */
-			        /* pFrameRGB->display_picture_number, */
-			        /* videoPicture.width, */
-			        /* videoPicture.height */
-			    /* ); */
-
-				/* av_frame_unref(pFrameRGB); */
+				if (videoPicture.frame) {
+				    LOG(
+				        "Frame %c (%d) pts %ld dts %ld key_frame %d "
+				"[coded_picture_number %d, display_picture_number %d,"
+				" %dx%d]",
+				        av_get_picture_type_char(videoPicture.frame->pict_type),
+				        (int)videoPicture.pts,
+				        videoPicture.frame->pts,
+				        videoPicture.frame->pkt_dts,
+				        videoPicture.frame->key_frame,
+				        videoPicture.frame->coded_picture_number,
+				        videoPicture.frame->display_picture_number,
+				        videoPicture.width,
+				        videoPicture.height
+				    );
+				}
 				int sendret = send(videoState->pictq, &videoPicture);
 				if (sendret == 1) {
 					LOG("==> sending picture with pts %f to picture queue succeeded.", videoPicture.pts);
@@ -935,7 +935,22 @@ video_thread(void *arg)
 			LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
 			LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
 		}
-
+	    if (videoPicture.frame) {
+		    LOG(
+		        "Frame %c (%d) pts %ld dts %ld key_frame %d "
+		"[coded_picture_number %d, display_picture_number %d,"
+		" %dx%d]",
+		        av_get_picture_type_char(videoPicture.frame->pict_type),
+		        (int)videoPicture.pts,
+		        videoPicture.frame->pts,
+		        videoPicture.frame->pkt_dts,
+		        videoPicture.frame->key_frame,
+		        videoPicture.frame->coded_picture_number,
+		        videoPicture.frame->display_picture_number,
+		        videoPicture.width,
+		        videoPicture.height
+		    );
+		}
 		/* AVFrame *pFrameRGB = videoPicture.frame; */
 	    // save the read AVFrame into ppm file
 		/* saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts); */
@@ -956,22 +971,6 @@ video_thread(void *arg)
 			/* free(videoPicture.planes); */
 		/* } */
 
-	    // print log information
-	    /* LOG( */
-	        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
-	/* "[coded_picture_number %d, display_picture_number %d," */
-	/* " %dx%d]", */
-	        /* av_get_picture_type_char(pFrameRGB->pict_type), */
-	        /* (int)videoPicture.pts, */
-	        /* pFrameRGB->pts, */
-	        /* pFrameRGB->pkt_dts, */
-	        /* pFrameRGB->key_frame, */
-	        /* pFrameRGB->coded_picture_number, */
-	        /* pFrameRGB->display_picture_number, */
-	        /* videoPicture.width, */
-	        /* videoPicture.height */
-	    /* ); */
-		/* av_frame_unref(pFrameRGB); */
 		LOG("receiving picture from picture queue and displaying video frame finished.");
 	}
 }
