@@ -166,6 +166,7 @@ typedef struct VideoState
 	int	 currentFrameIndex;
 	int frame_fmt;
 	SDL_AudioDeviceID audioDevId;
+	int audio_only;
 } VideoState;
 
 typedef struct AudioResamplingState
@@ -382,6 +383,7 @@ threadmain(int argc, char **argv)
 	videoState->audio_pts = 0;
 	videoState->video_idx = 0;
 	videoState->video_pts = 0;
+	videoState->audio_only = 0;
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
@@ -630,10 +632,6 @@ void decoder_thread(void * arg)
 			/* frameFinished = 1; */
 			// TODO it would be nicer to check for the frame type instead for the codec context
 			if (codecCtx == videoState->video_ctx) {
-				if (codecCtx->frame_number > videoState->maxFramesToDecode) {
-					LOG("max frames reached");
-					threadexitsall("max frames reached");
-				}
 				VideoPicture videoPicture = {
 					.frame = NULL,
 					.rgbbuf = NULL,
@@ -745,19 +743,25 @@ void decoder_thread(void * arg)
 				LOG("video frame duration: %fms, fps: %f", frame_duration, 1000.0 / frame_duration);
 				videoState->video_pts += frame_duration;
 				videoPicture.pts = videoState->video_pts;
-				LOG("==> sending picture with idx: %d, pts: %f to picture queue ...", videoPicture.idx, videoPicture.pts);
-				int sendret = send(videoState->pictq, &videoPicture);
-				if (sendret == 1) {
-					LOG("==> sending picture with idx: %d, pts: %f to picture queue succeeded.", videoPicture.idx, videoPicture.pts);
-				}
-				else if (sendret == -1) {
-					LOG("==> sending picture to picture queue interrupted");
-				}
-				else {
-					LOG("==> unforseen error when sending picture to picture queue");
+				if (!videoState->audio_only) {
+					LOG("==> sending picture with idx: %d, pts: %f to picture queue ...", videoPicture.idx, videoPicture.pts);
+					int sendret = send(videoState->pictq, &videoPicture);
+					if (sendret == 1) {
+						LOG("==> sending picture with idx: %d, pts: %f to picture queue succeeded.", videoPicture.idx, videoPicture.pts);
+					}
+					else if (sendret == -1) {
+						LOG("==> sending picture to picture queue interrupted");
+					}
+					else {
+						LOG("==> unforseen error when sending picture to picture queue");
+					}
 				}
 			}
 			else if (codecCtx == videoState->audio_ctx) {
+				if (videoState->audio_idx > videoState->maxFramesToDecode) {
+					LOG("max frames reached");
+					threadexitsall("max frames reached");
+				}
 				int data_size = audio_resampling(
 						videoState,
 						pFrame,
@@ -912,8 +916,10 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			/* videoState->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
 			/* videoState->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE); */
 			videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-			videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE);
-			LOG("Video thread created with id: %i", videoState->video_tid);
+			if (!videoState->audio_only) {
+				videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE);
+				LOG("Video thread created with id: %i", videoState->video_tid);
+			}
 			videoState->sws_ctx = sws_getContext(videoState->video_ctx->width,
 												 videoState->video_ctx->height,
 												 videoState->video_ctx->pix_fmt,
