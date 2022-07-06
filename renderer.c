@@ -114,6 +114,10 @@ typedef struct VideoState
 	uint8_t *		   audio_pkt_data;
 	int				 audio_pkt_size;
 	double			  audio_clock;
+
+	int              audio_idx;
+	double           audio_pts;
+	double           current_audio_pts;
 	// Video Stream.
 	int				 videoStream;
 	AVStream *		  video_st;
@@ -134,6 +138,9 @@ typedef struct VideoState
 	double			  audio_diff_avg_coef;
 	double			  audio_diff_threshold;
 	int				 audio_diff_avg_count;
+
+	int              video_idx;
+	double           video_pts;
 	// AV Sync
 	int	 av_sync_type;
 	double  external_clock;
@@ -186,6 +193,7 @@ typedef struct VideoPicture
     int         height;
     int         pix_fmt;
     double      pts;
+    int         idx;
 } VideoPicture;
 
 typedef struct AudioSample
@@ -193,6 +201,8 @@ typedef struct AudioSample
 	/* uint8_t			 sample[(MAX_AUDIO_FRAME_SIZE * 3) /2]; */
 	uint8_t	*sample;
 	int size;
+	int idx;
+	double pts;
 } AudioSample;
 
 enum
@@ -366,6 +376,10 @@ threadmain(int argc, char **argv)
 	videoState->frame_fmt = FRAME_FMT_YUV;
 	videoState->video_ctx = NULL;
 	videoState->audio_ctx = NULL;
+	videoState->audio_idx = 0;
+	videoState->audio_pts = 0;
+	videoState->video_idx = 0;
+	videoState->video_pts = 0;
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
@@ -721,6 +735,10 @@ void decoder_thread(void * arg)
 				        videoPicture.height
 				    );
 				}
+				videoState->video_idx++;
+				videoPicture.idx = videoState->video_idx;
+				videoState->video_pts += 33.0;  // FIXME fill in correct video sample length in ms
+				videoPicture.pts = videoState->video_pts;
 				int sendret = send(videoState->pictq, &videoPicture);
 				if (sendret == 1) {
 					LOG("==> sending picture with pts %f to picture queue succeeded.", videoPicture.pts);
@@ -744,6 +762,10 @@ void decoder_thread(void * arg)
 					/* .sample = videoState->audio_buf, */
 					.size = data_size
 					};
+				videoState->audio_idx++;
+				audioSample.idx = videoState->audio_idx;
+				videoState->audio_pts += 10.0;  // FIXME fill in correct audio sample length in ms
+				audioSample.pts = videoState->audio_pts;
 				audioSample.sample = malloc(sizeof(videoState->audio_buf));
 				memcpy(audioSample.sample, videoState->audio_buf, sizeof(videoState->audio_buf));
 				int sendret = send(videoState->audioq, &audioSample);
@@ -923,7 +945,8 @@ video_thread(void *arg)
 		VideoPicture videoPicture;
 		int recret = recv(videoState->pictq, &videoPicture);
 		if (recret == 1) {
-			LOG("<== received picture with pts %f from picture queue.", videoPicture.pts);
+			LOG("<== received picture with idx: %d, pts: %f from picture queue.", videoPicture.idx, videoPicture.pts);
+			LOG("current audio pts: %f", videoState->current_audio_pts);
 		}
 		else if (recret == -1) {
 			LOG("<== reveiving picture from picture queue interrupted");
@@ -970,7 +993,6 @@ video_thread(void *arg)
 		/* if (videoPicture.planes) { */
 			/* free(videoPicture.planes); */
 		/* } */
-
 		LOG("receiving picture from picture queue and displaying video frame finished.");
 	}
 }
@@ -986,7 +1008,9 @@ audio_thread(void *arg)
 		int recret = recv(videoState->audioq, &audioSample);
 		if (recret == 1) {
 			/* LOG("<== received audio sample with pts %f from audio queue.", videoPicture.pts); */
-			LOG("<== received audio sample from audio queue.");
+			LOG("<== received audio sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
+			LOG("sdl audio queue size in bytes: %d", SDL_GetQueuedAudioSize(videoState->audioDevId));
+			videoState->current_audio_pts = audioSample.pts; // FIXME subtract audio queue size in ms
 		}
 		else if (recret == -1) {
 			LOG("<== reveiving audio sample from audio queue interrupted");
