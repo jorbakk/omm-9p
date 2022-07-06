@@ -141,6 +141,7 @@ typedef struct VideoState
 	double			  audio_diff_threshold;
 	int				 audio_diff_avg_count;
 
+	SDL_AudioSpec    specs;
 	int              video_idx;
 	double           video_pts;
 	// AV Sync
@@ -719,22 +720,22 @@ void decoder_thread(void * arg)
 		                videoPicture.frame->linesize
 		            );
 			    }
-				if (videoPicture.frame) {
-				    LOG(
-				        "Frame %c (%d) pts %ld dts %ld key_frame %d "
-				"[coded_picture_number %d, display_picture_number %d,"
-				" %dx%d]",
-				        av_get_picture_type_char(videoPicture.frame->pict_type),
-				        (int)videoPicture.pts,
-				        videoPicture.frame->pts,
-				        videoPicture.frame->pkt_dts,
-				        videoPicture.frame->key_frame,
-				        videoPicture.frame->coded_picture_number,
-				        videoPicture.frame->display_picture_number,
-				        videoPicture.width,
-				        videoPicture.height
-				    );
-				}
+				/* if (videoPicture.frame) { */
+				    /* LOG( */
+				        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
+				/* "[coded_picture_number %d, display_picture_number %d," */
+				/* " %dx%d]", */
+				        /* av_get_picture_type_char(videoPicture.frame->pict_type), */
+				        /* (int)videoPicture.pts, */
+				        /* videoPicture.frame->pts, */
+				        /* videoPicture.frame->pkt_dts, */
+				        /* videoPicture.frame->key_frame, */
+				        /* videoPicture.frame->coded_picture_number, */
+				        /* videoPicture.frame->display_picture_number, */
+				        /* videoPicture.width, */
+				        /* videoPicture.height */
+				    /* ); */
+				/* } */
 				videoState->video_idx++;
 				videoPicture.idx = videoState->video_idx;
 				/* double frame_duration = 1000.0 / av_q2d(codecCtx->framerate); */
@@ -844,9 +845,9 @@ int stream_component_open(VideoState * videoState, int stream_index)
 	}
 	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
 		// FIXME disabling sdl audio for now ...
-		LOG("setting up audio device ...");
+		LOG("setting up audio device with requested specs - sample_rate: %d, channels: %d ...", codecCtx->sample_rate, codecCtx->channels);
 		SDL_AudioSpec wanted_specs;
-		SDL_AudioSpec specs;
+		/* SDL_AudioSpec specs; */
 		wanted_specs.freq = codecCtx->sample_rate;
 		wanted_specs.format = AUDIO_S16SYS;
 		wanted_specs.channels = codecCtx->channels;
@@ -861,12 +862,14 @@ int stream_component_open(VideoState * videoState, int stream_index)
 			/* printf("SDL_OpenAudio: %s.\n", SDL_GetError()); */
 			/* return -1; */
 		/* } */
-		videoState->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &specs, 0);
+		/* videoState->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &specs, 0); */
+		videoState->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &videoState->specs, 0);
 		if (videoState->audioDevId == 0) {
 			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
 			return -1;
 		}
 		LOG("audio device with id: %d opened successfully", videoState->audioDevId);
+		LOG("audio specs are freq: %d, channels: %d", videoState->specs.freq, videoState->specs.channels);
 	}
 	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
 		printf("Unsupported codec.\n");
@@ -990,6 +993,7 @@ video_thread(void *arg)
 				sleep(10);
 				yield();
 			}
+			LOG("displaying picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
 			video_display(videoState, &videoPicture);
 		}
 		if (videoPicture.rgbbuf) {
