@@ -739,13 +739,16 @@ void decoder_thread(void * arg)
 				videoState->video_idx++;
 				videoPicture.idx = videoState->video_idx;
 				/* double frame_duration = 1000.0 / av_q2d(codecCtx->framerate); */
-				double frame_duration = 1000.0 * av_q2d(codecCtx->time_base);
-				videoState->video_pts += frame_duration;  // FIXME fill in correct video sample length in ms
+				/* double frame_duration = 1000.0 * av_q2d(codecCtx->time_base); */
+				// FIXME need factor 2 for iron.mp4 to get 29.97 fps
+				double frame_duration = 2 * 1000.0 * av_q2d(codecCtx->time_base);
+				LOG("video frame duration: %fms, fps: %f", frame_duration, 1000.0 / frame_duration);
+				videoState->video_pts += frame_duration;
 				videoPicture.pts = videoState->video_pts;
-				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
+				LOG("==> sending picture with idx: %d, pts: %f to picture queue ...", videoPicture.idx, videoPicture.pts);
 				int sendret = send(videoState->pictq, &videoPicture);
 				if (sendret == 1) {
-					LOG("==> sending picture with pts %f to picture queue succeeded.", videoPicture.pts);
+					LOG("==> sending picture with idx: %d, pts: %f to picture queue succeeded.", videoPicture.idx, videoPicture.pts);
 				}
 				else if (sendret == -1) {
 					LOG("==> sending picture to picture queue interrupted");
@@ -770,14 +773,16 @@ void decoder_thread(void * arg)
 				audioSample.idx = videoState->audio_idx;
 				int bytes_per_sec = 2 * codecCtx->sample_rate * codecCtx->channels;
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
+				/* double sample_duration = 0.5 * 1000.0 * audioSample.size / bytes_per_sec; */
+				LOG("audio sample duration: %fms", sample_duration);
 				videoState->audio_pts += sample_duration;  // audio sample length in ms
 				audioSample.pts = videoState->audio_pts;
 				audioSample.sample = malloc(sizeof(videoState->audio_buf));
 				memcpy(audioSample.sample, videoState->audio_buf, sizeof(videoState->audio_buf));
 				int sendret = send(videoState->audioq, &audioSample);
 				if (sendret == 1) {
-					/* LOG("==> sending audio sample with pts %f to audio queue succeeded.", videoPicture.pts); */
-					LOG("==> sending audio sample to audio queue succeeded.");
+					LOG("==> sending audio sample with idx: %d, pts: %f to audio queue succeeded.", audioSample.idx, audioSample.pts);
+					/* LOG("==> sending audio sample to audio queue succeeded."); */
 				}
 				else if (sendret == -1) {
 					LOG("==> sending audio sample to audio queue interrupted");
@@ -844,7 +849,6 @@ int stream_component_open(VideoState * videoState, int stream_index)
 		return -1;
 	}
 	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
-		// FIXME disabling sdl audio for now ...
 		LOG("setting up audio device with requested specs - sample_rate: %d, channels: %d ...", codecCtx->sample_rate, codecCtx->channels);
 		SDL_AudioSpec wanted_specs;
 		/* SDL_AudioSpec specs; */
@@ -853,7 +857,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 		wanted_specs.channels = codecCtx->channels;
 		wanted_specs.silence = 0;
 		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
-		/* // FIXME SDL threading when entering the audio_callback might crash ... */
+		/* // SDL threading when entering the audio_callback crashes ... */
 		/* wanted_specs.callback = audio_callback; */
 		wanted_specs.callback = NULL;
 		wanted_specs.userdata = videoState;
@@ -961,26 +965,26 @@ video_thread(void *arg)
 		else {
 			LOG("<== unforseen error when receiving picture from picture queue");
 		}
-		if (_DEBUG_) {
-			LOG("Current Frame PTS:\t\t%f", videoPicture.pts);
-			LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts);
-		}
-	    if (videoPicture.frame) {
-		    LOG(
-		        "Frame %c (%d) pts %ld dts %ld key_frame %d "
-		"[coded_picture_number %d, display_picture_number %d,"
-		" %dx%d]",
-		        av_get_picture_type_char(videoPicture.frame->pict_type),
-		        (int)videoPicture.pts,
-		        videoPicture.frame->pts,
-		        videoPicture.frame->pkt_dts,
-		        videoPicture.frame->key_frame,
-		        videoPicture.frame->coded_picture_number,
-		        videoPicture.frame->display_picture_number,
-		        videoPicture.width,
-		        videoPicture.height
-		    );
-		}
+		/* if (_DEBUG_) { */
+			/* LOG("Current Frame PTS:\t\t%f", videoPicture.pts); */
+			/* LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts); */
+		/* } */
+	    /* if (videoPicture.frame) { */
+		    /* LOG( */
+		        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
+		/* "[coded_picture_number %d, display_picture_number %d," */
+		/* " %dx%d]", */
+		        /* av_get_picture_type_char(videoPicture.frame->pict_type), */
+		        /* (int)videoPicture.pts, */
+		        /* videoPicture.frame->pts, */
+		        /* videoPicture.frame->pkt_dts, */
+		        /* videoPicture.frame->key_frame, */
+		        /* videoPicture.frame->coded_picture_number, */
+		        /* videoPicture.frame->display_picture_number, */
+		        /* videoPicture.width, */
+		        /* videoPicture.height */
+		    /* ); */
+		/* } */
 		/* AVFrame *pFrameRGB = videoPicture.frame; */
 	    // save the read AVFrame into ppm file
 		/* saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts); */
@@ -988,7 +992,17 @@ video_thread(void *arg)
 			savePicture(videoState, &videoPicture, (int)videoPicture.pts);
 		}
 		else if (videoState->frame_fmt == FRAME_FMT_YUV) {
-			while (videoState->current_audio_pts < videoPicture.pts) {
+			if (videoState->current_audio_pts > videoPicture.pts) {
+				if (videoPicture.frame) {
+					av_frame_unref(videoPicture.frame);
+					av_frame_free(&videoPicture.frame);
+				}
+				continue;
+			}
+			// FIXME max_iter should not be needed ...?
+			int max_iter = 5;
+			// FIXME replace hardcoded 20.0 with reasonable value based on audio sample duration
+			while (videoState->current_audio_pts < (videoPicture.pts - 20.0) && max_iter--) {
 				LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
 				sleep(10);
 				yield();
@@ -1022,8 +1036,13 @@ audio_thread(void *arg)
 		if (recret == 1) {
 			/* LOG("<== received audio sample with pts %f from audio queue.", videoPicture.pts); */
 			LOG("<== received audio sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
-			LOG("sdl audio queue size in bytes: %d", SDL_GetQueuedAudioSize(videoState->audioDevId));
-			videoState->current_audio_pts = audioSample.pts; // FIXME subtract audio queue size in ms
+			int audioq_size = SDL_GetQueuedAudioSize(videoState->audioDevId);
+			int bytes_per_sec = 2 * videoState->audio_ctx->sample_rate * videoState->audio_ctx->channels;
+			double queue_duration = 1000.0 * audioSample.size / bytes_per_sec;
+			// FIXME 0.5 correction factor
+			/* double queue_duration = 0.5 * 1000.0 * audioq_size / bytes_per_sec; */
+			LOG("sdl audio queue size in bytes: %d, msec: %f", audioq_size, queue_duration);
+			videoState->current_audio_pts = audioSample.pts - queue_duration;
 		}
 		else if (recret == -1) {
 			LOG("<== reveiving audio sample from audio queue interrupted");
@@ -1432,21 +1451,21 @@ void video_display(VideoState *videoState, VideoPicture *videoPicture)
 		// TODO: Add full screen support
 		x = (screen_width - w);
 		y = (screen_height - h);
-		if (videoPicture->frame) {
-			// dump information about the frame being rendered
-			LOG(
-					"Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]",
-					av_get_picture_type_char(videoPicture->frame->pict_type),
-					videoState->video_ctx->frame_number,
-					videoPicture->frame->pts,
-					videoPicture->frame->pkt_dts,
-					videoPicture->frame->key_frame,
-					videoPicture->frame->coded_picture_number,
-					videoPicture->frame->display_picture_number,
-					videoPicture->frame->width,
-					videoPicture->frame->height
-			);
-		}
+		/* if (videoPicture->frame) { */
+			/* // dump information about the frame being rendered */
+			/* LOG( */
+					/* "Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]", */
+					/* av_get_picture_type_char(videoPicture->frame->pict_type), */
+					/* videoState->video_ctx->frame_number, */
+					/* videoPicture->frame->pts, */
+					/* videoPicture->frame->pkt_dts, */
+					/* videoPicture->frame->key_frame, */
+					/* videoPicture->frame->coded_picture_number, */
+					/* videoPicture->frame->display_picture_number, */
+					/* videoPicture->frame->width, */
+					/* videoPicture->frame->height */
+			/* ); */
+		/* } */
 		// set blit area x and y coordinates, width and height
 		SDL_Rect rect;
 		rect.x = x;
