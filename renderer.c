@@ -773,7 +773,7 @@ void decoder_thread(void * arg)
 				audioSample.idx = videoState->audio_idx;
 				int bytes_per_sec = 2 * codecCtx->sample_rate * codecCtx->channels;
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
-				/* double sample_duration = 0.5 * 1000.0 * audioSample.size / bytes_per_sec; */
+				/* double sample_duration = 2 * 1000.0 * audioSample.size / bytes_per_sec; */
 				LOG("audio sample duration: %fms", sample_duration);
 				videoState->audio_pts += sample_duration;  // audio sample length in ms
 				audioSample.pts = videoState->audio_pts;
@@ -1000,11 +1000,13 @@ video_thread(void *arg)
 				continue;
 			}
 			// FIXME max_iter should not be needed ...?
-			int max_iter = 5;
+			/* int max_iter = 5; */
 			// FIXME replace hardcoded 20.0 with reasonable value based on audio sample duration
-			while (videoState->current_audio_pts < (videoPicture.pts - 20.0) && max_iter--) {
+			if (videoState->current_audio_pts < (videoPicture.pts - 20.0)) {
+			/* while (videoState->current_audio_pts < (videoPicture.pts - 20.0) && max_iter--) { */
 				LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
-				sleep(10);
+				/* sleep(10); */
+				sleep(5);
 				yield();
 			}
 			LOG("displaying picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
