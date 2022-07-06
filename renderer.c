@@ -100,27 +100,29 @@ void printloginfo(void)
 
 typedef struct VideoState
 {
-	AVFormatContext * pFormatCtx;
+	AVFormatContext  *pFormatCtx;
+
 	// Audio Stream.
-	int				 audioStream;
-	AVStream *		  audio_st;
-	AVCodecContext *	audio_ctx;
-	Channel         *audioq;
-	uint8_t			 audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
-	unsigned int		audio_buf_size;
-	unsigned int		audio_buf_index;
-	AVFrame			 audio_frame;
-	AVPacket			audio_pkt;
-	uint8_t *		   audio_pkt_data;
-	int				 audio_pkt_size;
+	int	              audioStream;
+	AVStream         *audio_st;
+	AVCodecContext   *audio_ctx;
+	Channel          *audioq;
+	uint8_t			  audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
+	unsigned int      audio_buf_size;
+	unsigned int      audio_buf_index;
+	AVFrame			  audio_frame;
+	AVPacket          audio_pkt;
+	uint8_t *         audio_pkt_data;
+	int               audio_pkt_size;
 	double			  audio_clock;
 
-	int              audio_idx;
-	double           audio_pts;
-	double           current_audio_pts;
+	int               audio_idx;
+	double            audio_pts;
+	double            current_audio_pts;
+
 	// Video Stream.
-	int				 videoStream;
-	AVStream *		  video_st;
+	int	              videoStream;
+	AVStream         *video_st;
 	AVCodecContext *	video_ctx;
 	SDL_Texture *	   texture;
 	SDL_Renderer *	  renderer;
@@ -224,29 +226,28 @@ char *aname;
 void printHelp();
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
 void video_display(VideoState *videoState, VideoPicture *videoPicture);
-void savePicture(VideoState* videoState, VideoPicture *pPic, int frameIndex);
-void decoder_thread(void * arg);
-int stream_component_open(
-		VideoState * videoState,
-		int stream_index
-);
+void savePicture(VideoState *videoState, VideoPicture *pPic, int frameIndex);
+void decoder_thread(void *arg);
+int stream_component_open(VideoState * videoState, int stream_index);
 void video_thread(void *arg);
 void audio_thread(void *arg);
+
 /* static int64_t guess_correct_pts( */
 		/* AVCodecContext * ctx, */
 		/* int64_t reordered_pts, */
 		/* int64_t dts */
 /* ); */
-double synchronize_video(
-		VideoState * videoState,
-		AVFrame * src_frame,
-		double pts
-);
-int synchronize_audio(
-		VideoState * videoState,
-		short * samples,
-		int samples_size
-);
+/* double synchronize_video( */
+		/* VideoState * videoState, */
+		/* AVFrame * src_frame, */
+		/* double pts */
+/* ); */
+/* int synchronize_audio( */
+		/* VideoState * videoState, */
+		/* short * samples, */
+		/* int samples_size */
+/* ); */
+
 void video_refresh_timer(void * userdata);
 double get_audio_clock(VideoState * videoState);
 double get_video_clock(VideoState * videoState);
@@ -637,8 +638,8 @@ void decoder_thread(void * arg)
 					.rgbbuf = NULL,
 					.planes = NULL,
 					.width = codecCtx->width,
-					.height = codecCtx->height,
-					.pts = codecCtx->frame_number
+					.height = codecCtx->height
+					/* .pts = codecCtx->frame_number */
 					};
 				if (videoState->frame_fmt == FRAME_FMT_PRISTINE) {
 					// FIXME sending pristine frames over the video picture channel doesn't work
@@ -718,7 +719,6 @@ void decoder_thread(void * arg)
 		                videoPicture.frame->linesize
 		            );
 			    }
-				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
 				if (videoPicture.frame) {
 				    LOG(
 				        "Frame %c (%d) pts %ld dts %ld key_frame %d "
@@ -737,8 +737,11 @@ void decoder_thread(void * arg)
 				}
 				videoState->video_idx++;
 				videoPicture.idx = videoState->video_idx;
-				videoState->video_pts += 33.0;  // FIXME fill in correct video sample length in ms
+				/* double frame_duration = 1000.0 / av_q2d(codecCtx->framerate); */
+				double frame_duration = 1000.0 * av_q2d(codecCtx->time_base);
+				videoState->video_pts += frame_duration;  // FIXME fill in correct video sample length in ms
 				videoPicture.pts = videoState->video_pts;
+				LOG("==> sending picture with pts %f to picture queue ...", videoPicture.pts);
 				int sendret = send(videoState->pictq, &videoPicture);
 				if (sendret == 1) {
 					LOG("==> sending picture with pts %f to picture queue succeeded.", videoPicture.pts);
@@ -764,7 +767,9 @@ void decoder_thread(void * arg)
 					};
 				videoState->audio_idx++;
 				audioSample.idx = videoState->audio_idx;
-				videoState->audio_pts += 10.0;  // FIXME fill in correct audio sample length in ms
+				int bytes_per_sec = 2 * codecCtx->sample_rate * codecCtx->channels;
+				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
+				videoState->audio_pts += sample_duration;  // audio sample length in ms
 				audioSample.pts = videoState->audio_pts;
 				audioSample.sample = malloc(sizeof(videoState->audio_buf));
 				memcpy(audioSample.sample, videoState->audio_buf, sizeof(videoState->audio_buf));
@@ -945,8 +950,7 @@ video_thread(void *arg)
 		VideoPicture videoPicture;
 		int recret = recv(videoState->pictq, &videoPicture);
 		if (recret == 1) {
-			LOG("<== received picture with idx: %d, pts: %f from picture queue.", videoPicture.idx, videoPicture.pts);
-			LOG("current audio pts: %f", videoState->current_audio_pts);
+			LOG("<== received picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
 		}
 		else if (recret == -1) {
 			LOG("<== reveiving picture from picture queue interrupted");
@@ -981,6 +985,11 @@ video_thread(void *arg)
 			savePicture(videoState, &videoPicture, (int)videoPicture.pts);
 		}
 		else if (videoState->frame_fmt == FRAME_FMT_YUV) {
+			while (videoState->current_audio_pts < videoPicture.pts) {
+				LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
+				sleep(10);
+				yield();
+			}
 			video_display(videoState, &videoPicture);
 		}
 		if (videoPicture.rgbbuf) {
