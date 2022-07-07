@@ -1047,7 +1047,7 @@ audio_thread(void *arg)
 				renderer_ctx->current_audio_pts = audioSample.pts;
 				if (samples_queued > 5) {
 					LOG("sleeping");
-					sleep(sample_duration);
+					p9sleep(sample_duration);
 				}
 				LOG("audio clock: %f, real time: %f", renderer_ctx->current_audio_pts, (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0);
 			}
