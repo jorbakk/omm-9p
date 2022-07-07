@@ -1004,10 +1004,7 @@ audio_thread(void *arg)
 				// FIXME sleeping works, but audio is stuttering
 				if (samples_queued > 5) {
 					LOG("sleeping");
-					/* sleep(queue_duration - 10.0); */
-					/* sleep(queue_duration - 15.0); */
 					sleep(sample_duration);
-					/* sleep(5); */
 				}
 				LOG("audio clock: %f, real time: %f", videoState->current_audio_pts, (av_gettime() - videoState->audio_start_rt) / 1000.0);
 			}
