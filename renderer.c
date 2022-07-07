@@ -352,6 +352,7 @@ threadmain(int argc, char **argv)
 	videoState->video_idx = 0;
 	videoState->video_pts = 0;
 	videoState->audio_only = 0;
+	videoState->kbd = initkeyboard("");
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(videoState->filename, OREAD);
@@ -379,6 +380,7 @@ threadmain(int argc, char **argv)
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
 	av_free(videoState);
+	closekeyboard(videoState->kbd);
 	return;
 }
 

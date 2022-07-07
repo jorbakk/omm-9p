@@ -1,5 +1,5 @@
 LIBS        := -lz -lm
-9PLIBS      := -l9 -l9p -l9pclient
+9PLIBS      := -l9 -l9p -l9pclient -ldraw
 AVLIBS      := -lavutil -lavformat -lavcodec -lswscale -lswresample
 SDL2LIBS    := $(shell pkg-config --libs sdl2)
 SDL2CFLAGS  := $(shell pkg-config --cflags sdl2)
