@@ -23,7 +23,8 @@
 
 // TODO:
 // 1. AV sync
-// - improve smootheness
+// - improve video smootheness (orange.ts)
+// - remove audio delay (caused by samples in sdl queue?!)
 // - fix 5.1 audio tracks playing faster
 // 2. Keyboard events
 // 3. 9P control server
