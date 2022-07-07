@@ -682,28 +682,10 @@ void decoder_thread(void * arg)
 		                videoPicture.frame->linesize
 		            );
 			    }
-				/* if (videoPicture.frame) { */
-				    /* LOG( */
-				        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
-				/* "[coded_picture_number %d, display_picture_number %d," */
-				/* " %dx%d]", */
-				        /* av_get_picture_type_char(videoPicture.frame->pict_type), */
-				        /* (int)videoPicture.pts, */
-				        /* videoPicture.frame->pts, */
-				        /* videoPicture.frame->pkt_dts, */
-				        /* videoPicture.frame->key_frame, */
-				        /* videoPicture.frame->coded_picture_number, */
-				        /* videoPicture.frame->display_picture_number, */
-				        /* videoPicture.width, */
-				        /* videoPicture.height */
-				    /* ); */
-				/* } */
 				videoState->video_idx++;
 				videoPicture.idx = videoState->video_idx;
 				/* double frame_duration = 1000.0 / av_q2d(codecCtx->framerate); */
-				/* double frame_duration = 1000.0 * av_q2d(codecCtx->time_base); */
-				// FIXME need factor 2 for iron.mp4 to get 29.97 fps
-				double frame_duration = 2 * 1000.0 * av_q2d(codecCtx->time_base);
+				double frame_duration = 1000.0 * av_q2d(codecCtx->time_base);
 				LOG("video frame duration: %fms, fps: %f", frame_duration, 1000.0 / frame_duration);
 				videoState->video_pts += frame_duration;
 				videoPicture.pts = videoState->video_pts;
@@ -984,7 +966,6 @@ audio_thread(void *arg)
 		if (recret == 1) {
 			LOG("<== received audio sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
 			fwrite(audioSample.sample, 1, audioSample.size, audio_out);
-			// FIXME audio queue is growing continuously. Ideally, it should block.
 			int ret = SDL_QueueAudio(videoState->audioDevId, audioSample.sample, audioSample.size);
 			if (ret < 0) {
 				LOG("failed to write audio sample: %s", SDL_GetError());
@@ -996,12 +977,9 @@ audio_thread(void *arg)
 				double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
 				int samples_queued = audioq_size / audioSample.size;
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
-				// FIXME 0.5 correction factor
-				/* double queue_duration = 0.5 * 1000.0 * audioq_size / bytes_per_sec; */
 				LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d", audioq_size, queue_duration, samples_queued);
 				/* videoState->current_audio_pts = audioSample.pts - queue_duration; */
 				videoState->current_audio_pts = audioSample.pts;
-				// FIXME sleeping works, but audio is stuttering
 				if (samples_queued > 5) {
 					LOG("sleeping");
 					sleep(sample_duration);
@@ -1084,21 +1062,6 @@ video_display(VideoState *videoState, VideoPicture *videoPicture)
 		// TODO: Add full screen support
 		x = (screen_width - w);
 		y = (screen_height - h);
-		/* if (videoPicture->frame) { */
-			/* // dump information about the frame being rendered */
-			/* LOG( */
-					/* "Frame %c (%d) pts %" PRId64 " dts %" PRId64 " key_frame %d [coded_picture_number %d, display_picture_number %d, %dx%d]", */
-					/* av_get_picture_type_char(videoPicture->frame->pict_type), */
-					/* videoState->video_ctx->frame_number, */
-					/* videoPicture->frame->pts, */
-					/* videoPicture->frame->pkt_dts, */
-					/* videoPicture->frame->key_frame, */
-					/* videoPicture->frame->coded_picture_number, */
-					/* videoPicture->frame->display_picture_number, */
-					/* videoPicture->frame->width, */
-					/* videoPicture->frame->height */
-			/* ); */
-		/* } */
 		// set blit area x and y coordinates, width and height
 		SDL_Rect rect;
 		rect.x = x;
