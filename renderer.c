@@ -856,6 +856,7 @@ int stream_component_open(VideoState * videoState, int stream_index)
 		LOG("setting up audio device with requested specs - sample_rate: %d, channels: %d ...", codecCtx->sample_rate, codecCtx->channels);
 		SDL_AudioSpec wanted_specs;
 		/* SDL_AudioSpec specs; */
+		/* codecCtx->channels = 2; */
 		wanted_specs.freq = codecCtx->sample_rate;
 		wanted_specs.format = AUDIO_S16SYS;
 		wanted_specs.channels = codecCtx->channels;
@@ -955,80 +956,52 @@ int stream_component_open(VideoState * videoState, int stream_index)
 
 
 void
+receive_pic(VideoState *videoState, VideoPicture *videoPicture)
+{
+	LOG("receiving picture from picture queue ...");
+	int recret = recv(videoState->pictq, videoPicture);
+	if (recret == 1) {
+		LOG("<== received picture with idx: %d, pts: %f, current audio pts: %f", videoPicture->idx, videoPicture->pts, videoState->current_audio_pts);
+	}
+	else if (recret == -1) {
+		LOG("<== reveiving picture from picture queue interrupted");
+	}
+	else {
+		LOG("<== unforseen error when receiving picture from picture queue");
+	}
+}
+
+
+void
 video_thread(void *arg)
 {
 	VideoState *videoState = arg;
+	VideoPicture videoPicture;
+	receive_pic(videoState, &videoPicture);
 	for (;;) {
-		LOG("receiving picture from picture queue and displaying video frame ...");
-		VideoPicture videoPicture;
-		int recret = recv(videoState->pictq, &videoPicture);
-		if (recret == 1) {
-			LOG("<== received picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
-		}
-		else if (recret == -1) {
-			LOG("<== reveiving picture from picture queue interrupted");
-		}
-		else {
-			LOG("<== unforseen error when receiving picture from picture queue");
-		}
-		/* if (_DEBUG_) { */
-			/* LOG("Current Frame PTS:\t\t%f", videoPicture.pts); */
-			/* LOG("Last Frame PTS:\t\t%f", videoState->frame_last_pts); */
-		/* } */
-	    /* if (videoPicture.frame) { */
-		    /* LOG( */
-		        /* "Frame %c (%d) pts %ld dts %ld key_frame %d " */
-		/* "[coded_picture_number %d, display_picture_number %d," */
-		/* " %dx%d]", */
-		        /* av_get_picture_type_char(videoPicture.frame->pict_type), */
-		        /* (int)videoPicture.pts, */
-		        /* videoPicture.frame->pts, */
-		        /* videoPicture.frame->pkt_dts, */
-		        /* videoPicture.frame->key_frame, */
-		        /* videoPicture.frame->coded_picture_number, */
-		        /* videoPicture.frame->display_picture_number, */
-		        /* videoPicture.width, */
-		        /* videoPicture.height */
-		    /* ); */
-		/* } */
-		/* AVFrame *pFrameRGB = videoPicture.frame; */
-	    // save the read AVFrame into ppm file
-		/* saveFrame(videoPicture.frame, videoPicture.width, videoPicture.height, (int)videoPicture.pts); */
 		if (videoState->frame_fmt == FRAME_FMT_RGB) {
 			savePicture(videoState, &videoPicture, (int)videoPicture.pts);
+			receive_pic(videoState, &videoPicture);
+			if (videoPicture.rgbbuf) {
+				av_free(videoPicture.rgbbuf);
+			}
 		}
 		else if (videoState->frame_fmt == FRAME_FMT_YUV) {
-			if (videoState->current_audio_pts > videoPicture.pts) {
+			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
+			if (videoState->current_audio_pts >= videoPicture.pts) {
+				LOG("displaying picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
+				video_display(videoState, &videoPicture);
 				if (videoPicture.frame) {
 					av_frame_unref(videoPicture.frame);
 					av_frame_free(&videoPicture.frame);
 				}
-				continue;
+				receive_pic(videoState, &videoPicture);
 			}
-			// FIXME max_iter should not be needed ...?
-			/* int max_iter = 5; */
-			// FIXME replace hardcoded 20.0 with reasonable value based on audio sample duration
-			if (videoState->current_audio_pts < (videoPicture.pts - 20.0)) {
-			/* while (videoState->current_audio_pts < (videoPicture.pts - 20.0) && max_iter--) { */
-				LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
-				/* sleep(10); */
-				sleep(5);
+			else {
+				LOG("yielding video_thread");
 				yield();
 			}
-			LOG("displaying picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
-			video_display(videoState, &videoPicture);
 		}
-		if (videoPicture.rgbbuf) {
-			av_free(videoPicture.rgbbuf);
-		}
-		if (videoPicture.frame) {
-			av_frame_unref(videoPicture.frame);
-			av_frame_free(&videoPicture.frame);
-		}
-		/* if (videoPicture.planes) { */
-			/* free(videoPicture.planes); */
-		/* } */
-		LOG("receiving picture from picture queue and displaying video frame finished.");
 	}
 }
 
