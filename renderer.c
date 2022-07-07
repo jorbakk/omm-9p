@@ -27,6 +27,7 @@
 // - remove audio delay (caused by samples in sdl queue?!)
 // - fix 5.1 audio tracks playing faster
 // 2. Keyboard events
+// - either use Plan 9 libdraw + SDL or integrate SDL Events into Plan 9 Channels
 // 3. 9P control server
 
 // Thread layout:
@@ -41,7 +42,10 @@
 #include <libc.h>
 #include <9pclient.h>
 #include <thread.h>
-/* #include <keyboard.h> */
+
+#include <draw.h>
+#include <event.h>
+#include <keyboard.h>
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
@@ -159,7 +163,7 @@ typedef struct RendererCtx
 	char               filename[1024];
 	CFid              *fid;
 	// Keyboard
-	/* Keyboardctl       *kbd; */
+	Keyboardctl       *kbd;
 	// Quit flag
 	int                quit;
 	// Maximum number of frames to be decoded
@@ -220,7 +224,7 @@ enum
 	AV_SYNC_EXTERNAL_MASTER,
 };
 
-SDL_Window *screen;
+SDL_Window *sdl_window;
 AVPacket flush_pkt;
 char *addr = "tcp!localhost!5640";
 char *aname;
@@ -314,6 +318,22 @@ xopen(char *name, int mode)
 	return fid;
 }
 
+
+void
+redraw(Image *screen)
+{
+}
+
+
+void
+eresized(int new)
+{
+	if(new && getwindow(display, Refnone) < 0)
+		fprint(2,"can't reattach to window");
+	redraw(screen);
+}
+
+
 static FILE *audio_out;
 
 void
@@ -325,6 +345,8 @@ threadmain(int argc, char **argv)
 		printHelp();
 		return;
 	}
+	if (initdraw(0, 0, "OMM Renderer") < 0)
+		sysfatal("initdraw failed");
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
 	if (ret != 0) {
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
@@ -346,7 +368,7 @@ threadmain(int argc, char **argv)
 	renderer_ctx->video_idx = 0;
 	renderer_ctx->video_pts = 0;
 	renderer_ctx->audio_only = 0;
-	/* renderer_ctx->kbd = initkeyboard(""); */
+	renderer_ctx->kbd = initkeyboard("");
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(renderer_ctx->filename, OREAD);
@@ -365,16 +387,41 @@ threadmain(int argc, char **argv)
 	LOG("decoder thread created with id: %i", renderer_ctx->decode_tid);
 	av_init_packet(&flush_pkt);
 	flush_pkt.data = (uint8_t*)"FLUSH";
+    /* SDL_Event event; */
+	/* einit(Ekeyboard); */
+	/* Event e; */
+	/* int key; */
+	Rune rune;
+	char runestr[UTFmax];
 	for (;;) {
-		yield();
-		if (renderer_ctx->quit) {
-			break;
+		/* yield(); */
+		int recret = recv(renderer_ctx->kbd->c, &rune);
+		if (recret == 1) {
+			int runelen = runetochar(runestr, &rune);
+			LOG("<== received rune %s of length: %d", runestr, runelen);
 		}
+		else if (recret == -1) {
+			LOG("<== reveiving rune from keyboard interrupted");
+		}
+		else {
+			LOG("<== unforseen error when receiving rune from keyboard");
+		}
+		// FIXME SDL_WaitEvent() doesn't yield so all threads block here ...
+        /* ret = SDL_WaitEvent(&event); */
+		/* key = event(&e); */
+		/* if (key == Ekeyboard) { */
+			/* if(e.kbdc==Kdel || e.kbdc=='q') { */
+				/* threadexitsall(0); */
+			/* } */
+		/* } */
+		/* if (renderer_ctx->quit) { */
+			/* break; */
+		/* } */
 	}
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
 	av_free(renderer_ctx);
-	/* closekeyboard(renderer_ctx->kbd); */
+	closekeyboard(renderer_ctx->kbd);
 	return;
 }
 
@@ -1001,10 +1048,10 @@ audio_thread(void *arg)
 void
 video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 {
-	if (!screen) {
+	if (!sdl_window) {
 		// create a window with the specified position, dimensions, and flags.
-		screen = SDL_CreateWindow(
-			"FFmpeg SDL Video Player",
+		sdl_window = SDL_CreateWindow(
+			"OMM Renderer",
 			SDL_WINDOWPOS_UNDEFINED,
 			SDL_WINDOWPOS_UNDEFINED,
 			renderer_ctx->video_ctx->width,
@@ -1013,13 +1060,13 @@ video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 			);
 		SDL_GL_SetSwapInterval(1);
 	}
-	if (!screen) {
+	if (!sdl_window) {
 		printf("SDL: could not create window - exiting.\n");
 		return;
 	}
 	if (!renderer_ctx->renderer) {
 		// create a 2D rendering context for the SDL_Window
-		renderer_ctx->renderer = SDL_CreateRenderer(screen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+		renderer_ctx->renderer = SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
 	}
 	if (!renderer_ctx->texture) {
 		// create a texture for a rendering context
@@ -1047,7 +1094,7 @@ video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 		// get the size of a window's client area
 		int screen_width;
 		int screen_height;
-		SDL_GetWindowSize(screen, &screen_width, &screen_height);
+		SDL_GetWindowSize(sdl_window, &screen_width, &screen_height);
 		// global SDL_Surface height
 		h = screen_height;
 		// retrieve width using the calculated aspect ratio and the screen height
