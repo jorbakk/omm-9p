@@ -23,6 +23,8 @@
 
 // TODO:
 // 1. AV sync
+// - improve smootheness
+// - fix 5.1 audio tracks playing faster
 // 2. Keyboard events
 // 3. 9P control server
 
