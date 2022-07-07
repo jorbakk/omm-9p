@@ -994,14 +994,17 @@ audio_thread(void *arg)
 				int audioq_size = SDL_GetQueuedAudioSize(videoState->audioDevId);
 				int bytes_per_sec = 2 * videoState->audio_ctx->sample_rate * videoState->audio_ctx->channels;
 				double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
+				int samples_queued = audioq_size / audioSample.size;
 				// FIXME 0.5 correction factor
 				/* double queue_duration = 0.5 * 1000.0 * audioq_size / bytes_per_sec; */
-				LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d", audioq_size, queue_duration, audioq_size / audioSample.size);
+				LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d", audioq_size, queue_duration, samples_queued);
 				/* videoState->current_audio_pts = audioSample.pts - queue_duration; */
 				videoState->current_audio_pts = audioSample.pts;
 				// FIXME sleeping works, but audio is stuttering
-				LOG("sleeping");
-				sleep(queue_duration - 10.0);
+				if (samples_queued > 5) {
+					LOG("sleeping");
+					sleep(queue_duration - 10.0);
+				}
 				LOG("audio clock: %f, real time: %f", videoState->current_audio_pts, (av_gettime() - videoState->audio_start_rt) / 1000.0);
 			}
 			free(audioSample.sample);
