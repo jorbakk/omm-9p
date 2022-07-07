@@ -102,7 +102,7 @@ void printloginfo(void)
 #define FRAME_FMT_YUV 2
 
 
-typedef struct VideoState
+typedef struct RendererCtx
 {
 	AVFormatContext  *pFormatCtx;
 
@@ -172,7 +172,7 @@ typedef struct VideoState
 	int                frame_fmt;
 	SDL_AudioDeviceID  audioDevId;
 	int                audio_only;
-} VideoState;
+} RendererCtx;
 
 typedef struct AudioResamplingState
 {
@@ -225,28 +225,27 @@ enum
 };
 
 SDL_Window *screen;
-/* VideoState * global_video_state; */
 AVPacket flush_pkt;
 char *addr = "tcp!localhost!5640";
 char *aname;
 
 void printHelp();
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
-void video_display(VideoState *videoState, VideoPicture *videoPicture);
-void savePicture(VideoState *videoState, VideoPicture *pPic, int frameIndex);
+void video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
+void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
 void decoder_thread(void *arg);
-int stream_component_open(VideoState * videoState, int stream_index);
+int stream_component_open(RendererCtx * renderer_ctx, int stream_index);
 void video_thread(void *arg);
 void audio_thread(void *arg);
 
 static int audio_resampling(
-		VideoState * videoState,
+		RendererCtx *renderer_ctx,
 		AVFrame * decoded_audio_frame,
 		enum AVSampleFormat out_sample_fmt,
 		uint8_t * out_buf
 );
 AudioResamplingState * getAudioResampling(uint64_t channel_layout);
-void stream_seek(VideoState * videoState, int64_t pos, int rel);
+void stream_seek(RendererCtx *renderer_ctx, int64_t pos, int rel);
 CFsys *(*nsmnt)(char*, char*) = nsmount;
 CFsys *(*fsmnt)(int, char*) = fsmount;
 
@@ -283,7 +282,7 @@ xparse(char *name, char **path)
 	if (addr == nil) {
 		p = strchr(name, '/');
 		if(p == nil)
-			p = name+strlen(name);
+			p = name + strlen(name);
 		else
 			*p++ = 0;
 		*path = p;
@@ -335,52 +334,51 @@ threadmain(int argc, char **argv)
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
 		return;
 	}
-	VideoState * videoState = NULL;
-	videoState = av_mallocz(sizeof(VideoState));
-	// copy the file name input by the user to the VideoState structure
-	av_strlcpy(videoState->filename, argv[1], sizeof(videoState->filename));
+	RendererCtx *renderer_ctx = av_mallocz(sizeof(RendererCtx));
+	// copy the file name input by the user to the RendererCtx structure
+	av_strlcpy(renderer_ctx->filename, argv[1], sizeof(renderer_ctx->filename));
 	// parse max frames to decode input by the user
 	char * pEnd;
-	videoState->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
-	videoState->av_sync_type = DEFAULT_AV_SYNC_TYPE;
-	/* videoState->frame_fmt = FRAME_FMT_RGB; */
-	videoState->frame_fmt = FRAME_FMT_YUV;
-	videoState->video_ctx = NULL;
-	videoState->audio_ctx = NULL;
-	videoState->audio_idx = 0;
-	videoState->audio_pts = 0;
-	videoState->video_idx = 0;
-	videoState->video_pts = 0;
-	videoState->audio_only = 0;
-	videoState->kbd = initkeyboard("");
+	renderer_ctx->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
+	renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE;
+	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
+	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
+	renderer_ctx->video_ctx = NULL;
+	renderer_ctx->audio_ctx = NULL;
+	renderer_ctx->audio_idx = 0;
+	renderer_ctx->audio_pts = 0;
+	renderer_ctx->video_idx = 0;
+	renderer_ctx->video_pts = 0;
+	renderer_ctx->audio_only = 0;
+	/* renderer_ctx->kbd = initkeyboard(""); */
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
-	CFid *fid = xopen(videoState->filename, OREAD);
-	videoState->fid = fid;
+	CFid *fid = xopen(renderer_ctx->filename, OREAD);
+	renderer_ctx->fid = fid;
 	// Create picture and audio sample queue
-	/* videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE); */
-	/* videoState->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE); */
+	/* renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE); */
+	/* renderer_ctx->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE); */
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
-	videoState->decode_tid = threadcreate(decoder_thread, videoState, THREAD_STACK_SIZE);
-	if (!videoState->decode_tid) {
+	renderer_ctx->decode_tid = threadcreate(decoder_thread, renderer_ctx, THREAD_STACK_SIZE);
+	if (!renderer_ctx->decode_tid) {
 		printf("Could not start decoder thread: %s.\n", SDL_GetError());
-		av_free(videoState);
+		av_free(renderer_ctx);
 		return;
 	}
-	LOG("decoder thread created with id: %i", videoState->decode_tid);
+	LOG("decoder thread created with id: %i", renderer_ctx->decode_tid);
 	av_init_packet(&flush_pkt);
 	flush_pkt.data = (uint8_t*)"FLUSH";
 	for (;;) {
 		yield();
-		if (videoState->quit) {
+		if (renderer_ctx->quit) {
 			break;
 		}
 	}
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
-	av_free(videoState);
-	closekeyboard(videoState->kbd);
+	av_free(renderer_ctx);
+	/* closekeyboard(renderer_ctx->kbd); */
 	return;
 }
 
@@ -395,7 +393,7 @@ void printHelp()
 void decoder_thread(void * arg)
 {
 	LOG("decoder thread started");
-	VideoState * videoState = (VideoState *)arg;
+	RendererCtx * renderer_ctx = (RendererCtx *)arg;
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
@@ -403,7 +401,7 @@ void decoder_thread(void * arg)
 		avctxBuffer,		 // buffer
 		avctxBufferSize,	 // buffer size
 		0,				     // buffer is only readable - set to 1 for read/write
-		videoState->fid,	 // user specified data
+		renderer_ctx->fid,	 // user specified data
 		demuxerPacketRead,   // function for reading packets
 		NULL,				 // function for writing packets
 		demuxerPacketSeek	 // function for seeking to position in stream
@@ -419,22 +417,22 @@ void decoder_thread(void * arg)
 	LOG("opening stream input ...");
 	int ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
 	if (ret < 0) {
-		sysfatal("Could not open file %s", videoState->filename);
+		sysfatal("Could not open file %s", renderer_ctx->filename);
 	}
 	LOG("opened stream input");
 	// reset stream indexes
-	videoState->videoStream = -1;
-	videoState->audioStream = -1;
-	// set global VideoState reference
-	/* global_video_state = videoState; */
-	videoState->pFormatCtx = pFormatCtx;
+	renderer_ctx->videoStream = -1;
+	renderer_ctx->audioStream = -1;
+	// set global RendererCtx reference
+	/* global_video_state = renderer_ctx; */
+	renderer_ctx->pFormatCtx = pFormatCtx;
 	ret = avformat_find_stream_info(pFormatCtx, NULL);
 	if (ret < 0) {
-		LOG("Could not find stream information: %s.", videoState->filename);
+		LOG("Could not find stream information: %s.", renderer_ctx->filename);
 		return;
 	}
 	if (_DEBUG_)
-		av_dump_format(pFormatCtx, 0, videoState->filename, 0);
+		av_dump_format(pFormatCtx, 0, renderer_ctx->filename, 0);
 	int videoStream = -1;
 	int audioStream = -1;
 	for (int i = 0; i < pFormatCtx->nb_streams; i++)
@@ -451,7 +449,7 @@ void decoder_thread(void * arg)
 		/* goto fail; */
 	}
 	else {
-		ret = stream_component_open(videoState, videoStream);
+		ret = stream_component_open(renderer_ctx, videoStream);
 		if (ret < 0) {
 			printf("Could not open video codec.\n");
 			goto fail;
@@ -463,7 +461,7 @@ void decoder_thread(void * arg)
 		/* goto fail; */
 	}
 	else {
-		ret = stream_component_open(videoState, audioStream);
+		ret = stream_component_open(renderer_ctx, audioStream);
 		// check audio codec was opened correctly
 		if (ret < 0) {
 			LOG("Could not open audio codec.");
@@ -471,7 +469,7 @@ void decoder_thread(void * arg)
 		}
 		LOG("audio stream component opened successfully.");
 	}
-	if (videoState->videoStream < 0 && videoState->audioStream < 0) {
+	if (renderer_ctx->videoStream < 0 && renderer_ctx->audioStream < 0) {
 		LOG("both video and audio stream missing");
 		goto fail;
 	}
@@ -492,13 +490,13 @@ void decoder_thread(void * arg)
     static AVFrame *pFrameRGB = NULL;
     uint8_t * buffer = NULL;
     uint8_t * yuvbuffer = NULL;
-	if (videoState->video_ctx) {
+	if (renderer_ctx->video_ctx) {
 	    pFrameRGB = av_frame_alloc();
 	    int numBytes;
 	    numBytes = av_image_get_buffer_size(
 			AV_PIX_FMT_RGB24,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
+			renderer_ctx->video_ctx->width,
+			renderer_ctx->video_ctx->height,
 			32
 			);
 	    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
@@ -507,15 +505,15 @@ void decoder_thread(void * arg)
 			pFrameRGB->linesize,
 			buffer,
 			AV_PIX_FMT_RGB24,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
+			renderer_ctx->video_ctx->width,
+			renderer_ctx->video_ctx->height,
 			32
 	    );
 
 	    int yuvNumBytes = av_image_get_buffer_size(
 			AV_PIX_FMT_YUV420P,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
+			renderer_ctx->video_ctx->width,
+			renderer_ctx->video_ctx->height,
 			32
 			);
 		yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t));
@@ -523,17 +521,17 @@ void decoder_thread(void * arg)
 
 	// Main decoder loop
 	for (;;) {
-		if (videoState->quit) {
+		if (renderer_ctx->quit) {
 			break;
 		}
-		int demuxer_ret = av_read_frame(videoState->pFormatCtx, packet);
+		int demuxer_ret = av_read_frame(renderer_ctx->pFormatCtx, packet);
 		LOG("read av packet of size: %i", packet->size);
 		if (demuxer_ret < 0) {
 			LOG("failed to read av packet: %s", av_err2str(demuxer_ret));
 			if (demuxer_ret == AVERROR_EOF) {
 				LOG("EOF");
 				// media EOF reached, quit
-				videoState->quit = 1;
+				renderer_ctx->quit = 1;
 				break;
 			}
 			else {
@@ -546,13 +544,13 @@ void decoder_thread(void * arg)
 			break;
 		}
 		AVCodecContext *codecCtx = NULL;
-		if (packet->stream_index == videoState->videoStream) {
+		if (packet->stream_index == renderer_ctx->videoStream) {
 			LOG("sending video packet of size %d to decoder", packet->size);
-			codecCtx = videoState->video_ctx;
+			codecCtx = renderer_ctx->video_ctx;
 		}
 		else {
 			LOG("sending audio packet of size %d to decoder", packet->size);
-			codecCtx = videoState->audio_ctx;
+			codecCtx = renderer_ctx->audio_ctx;
 		}
 		int decsend_ret = avcodec_send_packet(codecCtx, packet);
 		LOG("sending packet of size %d to decoder returned: %d", packet->size, decsend_ret);
@@ -601,7 +599,7 @@ void decoder_thread(void * arg)
 			LOG("decoding frame finished");
 			/* frameFinished = 1; */
 			// TODO it would be nicer to check for the frame type instead for the codec context
-			if (codecCtx == videoState->video_ctx) {
+			if (codecCtx == renderer_ctx->video_ctx) {
 				VideoPicture videoPicture = {
 					.frame = NULL,
 					.rgbbuf = NULL,
@@ -610,7 +608,7 @@ void decoder_thread(void * arg)
 					.height = codecCtx->height
 					/* .pts = codecCtx->frame_number */
 					};
-				if (videoState->frame_fmt == FRAME_FMT_PRISTINE) {
+				if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 					// FIXME sending pristine frames over the video picture channel doesn't work
 					videoPicture.pix_fmt = codecCtx->pix_fmt;
 					LOG("AV_NUM_DATA_POINTERS: %d", AV_NUM_DATA_POINTERS);
@@ -646,9 +644,9 @@ void decoder_thread(void * arg)
 
 					/* av_frame_copy(); */
 				}
-				else if (videoState->frame_fmt == FRAME_FMT_RGB) {
+				else if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
 		            sws_scale(
-		                videoState->rgb_ctx,
+		                renderer_ctx->rgb_ctx,
 		                (uint8_t const * const *)pFrame->data,
 		                pFrame->linesize,
 		                0,
@@ -667,7 +665,7 @@ void decoder_thread(void * arg)
 				    videoPicture.rgbbuf = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
 				    memcpy(videoPicture.rgbbuf, pFrameRGB->data[0], numBytes);
 			    }
-				else if (videoState->frame_fmt == FRAME_FMT_YUV) {
+				else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
 				    videoPicture.frame = av_frame_alloc();
 					av_image_fill_arrays(
 							videoPicture.frame->data,
@@ -679,7 +677,7 @@ void decoder_thread(void * arg)
 							32
 					);
 		            sws_scale(
-		                videoState->sws_ctx,
+		                renderer_ctx->sws_ctx,
 		                (uint8_t const * const *)pFrame->data,
 		                pFrame->linesize,
 		                0,
@@ -688,16 +686,16 @@ void decoder_thread(void * arg)
 		                videoPicture.frame->linesize
 		            );
 			    }
-				videoState->video_idx++;
-				videoPicture.idx = videoState->video_idx;
+				renderer_ctx->video_idx++;
+				videoPicture.idx = renderer_ctx->video_idx;
 				/* double frame_duration = 1000.0 / av_q2d(codecCtx->framerate); */
 				double frame_duration = 1000.0 * av_q2d(codecCtx->time_base);
 				LOG("video frame duration: %fms, fps: %f", frame_duration, 1000.0 / frame_duration);
-				videoState->video_pts += frame_duration;
-				videoPicture.pts = videoState->video_pts;
-				if (!videoState->audio_only) {
+				renderer_ctx->video_pts += frame_duration;
+				videoPicture.pts = renderer_ctx->video_pts;
+				if (!renderer_ctx->audio_only) {
 					LOG("==> sending picture with idx: %d, pts: %f to picture queue ...", videoPicture.idx, videoPicture.pts);
-					int sendret = send(videoState->pictq, &videoPicture);
+					int sendret = send(renderer_ctx->pictq, &videoPicture);
 					if (sendret == 1) {
 						LOG("==> sending picture with idx: %d, pts: %f to picture queue succeeded.", videoPicture.idx, videoPicture.pts);
 					}
@@ -709,34 +707,34 @@ void decoder_thread(void * arg)
 					}
 				}
 			}
-			else if (codecCtx == videoState->audio_ctx) {
-				if (videoState->audio_idx > videoState->maxFramesToDecode) {
+			else if (codecCtx == renderer_ctx->audio_ctx) {
+				if (renderer_ctx->audio_idx > renderer_ctx->maxFramesToDecode) {
 					LOG("max frames reached");
 					threadexitsall("max frames reached");
 				}
 				int data_size = audio_resampling(
-						videoState,
+						renderer_ctx,
 						pFrame,
 						AV_SAMPLE_FMT_S16,
-						videoState->audio_buf);
+						renderer_ctx->audio_buf);
 				av_frame_unref(pFrame);
 				LOG("resampled audio bytes: %d", data_size);
 				AudioSample audioSample = {
-					/* .sample = videoState->audio_buf, */
+					/* .sample = renderer_ctx->audio_buf, */
 					.size = data_size
 					};
-				videoState->audio_idx++;
-				audioSample.idx = videoState->audio_idx;
+				renderer_ctx->audio_idx++;
+				audioSample.idx = renderer_ctx->audio_idx;
 				int bytes_per_sec = 2 * codecCtx->sample_rate * codecCtx->channels;
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
 				/* double sample_duration = 0.5 * 1000.0 * audioSample.size / bytes_per_sec; */
 				/* double sample_duration = 2 * 1000.0 * audioSample.size / bytes_per_sec; */
 				LOG("audio sample duration: %fms", sample_duration);
-				videoState->audio_pts += sample_duration;  // audio sample length in ms
-				audioSample.pts = videoState->audio_pts;
-				audioSample.sample = malloc(sizeof(videoState->audio_buf));
-				memcpy(audioSample.sample, videoState->audio_buf, sizeof(videoState->audio_buf));
-				int sendret = send(videoState->audioq, &audioSample);
+				renderer_ctx->audio_pts += sample_duration;  // audio sample length in ms
+				audioSample.pts = renderer_ctx->audio_pts;
+				audioSample.sample = malloc(sizeof(renderer_ctx->audio_buf));
+				memcpy(audioSample.sample, renderer_ctx->audio_buf, sizeof(renderer_ctx->audio_buf));
+				int sendret = send(renderer_ctx->audioq, &audioSample);
 				if (sendret == 1) {
 					LOG("==> sending audio sample with idx: %d, pts: %f to audio queue succeeded.", audioSample.idx, audioSample.pts);
 					/* LOG("==> sending audio sample to audio queue succeeded."); */
@@ -763,14 +761,14 @@ void decoder_thread(void * arg)
 	if (pFormatCtx) {
 		avformat_free_context(pFormatCtx);
 	}
-	if (videoState->videoq) {
-		chanfree(videoState->videoq);
+	if (renderer_ctx->videoq) {
+		chanfree(renderer_ctx->videoq);
 	}
-	if (videoState->audioq) {
-		chanfree(videoState->audioq);
+	if (renderer_ctx->audioq) {
+		chanfree(renderer_ctx->audioq);
 	}
-	if (videoState->pictq) {
-		chanfree(videoState->pictq);
+	if (renderer_ctx->pictq) {
+		chanfree(renderer_ctx->pictq);
 	}
 	fclose(audio_out);
 	// in case of failure, push the FF_QUIT_EVENT and return
@@ -785,10 +783,10 @@ void decoder_thread(void * arg)
 
 
 int
-stream_component_open(VideoState * videoState, int stream_index)
+stream_component_open(RendererCtx * renderer_ctx, int stream_index)
 {
 	LOG("opening stream component");
-	AVFormatContext * pFormatCtx = videoState->pFormatCtx;
+	AVFormatContext * pFormatCtx = renderer_ctx->pFormatCtx;
 	if (stream_index < 0 || stream_index >= pFormatCtx->nb_streams) {
 		printf("Invalid stream index.");
 		return -1;
@@ -819,20 +817,20 @@ stream_component_open(VideoState * videoState, int stream_index)
 		/* // SDL threading when entering the audio_callback crashes ... */
 		/* wanted_specs.callback = audio_callback; */
 		wanted_specs.callback = NULL;
-		wanted_specs.userdata = videoState;
+		wanted_specs.userdata = renderer_ctx;
 		/* ret = SDL_OpenAudio(&wanted_specs, &specs); */
 		/* if (ret < 0) { */
 			/* printf("SDL_OpenAudio: %s.\n", SDL_GetError()); */
 			/* return -1; */
 		/* } */
-		/* videoState->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &specs, 0); */
-		videoState->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &videoState->specs, 0);
-		if (videoState->audioDevId == 0) {
+		/* renderer_ctx->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &specs, 0); */
+		renderer_ctx->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &renderer_ctx->specs, 0);
+		if (renderer_ctx->audioDevId == 0) {
 			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
 			return -1;
 		}
-		LOG("audio device with id: %d opened successfully", videoState->audioDevId);
-		LOG("audio specs are freq: %d, channels: %d", videoState->specs.freq, videoState->specs.channels);
+		LOG("audio device with id: %d opened successfully", renderer_ctx->audioDevId);
+		LOG("audio specs are freq: %d, channels: %d", renderer_ctx->specs.freq, renderer_ctx->specs.channels);
 	}
 	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
 		printf("Unsupported codec.\n");
@@ -841,56 +839,56 @@ stream_component_open(VideoState * videoState, int stream_index)
 	switch (codecCtx->codec_type) {
 		case AVMEDIA_TYPE_AUDIO:
 		{
-			videoState->audioStream = stream_index;
-			videoState->audio_st = pFormatCtx->streams[stream_index];
-			videoState->audio_ctx = codecCtx;
-			videoState->audio_buf_size = 0;
-			videoState->audio_buf_index = 0;
-			memset(&videoState->audio_pkt, 0, sizeof(videoState->audio_pkt));
-			/* videoState->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
-			videoState->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
-			videoState->audio_tid = threadcreate(audio_thread, videoState, THREAD_STACK_SIZE);
-			LOG("Audio thread created with id: %i", videoState->audio_tid);
+			renderer_ctx->audioStream = stream_index;
+			renderer_ctx->audio_st = pFormatCtx->streams[stream_index];
+			renderer_ctx->audio_ctx = codecCtx;
+			renderer_ctx->audio_buf_size = 0;
+			renderer_ctx->audio_buf_index = 0;
+			memset(&renderer_ctx->audio_pkt, 0, sizeof(renderer_ctx->audio_pkt));
+			/* renderer_ctx->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
+			renderer_ctx->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
+			renderer_ctx->audio_tid = threadcreate(audio_thread, renderer_ctx, THREAD_STACK_SIZE);
+			LOG("Audio thread created with id: %i", renderer_ctx->audio_tid);
 			LOG("calling sdl_pauseaudio(0) ...");
 			/* SDL_PauseAudio(0); */
-			SDL_PauseAudioDevice(videoState->audioDevId, 0);
+			SDL_PauseAudioDevice(renderer_ctx->audioDevId, 0);
 			LOG("sdl_pauseaudio(0) called.");
 		}
 			break;
 		case AVMEDIA_TYPE_VIDEO:
 		{
-			videoState->videoStream = stream_index;
-			videoState->video_st = pFormatCtx->streams[stream_index];
-			videoState->video_ctx = codecCtx;
+			renderer_ctx->videoStream = stream_index;
+			renderer_ctx->video_st = pFormatCtx->streams[stream_index];
+			renderer_ctx->video_ctx = codecCtx;
 			// Initialize the frame timer and the initial
 			// previous frame delay: 1ms = 1e-6s
-			videoState->frame_timer = (double)av_gettime() / 1000000.0;
-			videoState->frame_last_delay = 40e-3;
-			videoState->video_current_pts_time = av_gettime();
-			/* videoState->videoq = chancreate(sizeof(AVPacket*), MAX_VIDEOQ_SIZE); */
-			/* videoState->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
-			/* videoState->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE); */
-			videoState->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-			if (!videoState->audio_only) {
-				videoState->video_tid = threadcreate(video_thread, videoState, THREAD_STACK_SIZE);
-				LOG("Video thread created with id: %i", videoState->video_tid);
+			renderer_ctx->frame_timer = (double)av_gettime() / 1000000.0;
+			renderer_ctx->frame_last_delay = 40e-3;
+			renderer_ctx->video_current_pts_time = av_gettime();
+			/* renderer_ctx->videoq = chancreate(sizeof(AVPacket*), MAX_VIDEOQ_SIZE); */
+			/* renderer_ctx->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
+			/* renderer_ctx->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE); */
+			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
+			if (!renderer_ctx->audio_only) {
+				renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE);
+				LOG("Video thread created with id: %i", renderer_ctx->video_tid);
 			}
-			videoState->sws_ctx = sws_getContext(videoState->video_ctx->width,
-												 videoState->video_ctx->height,
-												 videoState->video_ctx->pix_fmt,
-												 videoState->video_ctx->width,
-												 videoState->video_ctx->height,
+			renderer_ctx->sws_ctx = sws_getContext(renderer_ctx->video_ctx->width,
+												 renderer_ctx->video_ctx->height,
+												 renderer_ctx->video_ctx->pix_fmt,
+												 renderer_ctx->video_ctx->width,
+												 renderer_ctx->video_ctx->height,
 												 AV_PIX_FMT_YUV420P,
 												 SWS_BILINEAR,
 												 NULL,
 												 NULL,
 												 NULL
 			);
-			videoState->rgb_ctx = sws_getContext(videoState->video_ctx->width,
-												 videoState->video_ctx->height,
-												 videoState->video_ctx->pix_fmt,
-												 videoState->video_ctx->width,
-												 videoState->video_ctx->height,
+			renderer_ctx->rgb_ctx = sws_getContext(renderer_ctx->video_ctx->width,
+												 renderer_ctx->video_ctx->height,
+												 renderer_ctx->video_ctx->pix_fmt,
+												 renderer_ctx->video_ctx->width,
+												 renderer_ctx->video_ctx->height,
 												 AV_PIX_FMT_RGB24,
 												 SWS_BILINEAR,
 												 NULL,
@@ -910,12 +908,12 @@ stream_component_open(VideoState * videoState, int stream_index)
 
 
 void
-receive_pic(VideoState *videoState, VideoPicture *videoPicture)
+receive_pic(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 {
 	LOG("receiving picture from picture queue ...");
-	int recret = recv(videoState->pictq, videoPicture);
+	int recret = recv(renderer_ctx->pictq, videoPicture);
 	if (recret == 1) {
-		LOG("<== received picture with idx: %d, pts: %f, current audio pts: %f", videoPicture->idx, videoPicture->pts, videoState->current_audio_pts);
+		LOG("<== received picture with idx: %d, pts: %f, current audio pts: %f", videoPicture->idx, videoPicture->pts, renderer_ctx->current_audio_pts);
 	}
 	else if (recret == -1) {
 		LOG("<== reveiving picture from picture queue interrupted");
@@ -929,27 +927,27 @@ receive_pic(VideoState *videoState, VideoPicture *videoPicture)
 void
 video_thread(void *arg)
 {
-	VideoState *videoState = arg;
+	RendererCtx *renderer_ctx = arg;
 	VideoPicture videoPicture;
-	receive_pic(videoState, &videoPicture);
+	receive_pic(renderer_ctx, &videoPicture);
 	for (;;) {
-		if (videoState->frame_fmt == FRAME_FMT_RGB) {
-			savePicture(videoState, &videoPicture, (int)videoPicture.pts);
-			receive_pic(videoState, &videoPicture);
+		if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
+			savePicture(renderer_ctx, &videoPicture, (int)videoPicture.pts);
+			receive_pic(renderer_ctx, &videoPicture);
 			if (videoPicture.rgbbuf) {
 				av_free(videoPicture.rgbbuf);
 			}
 		}
-		else if (videoState->frame_fmt == FRAME_FMT_YUV) {
-			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
-			if (videoState->current_audio_pts >= videoPicture.pts) {
+		else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
+			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, renderer_ctx->current_audio_pts);
+			if (renderer_ctx->current_audio_pts >= videoPicture.pts) {
 				LOG("displaying picture");
-				video_display(videoState, &videoPicture);
+				video_display(renderer_ctx, &videoPicture);
 				if (videoPicture.frame) {
 					av_frame_unref(videoPicture.frame);
 					av_frame_free(&videoPicture.frame);
 				}
-				receive_pic(videoState, &videoPicture);
+				receive_pic(renderer_ctx, &videoPicture);
 			}
 			else {
 				LOG("yielding video_thread");
@@ -963,34 +961,34 @@ video_thread(void *arg)
 void
 audio_thread(void *arg)
 {
-	VideoState *videoState = arg;
-	videoState->audio_start_rt = av_gettime();
+	RendererCtx *renderer_ctx = arg;
+	renderer_ctx->audio_start_rt = av_gettime();
 	for (;;) {
 		LOG("receiving and playing sample from audio queue ...");
 		AudioSample audioSample;
-		int recret = recv(videoState->audioq, &audioSample);
+		int recret = recv(renderer_ctx->audioq, &audioSample);
 		if (recret == 1) {
 			LOG("<== received audio sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
 			/* fwrite(audioSample.sample, 1, audioSample.size, audio_out); */
-			int ret = SDL_QueueAudio(videoState->audioDevId, audioSample.sample, audioSample.size);
+			int ret = SDL_QueueAudio(renderer_ctx->audioDevId, audioSample.sample, audioSample.size);
 			if (ret < 0) {
 				LOG("failed to write audio sample: %s", SDL_GetError());
 			}
 			else {
-				LOG("audio sample idx: %d, size: %d, audio clock: %f written", audioSample.idx, audioSample.size, videoState->current_audio_pts);
-				int audioq_size = SDL_GetQueuedAudioSize(videoState->audioDevId);
-				int bytes_per_sec = 2 * videoState->audio_ctx->sample_rate * videoState->audio_ctx->channels;
+				LOG("audio sample idx: %d, size: %d, audio clock: %f written", audioSample.idx, audioSample.size, renderer_ctx->current_audio_pts);
+				int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audioDevId);
+				int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_ctx->channels;
 				double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
 				int samples_queued = audioq_size / audioSample.size;
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
 				LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d", audioq_size, queue_duration, samples_queued);
-				/* videoState->current_audio_pts = audioSample.pts - queue_duration; */
-				videoState->current_audio_pts = audioSample.pts;
+				/* renderer_ctx->current_audio_pts = audioSample.pts - queue_duration; */
+				renderer_ctx->current_audio_pts = audioSample.pts;
 				if (samples_queued > 5) {
 					LOG("sleeping");
 					sleep(sample_duration);
 				}
-				LOG("audio clock: %f, real time: %f", videoState->current_audio_pts, (av_gettime() - videoState->audio_start_rt) / 1000.0);
+				LOG("audio clock: %f, real time: %f", renderer_ctx->current_audio_pts, (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0);
 			}
 			free(audioSample.sample);
 		}
@@ -1005,7 +1003,7 @@ audio_thread(void *arg)
 
 
 void
-video_display(VideoState *videoState, VideoPicture *videoPicture)
+video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 {
 	if (!screen) {
 		// create a window with the specified position, dimensions, and flags.
@@ -1013,8 +1011,8 @@ video_display(VideoState *videoState, VideoPicture *videoPicture)
 			"FFmpeg SDL Video Player",
 			SDL_WINDOWPOS_UNDEFINED,
 			SDL_WINDOWPOS_UNDEFINED,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height,
+			renderer_ctx->video_ctx->width,
+			renderer_ctx->video_ctx->height,
 			SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI
 			);
 		SDL_GL_SetSwapInterval(1);
@@ -1023,32 +1021,32 @@ video_display(VideoState *videoState, VideoPicture *videoPicture)
 		printf("SDL: could not create window - exiting.\n");
 		return;
 	}
-	if (!videoState->renderer) {
+	if (!renderer_ctx->renderer) {
 		// create a 2D rendering context for the SDL_Window
-		videoState->renderer = SDL_CreateRenderer(screen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+		renderer_ctx->renderer = SDL_CreateRenderer(screen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
 	}
-	if (!videoState->texture) {
+	if (!renderer_ctx->texture) {
 		// create a texture for a rendering context
-		videoState->texture = SDL_CreateTexture(
-			videoState->renderer,
+		renderer_ctx->texture = SDL_CreateTexture(
+			renderer_ctx->renderer,
 			SDL_PIXELFORMAT_YV12,
 			SDL_TEXTUREACCESS_STREAMING,
-			videoState->video_ctx->width,
-			videoState->video_ctx->height
+			renderer_ctx->video_ctx->width,
+			renderer_ctx->video_ctx->height
 			);
 	}
 	double aspect_ratio;
 	int w, h, x, y;
 	if (videoPicture->frame) {
-		if (videoState->video_ctx->sample_aspect_ratio.num == 0) {
+		if (renderer_ctx->video_ctx->sample_aspect_ratio.num == 0) {
 			aspect_ratio = 0;
 		}
 		else {
-			aspect_ratio = av_q2d(videoState->video_ctx->sample_aspect_ratio) * videoState->video_ctx->width / videoState->video_ctx->height;
+			aspect_ratio = av_q2d(renderer_ctx->video_ctx->sample_aspect_ratio) * renderer_ctx->video_ctx->width / renderer_ctx->video_ctx->height;
 		}
 		if (aspect_ratio <= 0.0) {
-			aspect_ratio = (float)videoState->video_ctx->width /
-						   (float)videoState->video_ctx->height;
+			aspect_ratio = (float)renderer_ctx->video_ctx->width /
+						   (float)renderer_ctx->video_ctx->height;
 		}
 		// get the size of a window's client area
 		int screen_width;
@@ -1076,7 +1074,7 @@ video_display(VideoState *videoState, VideoPicture *videoPicture)
 		rect.h = h;
 		// update the texture with the new pixel data
 		SDL_UpdateYUVTexture(
-				videoState->texture,
+				renderer_ctx->texture,
 				&rect,
 				videoPicture->frame->data[0],
 				videoPicture->frame->linesize[0],
@@ -1086,39 +1084,39 @@ video_display(VideoState *videoState, VideoPicture *videoPicture)
 				videoPicture->frame->linesize[2]
 		);
 		// clear the current rendering target with the drawing color
-		SDL_RenderClear(videoState->renderer);
+		SDL_RenderClear(renderer_ctx->renderer);
 		// copy a portion of the texture to the current rendering target
-		SDL_RenderCopy(videoState->renderer, videoState->texture, NULL, NULL);
+		SDL_RenderCopy(renderer_ctx->renderer, renderer_ctx->texture, NULL, NULL);
 		// update the screen with any rendering performed since the previous call
-		SDL_RenderPresent(videoState->renderer);
+		SDL_RenderPresent(renderer_ctx->renderer);
 	}
 }
 
 
 int 
-audio_resampling(VideoState * videoState, AVFrame * decoded_audio_frame, enum AVSampleFormat out_sample_fmt, uint8_t * out_buf)
+audio_resampling(RendererCtx * renderer_ctx, AVFrame * decoded_audio_frame, enum AVSampleFormat out_sample_fmt, uint8_t * out_buf)
 {
 	// get an instance of the AudioResamplingState struct
-	AudioResamplingState * arState = getAudioResampling(videoState->audio_ctx->channel_layout);
+	AudioResamplingState * arState = getAudioResampling(renderer_ctx->audio_ctx->channel_layout);
 	if (!arState->swr_ctx) {
 		printf("swr_alloc error.\n");
 		return -1;
 	}
 	// get input audio channels
-	arState->in_channel_layout = (videoState->audio_ctx->channels ==
-								  av_get_channel_layout_nb_channels(videoState->audio_ctx->channel_layout)) ?
-								 videoState->audio_ctx->channel_layout :
-								 av_get_default_channel_layout(videoState->audio_ctx->channels);
+	arState->in_channel_layout = (renderer_ctx->audio_ctx->channels ==
+								  av_get_channel_layout_nb_channels(renderer_ctx->audio_ctx->channel_layout)) ?
+								 renderer_ctx->audio_ctx->channel_layout :
+								 av_get_default_channel_layout(renderer_ctx->audio_ctx->channels);
 	// check input audio channels correctly retrieved
 	if (arState->in_channel_layout <= 0) {
 		printf("in_channel_layout error.\n");
 		return -1;
 	}
 	// set output audio channels based on the input audio channels
-	if (videoState->audio_ctx->channels == 1) {
+	if (renderer_ctx->audio_ctx->channels == 1) {
 		arState->out_channel_layout = AV_CH_LAYOUT_MONO;
 	}
-	else if (videoState->audio_ctx->channels == 2) {
+	else if (renderer_ctx->audio_ctx->channels == 2) {
 		arState->out_channel_layout = AV_CH_LAYOUT_STEREO;
 	}
 	else {
@@ -1141,14 +1139,14 @@ audio_resampling(VideoState * videoState, AVFrame * decoded_audio_frame, enum AV
 	av_opt_set_int(
 			arState->swr_ctx,
 			"in_sample_rate",
-			videoState->audio_ctx->sample_rate,
+			renderer_ctx->audio_ctx->sample_rate,
 			0
 	);
 	// Set SwrContext parameters for resampling
 	av_opt_set_sample_fmt(
 			arState->swr_ctx,
 			"in_sample_fmt",
-			videoState->audio_ctx->sample_fmt,
+			renderer_ctx->audio_ctx->sample_fmt,
 			0
 	);
 	// Set SwrContext parameters for resampling
@@ -1162,7 +1160,7 @@ audio_resampling(VideoState * videoState, AVFrame * decoded_audio_frame, enum AV
 	av_opt_set_int(
 			arState->swr_ctx,
 			"out_sample_rate",
-			videoState->audio_ctx->sample_rate,
+			renderer_ctx->audio_ctx->sample_rate,
 			0
 	);
 	// Set SwrContext parameters for resampling
@@ -1180,8 +1178,8 @@ audio_resampling(VideoState * videoState, AVFrame * decoded_audio_frame, enum AV
 	}
 	arState->max_out_nb_samples = arState->out_nb_samples = av_rescale_rnd(
 			arState->in_nb_samples,
-			videoState->audio_ctx->sample_rate,
-			videoState->audio_ctx->sample_rate,
+			renderer_ctx->audio_ctx->sample_rate,
+			renderer_ctx->audio_ctx->sample_rate,
 			AV_ROUND_UP
 	);
 	// check rescaling was successful
@@ -1208,9 +1206,9 @@ audio_resampling(VideoState * videoState, AVFrame * decoded_audio_frame, enum AV
 	}
 	// retrieve output samples number taking into account the progressive delay
 	arState->out_nb_samples = av_rescale_rnd(
-			swr_get_delay(arState->swr_ctx, videoState->audio_ctx->sample_rate) + arState->in_nb_samples,
-			videoState->audio_ctx->sample_rate,
-			videoState->audio_ctx->sample_rate,
+			swr_get_delay(arState->swr_ctx, renderer_ctx->audio_ctx->sample_rate) + arState->in_nb_samples,
+			renderer_ctx->audio_ctx->sample_rate,
+			renderer_ctx->audio_ctx->sample_rate,
 			AV_ROUND_UP
 	);
 	// check output samples number was correctly rescaled
@@ -1304,11 +1302,11 @@ getAudioResampling(uint64_t channel_layout)
 
 
 void
-savePicture(VideoState* videoState, VideoPicture *videoPicture, int frameIndex)
+savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameIndex)
 {
     AVFrame *pFrameRGB = NULL;
     uint8_t *buffer = NULL;
-	if (videoState->frame_fmt == FRAME_FMT_PRISTINE) {
+	if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 		// Convert the video picture to the target format for saving to disk
 	    pFrameRGB = av_frame_alloc();
 	    int numBytes;
@@ -1362,12 +1360,12 @@ savePicture(VideoState* videoState, VideoPicture *videoPicture, int frameIndex)
         return;
     }
     fprintf(pFile, "P6\n%d %d\n255\n", videoPicture->width, videoPicture->height);
-	if (videoState->frame_fmt == FRAME_FMT_PRISTINE) {
+	if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 	    for (y = 0; y < pFrameRGB->height; y++) {
 	        fwrite(pFrameRGB->data[0] + y * pFrameRGB->linesize[0], 1, videoPicture->width * 3, pFile);
 	    }
     }
-    else if (videoState->frame_fmt == FRAME_FMT_RGB) {
+    else if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
 	    for (y = 0; y < videoPicture->height; y++) {
 	        fwrite(videoPicture->rgbbuf + y * videoPicture->linesize, 1, videoPicture->width * 3, pFile);
 	    }
