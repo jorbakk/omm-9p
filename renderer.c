@@ -45,6 +45,7 @@
 #include <9pclient.h>
 #include <auth.h>
 #include <thread.h>
+#include <keyboard.h>
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
@@ -106,71 +107,71 @@ typedef struct VideoState
 	AVFormatContext  *pFormatCtx;
 
 	// Audio Stream.
-	int	              audioStream;
-	AVStream         *audio_st;
-	AVCodecContext   *audio_ctx;
-	Channel          *audioq;
-	uint8_t			  audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
-	unsigned int      audio_buf_size;
-	unsigned int      audio_buf_index;
-	AVFrame			  audio_frame;
-	AVPacket          audio_pkt;
-	uint8_t *         audio_pkt_data;
-	int               audio_pkt_size;
-	double			  audio_clock;
-
-	int               audio_idx;
-	double            audio_pts;
-	double            current_audio_pts;
-	int64_t           audio_start_rt;
-
+	int                audioStream;
+	AVStream          *audio_st;
+	AVCodecContext    *audio_ctx;
+	Channel           *audioq;
+	uint8_t            audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
+	unsigned int       audio_buf_size;
+	unsigned int       audio_buf_index;
+	AVFrame            audio_frame;
+	AVPacket           audio_pkt;
+	uint8_t *          audio_pkt_data;
+	int                audio_pkt_size;
+	double             audio_clock;
+	int                audio_idx;
+	double             audio_pts;
+	double             current_audio_pts;
+	int64_t            audio_start_rt;
 	// Video Stream.
-	int	              videoStream;
-	AVStream         *video_st;
-	AVCodecContext *	video_ctx;
-	SDL_Texture *	   texture;
-	SDL_Renderer *	  renderer;
-	Channel		 *videoq;
-	Channel		*pictq;
-	struct SwsContext * sws_ctx;
-	struct SwsContext * rgb_ctx;
-	double			  frame_timer;
-	double			  frame_last_pts;
-	double			  frame_last_delay;
-	double			  video_clock;
-	double			  video_current_pts;
-	int64_t			 video_current_pts_time;
-	double			  audio_diff_cum;
-	double			  audio_diff_avg_coef;
-	double			  audio_diff_threshold;
-	int				 audio_diff_avg_count;
+	int                videoStream;
+	AVStream          *video_st;
+	AVCodecContext    *video_ctx;
+	SDL_Texture       *texture;
+	SDL_Renderer      *renderer;
+	Channel           *videoq;
+	Channel           *pictq;
+	struct SwsContext *sws_ctx;
+	struct SwsContext *rgb_ctx;
+	double             frame_timer;
+	double             frame_last_pts;
+	double             frame_last_delay;
+	double             video_clock;
+	double             video_current_pts;
+	int64_t            video_current_pts_time;
+	double             audio_diff_cum;
+	double             audio_diff_avg_coef;
+	double             audio_diff_threshold;
+	int                audio_diff_avg_count;
 
-	SDL_AudioSpec    specs;
-	int              video_idx;
-	double           video_pts;
+	SDL_AudioSpec      specs;
+	int                video_idx;
+	double             video_pts;
 	// AV Sync
-	int	 av_sync_type;
-	double  external_clock;
-	int64_t external_clock_time;
+	int	               av_sync_type;
+	double             external_clock;
+	int64_t            external_clock_time;
 	// Seeking
-	int	 seek_req;
-	int	 seek_flags;
-	int64_t seek_pos;
-	// Threads.
-	int decode_tid;
-	int video_tid;
-	int audio_tid;
+	int	               seek_req;
+	int	               seek_flags;
+	int64_t            seek_pos;
+	// Threads
+	int                decode_tid;
+	int                video_tid;
+	int                audio_tid;
 	// Input file name and plan 9 file reference
-	char filename[1024];
-	CFid *fid;
+	char               filename[1024];
+	CFid              *fid;
+	// Keyboard
+	Keyboardctl       *kbd;
 	// Quit flag
-	int quit;
-	// Maximum number of frames to be decoded.
-	long	maxFramesToDecode;
-	int	 currentFrameIndex;
-	int frame_fmt;
-	SDL_AudioDeviceID audioDevId;
-	int audio_only;
+	int                quit;
+	// Maximum number of frames to be decoded
+	long               maxFramesToDecode;
+	int	               currentFrameIndex;
+	int                frame_fmt;
+	SDL_AudioDeviceID  audioDevId;
+	int                audio_only;
 } VideoState;
 
 typedef struct AudioResamplingState
@@ -552,7 +553,7 @@ void decoder_thread(void * arg)
 			codecCtx = videoState->audio_ctx;
 		}
 		int decsend_ret = avcodec_send_packet(codecCtx, packet);
-		LOG("sending packet of size %d to decoder returned %d: ", packet->size, decsend_ret);
+		LOG("sending packet of size %d to decoder returned: %d", packet->size, decsend_ret);
 		if (decsend_ret == AVERROR(EAGAIN)) {
 			LOG("AVERROR = EAGAIN: input not accepted, receive frame from decoder first");
 		}
@@ -570,7 +571,7 @@ void decoder_thread(void * arg)
 			return;
 		}
 		// This loop is only needed when we get more than one decoded frame out
-		// of on packet read from the demuxer
+		// of one packet read from the demuxer
 		int decoder_ret = 0;
 		while (decoder_ret >= 0) {
 			/* int frameFinished = 0; */
@@ -968,7 +969,7 @@ audio_thread(void *arg)
 		int recret = recv(videoState->audioq, &audioSample);
 		if (recret == 1) {
 			LOG("<== received audio sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
-			fwrite(audioSample.sample, 1, audioSample.size, audio_out);
+			/* fwrite(audioSample.sample, 1, audioSample.size, audio_out); */
 			int ret = SDL_QueueAudio(videoState->audioDevId, audioSample.sample, audioSample.size);
 			if (ret < 0) {
 				LOG("failed to write audio sample: %s", SDL_GetError());
