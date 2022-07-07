@@ -119,6 +119,7 @@ typedef struct VideoState
 	int               audio_idx;
 	double            audio_pts;
 	double            current_audio_pts;
+	int64_t           audio_start_rt;
 
 	// Video Stream.
 	int	              videoStream;
@@ -740,6 +741,7 @@ void decoder_thread(void * arg)
 				audioSample.idx = videoState->audio_idx;
 				int bytes_per_sec = 2 * codecCtx->sample_rate * codecCtx->channels;
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
+				/* double sample_duration = 0.5 * 1000.0 * audioSample.size / bytes_per_sec; */
 				/* double sample_duration = 2 * 1000.0 * audioSample.size / bytes_per_sec; */
 				LOG("audio sample duration: %fms", sample_duration);
 				videoState->audio_pts += sample_duration;  // audio sample length in ms
@@ -953,7 +955,7 @@ video_thread(void *arg)
 		else if (videoState->frame_fmt == FRAME_FMT_YUV) {
 			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
 			if (videoState->current_audio_pts >= videoPicture.pts) {
-				LOG("displaying picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, videoState->current_audio_pts);
+				LOG("displaying picture");
 				video_display(videoState, &videoPicture);
 				if (videoPicture.frame) {
 					av_frame_unref(videoPicture.frame);
@@ -974,20 +976,35 @@ void
 audio_thread(void *arg)
 {
 	VideoState *videoState = arg;
+	videoState->audio_start_rt = av_gettime();
 	for (;;) {
 		LOG("receiving and playing sample from audio queue ...");
 		AudioSample audioSample;
 		int recret = recv(videoState->audioq, &audioSample);
 		if (recret == 1) {
-			/* LOG("<== received audio sample with pts %f from audio queue.", videoPicture.pts); */
 			LOG("<== received audio sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
-			int audioq_size = SDL_GetQueuedAudioSize(videoState->audioDevId);
-			int bytes_per_sec = 2 * videoState->audio_ctx->sample_rate * videoState->audio_ctx->channels;
-			double queue_duration = 1000.0 * audioSample.size / bytes_per_sec;
-			// FIXME 0.5 correction factor
-			/* double queue_duration = 0.5 * 1000.0 * audioq_size / bytes_per_sec; */
-			LOG("sdl audio queue size in bytes: %d, msec: %f", audioq_size, queue_duration);
-			videoState->current_audio_pts = audioSample.pts - queue_duration;
+			fwrite(audioSample.sample, 1, audioSample.size, audio_out);
+			// FIXME audio queue is growing continuously. Ideally, it should block.
+			int ret = SDL_QueueAudio(videoState->audioDevId, audioSample.sample, audioSample.size);
+			if (ret < 0) {
+				LOG("failed to write audio sample: %s", SDL_GetError());
+			}
+			else {
+				LOG("audio sample idx: %d, size: %d, audio clock: %f written", audioSample.idx, audioSample.size, videoState->current_audio_pts);
+				int audioq_size = SDL_GetQueuedAudioSize(videoState->audioDevId);
+				int bytes_per_sec = 2 * videoState->audio_ctx->sample_rate * videoState->audio_ctx->channels;
+				double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
+				// FIXME 0.5 correction factor
+				/* double queue_duration = 0.5 * 1000.0 * audioq_size / bytes_per_sec; */
+				LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d", audioq_size, queue_duration, audioq_size / audioSample.size);
+				/* videoState->current_audio_pts = audioSample.pts - queue_duration; */
+				videoState->current_audio_pts = audioSample.pts;
+				// FIXME sleeping works, but audio is stuttering
+				LOG("sleeping");
+				sleep(queue_duration - 10.0);
+				LOG("audio clock: %f, real time: %f", videoState->current_audio_pts, (av_gettime() - videoState->audio_start_rt) / 1000.0);
+			}
+			free(audioSample.sample);
 		}
 		else if (recret == -1) {
 			LOG("<== reveiving audio sample from audio queue interrupted");
@@ -995,13 +1012,6 @@ audio_thread(void *arg)
 		else {
 			LOG("<== unforseen error when receiving audio sample from audio queue");
 		}
-		LOG("writing audio sample of size: %d", audioSample.size);
-		fwrite(audioSample.sample, 1, audioSample.size, audio_out);
-		int ret = SDL_QueueAudio(videoState->audioDevId, audioSample.sample, audioSample.size);
-		if (ret < 0) {
-			LOG("failed to queue audio sample: %s", SDL_GetError());
-		}
-		free(audioSample.sample);
 	}
 }
 
