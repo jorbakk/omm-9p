@@ -39,13 +39,9 @@
 #include <u.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
 #include <libc.h>
-#include <signal.h>
-#include <bio.h>
-#include <fcall.h>
 #include <9pclient.h>
-#include <auth.h>
 #include <thread.h>
-#include <keyboard.h>
+/* #include <keyboard.h> */
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
@@ -163,7 +159,7 @@ typedef struct RendererCtx
 	char               filename[1024];
 	CFid              *fid;
 	// Keyboard
-	Keyboardctl       *kbd;
+	/* Keyboardctl       *kbd; */
 	// Quit flag
 	int                quit;
 	// Maximum number of frames to be decoded
