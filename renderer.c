@@ -392,7 +392,6 @@ threadmain(int argc, char **argv)
 	LOG("decoder thread created with id: %i", renderer_ctx->decode_tid);
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
-    /* SDL_Event event; */
 	/* einit(Ekeyboard); */
 	/* Event e; */
 	/* int key; */
@@ -428,7 +427,35 @@ threadmain(int argc, char **argv)
 		/* } */
 
 		// FIXME SDL_WaitEvent() doesn't yield so all threads block here ...
+	    SDL_Event event;
         /* ret = SDL_WaitEvent(&event); */
+        ret = SDL_PollEvent(&event);
+        if (ret) {
+			LOG("received sdl event");
+	        switch(event.type)
+	        {
+	            case SDL_KEYDOWN:
+	            {
+	                switch(event.key.keysym.sym)
+	                {
+	                    case SDLK_LEFT:
+	                    {
+							threadexitsall(0);
+			                SDL_Quit();
+	                    }
+	                    break;
+	                }
+
+				}
+				break;
+	            case SDL_QUIT:
+	            {
+					threadexitsall(0);
+	                SDL_Quit();
+	            }
+	            break;
+			}
+        }
 		/* key = event(&e); */
 		/* if (key == Ekeyboard) { */
 			/* if(e.kbdc==Kdel || e.kbdc=='q') { */
@@ -1147,12 +1174,12 @@ video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 				videoPicture->frame->data[2],
 				videoPicture->frame->linesize[2]
 		);
-		LOG("displaying picture");
 		// clear the current rendering target with the drawing color
 		SDL_RenderClear(renderer_ctx->renderer);
 		// copy a portion of the texture to the current rendering target
 		SDL_RenderCopy(renderer_ctx->renderer, renderer_ctx->texture, NULL, NULL);
 		// update the screen with any rendering performed since the previous call
+		LOG("displaying picture %d", videoPicture->idx);
 		SDL_RenderPresent(renderer_ctx->renderer);
 	}
 }
