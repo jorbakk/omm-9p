@@ -43,11 +43,6 @@
 #include <9pclient.h>
 #include <thread.h>
 
-#include <draw.h>
-/* #include <event.h> */
-#include <keyboard.h>
-#include <mouse.h>
-
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/avstring.h>
@@ -163,9 +158,6 @@ typedef struct RendererCtx
 	// Input file name and plan 9 file reference
 	char               filename[1024];
 	CFid              *fid;
-	// Keyboard & Mouse
-	/* Keyboardctl       *kbd; */
-	/* Mousectl          *mouse; */
 	// Quit flag
 	int                quit;
 	// Maximum number of frames to be decoded
@@ -321,21 +313,6 @@ xopen(char *name, int mode)
 }
 
 
-/* void */
-/* redraw(Image *screen) */
-/* { */
-/* } */
-
-
-/* void */
-/* eresized(int new) */
-/* { */
-	/* if(new && getwindow(display, Refnone) < 0) */
-		/* fprint(2,"can't reattach to window"); */
-	/* redraw(screen); */
-/* } */
-
-
 static FILE *audio_out;
 
 void
@@ -392,43 +369,9 @@ threadmain(int argc, char **argv)
 	LOG("decoder thread created with id: %i", renderer_ctx->decode_tid);
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
-	/* einit(Ekeyboard); */
-	/* Event e; */
-	/* int key; */
-	/* Rune rune; */
-	/* char runestr[UTFmax]; */
-	/* Mouse mouse; */
 	for (;;) {
 		yield();
-
-		// Runes are only received on the white/black background window generated
-		// by libdraw. The video window is an SDL window, which is a separate X window.
-		/* int recret = recv(renderer_ctx->kbd->c, &rune); */
-		/* if (recret == 1) { */
-			/* int runelen = runetochar(runestr, &rune); */
-			/* LOG("<== received rune %s of length: %d", runestr, runelen); */
-		/* } */
-		/* else if (recret == -1) { */
-			/* LOG("<== reveiving rune from keyboard interrupted"); */
-		/* } */
-		/* else { */
-			/* LOG("<== unforseen error when receiving rune from keyboard"); */
-		/* } */
-
-		/* int recret = recv(renderer_ctx->mouse->c, &mouse); */
-		/* if (recret == 1) { */
-			/* LOG("<== received mouse"); */
-		/* } */
-		/* else if (recret == -1) { */
-			/* LOG("<== reveiving mouse event interrupted"); */
-		/* } */
-		/* else { */
-			/* LOG("<== unforseen error when receiving mouse event"); */
-		/* } */
-
-		// FIXME SDL_WaitEvent() doesn't yield so all threads block here ...
 	    SDL_Event event;
-        /* ret = SDL_WaitEvent(&event); */
         ret = SDL_PollEvent(&event);
         if (ret) {
 			LOG("received sdl event");
@@ -456,21 +399,10 @@ threadmain(int argc, char **argv)
 	            break;
 			}
         }
-		/* key = event(&e); */
-		/* if (key == Ekeyboard) { */
-			/* if(e.kbdc==Kdel || e.kbdc=='q') { */
-				/* threadexitsall(0); */
-			/* } */
-		/* } */
-		/* if (renderer_ctx->quit) { */
-			/* break; */
-		/* } */
 	}
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
 	av_free(renderer_ctx);
-	/* closekeyboard(renderer_ctx->kbd); */
-	/* closemouse(renderer_ctx->mouse); */
 	return;
 }
 
