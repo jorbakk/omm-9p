@@ -164,8 +164,8 @@ typedef struct RendererCtx
 	char               filename[1024];
 	CFid              *fid;
 	// Keyboard & Mouse
-	Keyboardctl       *kbd;
-	Mousectl          *mouse;
+	/* Keyboardctl       *kbd; */
+	/* Mousectl          *mouse; */
 	// Quit flag
 	int                quit;
 	// Maximum number of frames to be decoded
@@ -321,19 +321,19 @@ xopen(char *name, int mode)
 }
 
 
-void
-redraw(Image *screen)
-{
-}
+/* void */
+/* redraw(Image *screen) */
+/* { */
+/* } */
 
 
-void
-eresized(int new)
-{
-	if(new && getwindow(display, Refnone) < 0)
-		fprint(2,"can't reattach to window");
-	redraw(screen);
-}
+/* void */
+/* eresized(int new) */
+/* { */
+	/* if(new && getwindow(display, Refnone) < 0) */
+		/* fprint(2,"can't reattach to window"); */
+	/* redraw(screen); */
+/* } */
 
 
 static FILE *audio_out;
@@ -347,8 +347,8 @@ threadmain(int argc, char **argv)
 		printHelp();
 		return;
 	}
-	if (initdraw(0, 0, "OMM Renderer") < 0)
-		sysfatal("initdraw failed");
+	/* if (initdraw(0, 0, "OMM Renderer") < 0) */
+		/* sysfatal("initdraw failed"); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
 	if (ret != 0) {
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
@@ -370,8 +370,10 @@ threadmain(int argc, char **argv)
 	renderer_ctx->video_idx = 0;
 	renderer_ctx->video_pts = 0;
 	renderer_ctx->audio_only = 0;
-	renderer_ctx->kbd = initkeyboard("");
-	renderer_ctx->mouse = initmouse(nil, screen);
+	
+	/* renderer_ctx->kbd = initkeyboard(""); */
+	/* renderer_ctx->mouse = initmouse(nil, screen); */
+
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(renderer_ctx->filename, OREAD);
@@ -394,23 +396,25 @@ threadmain(int argc, char **argv)
 	/* einit(Ekeyboard); */
 	/* Event e; */
 	/* int key; */
-	Rune rune;
-	char runestr[UTFmax];
-	Mouse mouse;
+	/* Rune rune; */
+	/* char runestr[UTFmax]; */
+	/* Mouse mouse; */
 	for (;;) {
-		/* yield(); */
+		yield();
 
-		int recret = recv(renderer_ctx->kbd->c, &rune);
-		if (recret == 1) {
-			int runelen = runetochar(runestr, &rune);
-			LOG("<== received rune %s of length: %d", runestr, runelen);
-		}
-		else if (recret == -1) {
-			LOG("<== reveiving rune from keyboard interrupted");
-		}
-		else {
-			LOG("<== unforseen error when receiving rune from keyboard");
-		}
+		// Runes are only received on the white/black background window generated
+		// by libdraw. The video window is an SDL window, which is a separate X window.
+		/* int recret = recv(renderer_ctx->kbd->c, &rune); */
+		/* if (recret == 1) { */
+			/* int runelen = runetochar(runestr, &rune); */
+			/* LOG("<== received rune %s of length: %d", runestr, runelen); */
+		/* } */
+		/* else if (recret == -1) { */
+			/* LOG("<== reveiving rune from keyboard interrupted"); */
+		/* } */
+		/* else { */
+			/* LOG("<== unforseen error when receiving rune from keyboard"); */
+		/* } */
 
 		/* int recret = recv(renderer_ctx->mouse->c, &mouse); */
 		/* if (recret == 1) { */
@@ -438,8 +442,8 @@ threadmain(int argc, char **argv)
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
 	av_free(renderer_ctx);
-	closekeyboard(renderer_ctx->kbd);
-	closemouse(renderer_ctx->mouse);
+	/* closekeyboard(renderer_ctx->kbd); */
+	/* closemouse(renderer_ctx->mouse); */
 	return;
 }
 
@@ -1002,7 +1006,6 @@ video_thread(void *arg)
 		else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
 			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, renderer_ctx->current_audio_pts);
 			if (renderer_ctx->current_audio_pts >= videoPicture.pts) {
-				LOG("displaying picture");
 				video_display(renderer_ctx, &videoPicture);
 				if (videoPicture.frame) {
 					av_frame_unref(videoPicture.frame);
@@ -1144,6 +1147,7 @@ video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 				videoPicture->frame->data[2],
 				videoPicture->frame->linesize[2]
 		);
+		LOG("displaying picture");
 		// clear the current rendering target with the drawing color
 		SDL_RenderClear(renderer_ctx->renderer);
 		// copy a portion of the texture to the current rendering target
