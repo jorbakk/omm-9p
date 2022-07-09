@@ -443,7 +443,7 @@ srvwrite(Req *r)
 }
 
 
-Srv fs = {
+Srv server = {
 	.open=	srvopen,
 	.read=	srvread,
 	.write=	srvwrite,
@@ -463,17 +463,17 @@ start_server(void)
 	LOG("starting 9P server ...");
 	char *srvname = "ommrenderer";
 	char *mtpt = "/srv";
-	fs.tree = alloctree(nil, nil, DMDIR|0777, nil);
+	server.tree = alloctree(nil, nil, DMDIR|0777, nil);
 	// Workaround for the first directory entry not beeing visible (it exists and is readable/writable)
 	// This might be a bug in plan9port 9Pfile + fuse
-	createfile(fs.tree->root, "dummy", nil, 0777, nil);
-	createfile(fs.tree->root, "ctl", nil, 0777, nil);
-	/* srv(&fs); */
+	createfile(server.tree->root, "dummy", nil, 0777, nil);
+	createfile(server.tree->root, "ctl", nil, 0777, nil);
+	/* srv(&server); */
 	if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0)
 		sysfatal("mountpoint %s does not exist", mtpt);
-	/* fs.foreground = 1; */
-	threadpostmountsrv(&fs, srvname, mtpt, MREPL|MCREATE);
-	threadexits(0);
+	/* server.foreground = 1; */
+	threadpostmountsrv(&server, srvname, mtpt, MREPL|MCREATE);
+	/* threadexits(0); */
 	LOG("9P server started.");
 }
 
