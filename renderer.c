@@ -368,18 +368,19 @@ start_server(void)
 {
 	LOG("starting 9P server ...");
 	char *srvname = "ommrenderer";
-	char *mtpt = "/srv";
+	/* char *mtpt = "/srv"; */
+	char *mtpt = nil;
 	server.tree = alloctree(nil, nil, DMDIR|0777, nil);
 	// Workaround for the first directory entry not beeing visible (it exists and is readable/writable)
 	// This might be a bug in plan9port 9Pfile + fuse
-	createfile(server.tree->root, "dummy", nil, 0777, nil);
+	/* createfile(server.tree->root, "dummy", nil, 0777, nil); */
 	createfile(server.tree->root, "ctl", nil, 0777, nil);
 	/* srv(&server); */
 	/* postfd(srvname, server.srvfd); */
 	// Workaround for fuse not unmounting the service ... ? 
 	// ... the first access will fail but unmount it.
-	if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0)
-		sysfatal("mountpoint %s does not exist", mtpt);
+	/* if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0) */
+		/* sysfatal("mountpoint %s does not exist", mtpt); */
 	/* server.foreground = 1; */
 	threadpostmountsrv(&server, srvname, mtpt, MREPL|MCREATE);
 	/* threadexits(0); */
@@ -394,7 +395,7 @@ threadmain(int argc, char **argv)
 {
 	if (_DEBUG_) {
 		chatty9pclient = 1;
-		chattyfuse = 1;
+		/* chattyfuse = 1; */
 	}
 	if (argc != 3) {
 		printHelp();
