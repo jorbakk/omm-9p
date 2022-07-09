@@ -40,8 +40,10 @@
 #include <u.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
 #include <libc.h>
-#include <9pclient.h>
+#include <fcall.h>
 #include <thread.h>
+#include <9p.h>
+#include <9pclient.h>
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
@@ -152,6 +154,7 @@ typedef struct RendererCtx
 	int	               seek_flags;
 	int64_t            seek_pos;
 	// Threads
+	int                server_tid;
 	int                decode_tid;
 	int                video_tid;
 	int                audio_tid;
@@ -228,6 +231,7 @@ void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
 void video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
 void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
 void decoder_thread(void *arg);
+void server_thread(void *arg);
 int stream_component_open(RendererCtx * renderer_ctx, int stream_index);
 void video_thread(void *arg);
 void audio_thread(void *arg);
@@ -366,7 +370,13 @@ threadmain(int argc, char **argv)
 		av_free(renderer_ctx);
 		return;
 	}
-	LOG("decoder thread created with id: %i", renderer_ctx->decode_tid);
+	/* renderer_ctx->server_tid = threadcreate(server_thread, renderer_ctx, THREAD_STACK_SIZE); */
+	/* if (!renderer_ctx->server_tid) { */
+		/* printf("Could not start server thread: %s.\n", SDL_GetError()); */
+		/* av_free(renderer_ctx); */
+		/* return; */
+	/* } */
+	LOG("server thread created with id: %i", renderer_ctx->server_tid);
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
 	for (;;) {
@@ -414,7 +424,37 @@ void printHelp()
 }
 
 
-void decoder_thread(void * arg)
+Srv fs = {
+	/* .open=	fsopen, */
+	/* .read=	fsread, */
+	/* .write=	fswrite, */
+	/* .create=	fscreate, */
+};
+
+void
+server_thread(void *arg)
+{
+	/* yield(); */
+	char *srvname = "OMM renderer";
+	char *mtpt = "/srv";
+
+	/* fs.tree = alloctree(nil, nil, DMDIR|0777, fsdestroyfile); */
+	fs.tree = alloctree(nil, nil, DMDIR|0777, nil);
+	// FIXME the first directory entry is not visible (but exists and is readable/writable)
+	createfile(fs.tree->root, "dummy", nil, 0777, nil);
+	createfile(fs.tree->root, "ctl", nil, 0777, nil);
+
+	if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0)
+		sysfatal("mountpoint %s does not exist", mtpt);
+	fs.foreground = 1;
+
+	threadpostmountsrv(&fs, srvname, mtpt, MREPL|MCREATE);
+	threadexits(0);
+}
+
+
+void
+decoder_thread(void *arg)
 {
 	LOG("decoder thread started");
 	RendererCtx * renderer_ctx = (RendererCtx *)arg;
