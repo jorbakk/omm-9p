@@ -155,7 +155,7 @@ typedef struct RendererCtx
 	int64_t            seek_pos;
 	// Threads
 	int                server_tid;
-	int                decode_tid;
+	int                decoder_tid;
 	int                video_tid;
 	int                audio_tid;
 	// Input file name and plan 9 file reference
@@ -322,14 +322,14 @@ static FILE *audio_out;
 void
 threadmain(int argc, char **argv)
 {
-	if (_DEBUG_)
+	if (_DEBUG_) {
 		chatty9pclient = 1;
+		chattyfuse = 1;
+	}
 	if (argc != 3) {
 		printHelp();
 		return;
 	}
-	/* if (initdraw(0, 0, "OMM Renderer") < 0) */
-		/* sysfatal("initdraw failed"); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
 	if (ret != 0) {
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
@@ -351,10 +351,6 @@ threadmain(int argc, char **argv)
 	renderer_ctx->video_idx = 0;
 	renderer_ctx->video_pts = 0;
 	renderer_ctx->audio_only = 0;
-	
-	/* renderer_ctx->kbd = initkeyboard(""); */
-	/* renderer_ctx->mouse = initmouse(nil, screen); */
-
 	// Set up 9P connection
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(renderer_ctx->filename, OREAD);
@@ -364,8 +360,8 @@ threadmain(int argc, char **argv)
 	/* renderer_ctx->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE); */
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
-	renderer_ctx->decode_tid = threadcreate(decoder_thread, renderer_ctx, THREAD_STACK_SIZE);
-	if (!renderer_ctx->decode_tid) {
+	renderer_ctx->decoder_tid = threadcreate(decoder_thread, renderer_ctx, THREAD_STACK_SIZE);
+	if (!renderer_ctx->decoder_tid) {
 		printf("Could not start decoder thread: %s.\n", SDL_GetError());
 		av_free(renderer_ctx);
 		return;
@@ -428,11 +424,37 @@ void printHelp()
 }
 
 
+void
+srvopen(Req *r)
+{
+	LOG("server open");
+	respond(r, nil);
+}
+
+
+void
+srvread(Req *r)
+{
+	LOG("server read");
+	respond(r, nil);
+}
+
+
+void
+srvwrite(Req *r)
+{
+	LOG("server write");
+	char cmd[256];
+	snprint(cmd, r->ifcall.count, "%s", r->ifcall.data);
+	LOG("server cmd: %s", cmd);
+	respond(r, nil);
+}
+
+
 Srv fs = {
-	/* .open=	fsopen, */
-	/* .read=	fsread, */
-	/* .write=	fswrite, */
-	/* .create=	fscreate, */
+	.open=	srvopen,
+	.read=	srvread,
+	.write=	srvwrite,
 };
 
 
@@ -469,8 +491,8 @@ server_thread(void *arg)
 void
 decoder_thread(void *arg)
 {
-	LOG("decoder thread started");
 	RendererCtx * renderer_ctx = (RendererCtx *)arg;
+	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
