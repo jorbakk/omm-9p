@@ -379,37 +379,41 @@ threadmain(int argc, char **argv)
 	LOG("server thread created with id: %i", renderer_ctx->server_tid);
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
-	for (;;) {
-		yield();
-	    SDL_Event event;
-        ret = SDL_PollEvent(&event);
-        if (ret) {
-			LOG("received sdl event");
-	        switch(event.type)
-	        {
-	            case SDL_KEYDOWN:
-	            {
-	                switch(event.key.keysym.sym)
-	                {
-	                    case SDLK_LEFT:
-	                    {
-							threadexitsall(0);
-			                SDL_Quit();
-	                    }
-	                    break;
-	                }
 
-				}
-				break;
-	            case SDL_QUIT:
-	            {
-					threadexitsall(0);
-	                SDL_Quit();
-	            }
-	            break;
-			}
-        }
-	}
+	/* for (;;) { */
+		/* yield(); */
+	    /* SDL_Event event; */
+        /* ret = SDL_PollEvent(&event); */
+        /* if (ret) { */
+			/* LOG("received sdl event"); */
+	        /* switch(event.type) */
+	        /* { */
+	            /* case SDL_KEYDOWN: */
+	            /* { */
+	                /* switch(event.key.keysym.sym) */
+	                /* { */
+	                    /* case SDLK_LEFT: */
+	                    /* { */
+							/* threadexitsall(0); */
+			                /* SDL_Quit(); */
+	                    /* } */
+	                    /* break; */
+	                /* } */
+
+				/* } */
+				/* break; */
+	            /* case SDL_QUIT: */
+	            /* { */
+					/* threadexitsall(0); */
+	                /* SDL_Quit(); */
+	            /* } */
+	            /* break; */
+			/* } */
+        /* } */
+	/* } */
+
+	server_thread(NULL);
+
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
 	av_free(renderer_ctx);
@@ -431,23 +435,32 @@ Srv fs = {
 	/* .create=	fscreate, */
 };
 
+
+int
+threadmaybackground(void)
+{
+	return 1;
+}
+
+
 void
 server_thread(void *arg)
 {
-	/* yield(); */
+	yield();
+	LOG("starting 9P server ...");
 	char *srvname = "OMM renderer";
 	char *mtpt = "/srv";
 
-	/* fs.tree = alloctree(nil, nil, DMDIR|0777, fsdestroyfile); */
 	fs.tree = alloctree(nil, nil, DMDIR|0777, nil);
 	// FIXME the first directory entry is not visible (but exists and is readable/writable)
 	createfile(fs.tree->root, "dummy", nil, 0777, nil);
 	createfile(fs.tree->root, "ctl", nil, 0777, nil);
 
+	/* srv(&fs); */
+
 	if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0)
 		sysfatal("mountpoint %s does not exist", mtpt);
-	fs.foreground = 1;
-
+	/* fs.foreground = 1; */
 	threadpostmountsrv(&fs, srvname, mtpt, MREPL|MCREATE);
 	threadexits(0);
 }
