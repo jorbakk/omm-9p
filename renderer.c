@@ -392,7 +392,8 @@ threadmain(int argc, char **argv)
 		return;
 	}
 	start_server();
-	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
+	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
+	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (ret != 0) {
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
 		return;
