@@ -328,6 +328,8 @@ void
 srvread(Req *r)
 {
 	LOG("server read");
+	r->ofcall.count = 6;
+	r->ofcall.data = "hello\n";
 	respond(r, nil);
 }
 
@@ -336,9 +338,9 @@ void
 srvwrite(Req *r)
 {
 	LOG("server write");
-	/* char cmd[256]; */
-	/* snprint(cmd, r->ifcall.count, "%s", r->ifcall.data); */
-	/* LOG("server cmd: %s", cmd); */
+	char cmd[256];
+	snprint(cmd, r->ifcall.count, "%s", r->ifcall.data);
+	LOG("server cmd: %s", cmd);
 	respond(r, nil);
 }
 
