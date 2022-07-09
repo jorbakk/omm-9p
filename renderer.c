@@ -338,13 +338,13 @@ srvread(Req *r)
 void
 srvwrite(Req *r)
 {
-	// FIXME write is called continuously, not only once
 	// FIXME write is not called when using fuse with "echo foo > /srv/ctl" 
 	//       but "echo foo | 9p write ommrenderer/ctl" works
 	LOG("server write");
 	char cmd[256];
 	snprint(cmd, r->ifcall.count, "%s", r->ifcall.data);
 	LOG("server cmd: %s", cmd);
+	r->ofcall.count = r->ifcall.count;
 	respond(r, nil);
 }
 
