@@ -231,7 +231,6 @@ void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
 void video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
 void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
 void decoder_thread(void *arg);
-void start_server(void);
 int stream_component_open(RendererCtx * renderer_ctx, int stream_index);
 void video_thread(void *arg);
 void audio_thread(void *arg);
@@ -317,6 +316,68 @@ xopen(char *name, int mode)
 }
 
 
+void
+srvopen(Req *r)
+{
+	LOG("server open");
+	respond(r, nil);
+}
+
+
+void
+srvread(Req *r)
+{
+	LOG("server read");
+	respond(r, nil);
+}
+
+
+void
+srvwrite(Req *r)
+{
+	LOG("server write");
+	/* char cmd[256]; */
+	/* snprint(cmd, r->ifcall.count, "%s", r->ifcall.data); */
+	/* LOG("server cmd: %s", cmd); */
+	respond(r, nil);
+}
+
+
+Srv server = {
+	.open  = srvopen,
+	.read  = srvread,
+	.write = srvwrite,
+};
+
+
+int
+threadmaybackground(void)
+{
+	return 1;
+}
+
+
+void
+start_server(void)
+{
+	LOG("starting 9P server ...");
+	char *srvname = "ommrenderer";
+	char *mtpt = "/srv";
+	server.tree = alloctree(nil, nil, DMDIR|0777, nil);
+	// Workaround for the first directory entry not beeing visible (it exists and is readable/writable)
+	// This might be a bug in plan9port 9Pfile + fuse
+	createfile(server.tree->root, "dummy", nil, 0777, nil);
+	createfile(server.tree->root, "ctl", nil, 0777, nil);
+	/* srv(&server); */
+	if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0)
+		sysfatal("mountpoint %s does not exist", mtpt);
+	/* server.foreground = 1; */
+	threadpostmountsrv(&server, srvname, mtpt, MREPL|MCREATE);
+	/* threadexits(0); */
+	LOG("9P server started.");
+}
+
+
 static FILE *audio_out;
 
 void
@@ -330,6 +391,7 @@ threadmain(int argc, char **argv)
 		printHelp();
 		return;
 	}
+	start_server();
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
 	if (ret != 0) {
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
@@ -366,11 +428,8 @@ threadmain(int argc, char **argv)
 		av_free(renderer_ctx);
 		return;
 	}
-	start_server();
-
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
-
 	for (;;) {
 		yield();
 	    SDL_Event event;
@@ -413,68 +472,6 @@ void printHelp()
 {
 	printf("Invalid arguments.\n\n");
 	printf("Usage: renderer <filename> <max-frames-to-decode>\n\n");
-}
-
-
-void
-srvopen(Req *r)
-{
-	LOG("server open");
-	respond(r, nil);
-}
-
-
-void
-srvread(Req *r)
-{
-	LOG("server read");
-	respond(r, nil);
-}
-
-
-void
-srvwrite(Req *r)
-{
-	LOG("server write");
-	char cmd[256];
-	snprint(cmd, r->ifcall.count, "%s", r->ifcall.data);
-	LOG("server cmd: %s", cmd);
-	respond(r, nil);
-}
-
-
-Srv server = {
-	.open=	srvopen,
-	.read=	srvread,
-	.write=	srvwrite,
-};
-
-
-int
-threadmaybackground(void)
-{
-	return 1;
-}
-
-
-void
-start_server(void)
-{
-	LOG("starting 9P server ...");
-	char *srvname = "ommrenderer";
-	char *mtpt = "/srv";
-	server.tree = alloctree(nil, nil, DMDIR|0777, nil);
-	// Workaround for the first directory entry not beeing visible (it exists and is readable/writable)
-	// This might be a bug in plan9port 9Pfile + fuse
-	createfile(server.tree->root, "dummy", nil, 0777, nil);
-	createfile(server.tree->root, "ctl", nil, 0777, nil);
-	/* srv(&server); */
-	if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0)
-		sysfatal("mountpoint %s does not exist", mtpt);
-	/* server.foreground = 1; */
-	threadpostmountsrv(&server, srvname, mtpt, MREPL|MCREATE);
-	/* threadexits(0); */
-	LOG("9P server started.");
 }
 
 
