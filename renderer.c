@@ -231,7 +231,7 @@ void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
 void video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
 void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
 void decoder_thread(void *arg);
-void server_thread(void *arg);
+void start_server(void);
 int stream_component_open(RendererCtx * renderer_ctx, int stream_index);
 void video_thread(void *arg);
 void audio_thread(void *arg);
@@ -366,13 +366,8 @@ threadmain(int argc, char **argv)
 		av_free(renderer_ctx);
 		return;
 	}
-	renderer_ctx->server_tid = threadcreate(server_thread, renderer_ctx, THREAD_STACK_SIZE);
-	if (!renderer_ctx->server_tid) {
-		printf("Could not start server thread: %s.\n", SDL_GetError());
-		av_free(renderer_ctx);
-		return;
-	}
-	LOG("server thread created with id: %i", renderer_ctx->server_tid);
+	start_server();
+
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
 
@@ -407,9 +402,6 @@ threadmain(int argc, char **argv)
 			}
         }
 	}
-
-	/* server_thread(NULL); */
-
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
 	av_free(renderer_ctx);
@@ -466,25 +458,23 @@ threadmaybackground(void)
 
 
 void
-server_thread(void *arg)
+start_server(void)
 {
-	yield();
 	LOG("starting 9P server ...");
-	char *srvname = "OMM renderer";
+	char *srvname = "ommrenderer";
 	char *mtpt = "/srv";
-
 	fs.tree = alloctree(nil, nil, DMDIR|0777, nil);
-	// FIXME the first directory entry is not visible (but exists and is readable/writable)
+	// Workaround for the first directory entry not beeing visible (it exists and is readable/writable)
+	// This might be a bug in plan9port 9Pfile + fuse
 	createfile(fs.tree->root, "dummy", nil, 0777, nil);
 	createfile(fs.tree->root, "ctl", nil, 0777, nil);
-
 	/* srv(&fs); */
-
 	if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0)
 		sysfatal("mountpoint %s does not exist", mtpt);
 	/* fs.foreground = 1; */
 	threadpostmountsrv(&fs, srvname, mtpt, MREPL|MCREATE);
 	threadexits(0);
+	LOG("9P server started.");
 }
 
 
