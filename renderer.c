@@ -327,6 +327,7 @@ srvopen(Req *r)
 void
 srvread(Req *r)
 {
+	// FIXME read is called continuously, not only once
 	LOG("server read");
 	r->ofcall.count = 6;
 	r->ofcall.data = "hello\n";
@@ -337,6 +338,9 @@ srvread(Req *r)
 void
 srvwrite(Req *r)
 {
+	// FIXME write is called continuously, not only once
+	// FIXME write is not called when using fuse with "echo foo > /srv/ctl" 
+	//       but "echo foo | 9p write ommrenderer/ctl" works
 	LOG("server write");
 	char cmd[256];
 	snprint(cmd, r->ifcall.count, "%s", r->ifcall.data);
@@ -371,6 +375,9 @@ start_server(void)
 	createfile(server.tree->root, "dummy", nil, 0777, nil);
 	createfile(server.tree->root, "ctl", nil, 0777, nil);
 	/* srv(&server); */
+	/* postfd(srvname, server.srvfd); */
+	// Workaround for fuse not unmounting the service ... ? 
+	// ... the first access will fail but unmount it.
 	if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0)
 		sysfatal("mountpoint %s does not exist", mtpt);
 	/* server.foreground = 1; */
