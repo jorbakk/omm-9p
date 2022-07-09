@@ -370,49 +370,49 @@ threadmain(int argc, char **argv)
 		av_free(renderer_ctx);
 		return;
 	}
-	/* renderer_ctx->server_tid = threadcreate(server_thread, renderer_ctx, THREAD_STACK_SIZE); */
-	/* if (!renderer_ctx->server_tid) { */
-		/* printf("Could not start server thread: %s.\n", SDL_GetError()); */
-		/* av_free(renderer_ctx); */
-		/* return; */
-	/* } */
+	renderer_ctx->server_tid = threadcreate(server_thread, renderer_ctx, THREAD_STACK_SIZE);
+	if (!renderer_ctx->server_tid) {
+		printf("Could not start server thread: %s.\n", SDL_GetError());
+		av_free(renderer_ctx);
+		return;
+	}
 	LOG("server thread created with id: %i", renderer_ctx->server_tid);
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
 
-	/* for (;;) { */
-		/* yield(); */
-	    /* SDL_Event event; */
-        /* ret = SDL_PollEvent(&event); */
-        /* if (ret) { */
-			/* LOG("received sdl event"); */
-	        /* switch(event.type) */
-	        /* { */
-	            /* case SDL_KEYDOWN: */
-	            /* { */
-	                /* switch(event.key.keysym.sym) */
-	                /* { */
-	                    /* case SDLK_LEFT: */
-	                    /* { */
-							/* threadexitsall(0); */
-			                /* SDL_Quit(); */
-	                    /* } */
-	                    /* break; */
-	                /* } */
+	for (;;) {
+		yield();
+	    SDL_Event event;
+        ret = SDL_PollEvent(&event);
+        if (ret) {
+			LOG("received sdl event");
+	        switch(event.type)
+	        {
+	            case SDL_KEYDOWN:
+	            {
+	                switch(event.key.keysym.sym)
+	                {
+	                    case SDLK_LEFT:
+	                    {
+							threadexitsall(0);
+			                SDL_Quit();
+	                    }
+	                    break;
+	                }
 
-				/* } */
-				/* break; */
-	            /* case SDL_QUIT: */
-	            /* { */
-					/* threadexitsall(0); */
-	                /* SDL_Quit(); */
-	            /* } */
-	            /* break; */
-			/* } */
-        /* } */
-	/* } */
+				}
+				break;
+	            case SDL_QUIT:
+	            {
+					threadexitsall(0);
+	                SDL_Quit();
+	            }
+	            break;
+			}
+        }
+	}
 
-	server_thread(NULL);
+	/* server_thread(NULL); */
 
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
