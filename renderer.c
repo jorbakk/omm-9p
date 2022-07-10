@@ -114,9 +114,9 @@ typedef struct RendererCtx
 	unsigned int       audio_buf_index;
 	AVFrame            audio_frame;
 	AVPacket           audio_pkt;
-	uint8_t *          audio_pkt_data;
-	int                audio_pkt_size;
-	double             audio_clock;
+	/* uint8_t *          audio_pkt_data; */
+	/* int                audio_pkt_size; */
+	/* double             audio_clock; */
 	int                audio_idx;
 	double             audio_pts;
 	double             current_audio_pts;
@@ -131,24 +131,24 @@ typedef struct RendererCtx
 	Channel           *pictq;
 	struct SwsContext *sws_ctx;
 	struct SwsContext *rgb_ctx;
-	double             frame_timer;
-	double             frame_last_pts;
-	double             frame_last_delay;
-	double             video_clock;
-	double             video_current_pts;
-	int64_t            video_current_pts_time;
-	double             audio_diff_cum;
-	double             audio_diff_avg_coef;
-	double             audio_diff_threshold;
-	int                audio_diff_avg_count;
+	/* double             frame_timer; */
+	/* double             frame_last_pts; */
+	/* double             frame_last_delay; */
+	/* double             video_clock; */
+	/* double             video_current_pts; */
+	/* int64_t            video_current_pts_time; */
+	/* double             audio_diff_cum; */
+	/* double             audio_diff_avg_coef; */
+	/* double             audio_diff_threshold; */
+	/* int                audio_diff_avg_count; */
 
 	SDL_AudioSpec      specs;
 	int                video_idx;
 	double             video_pts;
 	// AV Sync
-	int	               av_sync_type;
-	double             external_clock;
-	int64_t            external_clock_time;
+	/* int	               av_sync_type; */
+	/* double             external_clock; */
+	/* int64_t            external_clock_time; */
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
@@ -414,7 +414,7 @@ threadmain(int argc, char **argv)
 	// parse max frames to decode input by the user
 	char * pEnd;
 	renderer_ctx->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
-	renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE;
+	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
 	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
 	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
 	renderer_ctx->video_ctx = NULL;
@@ -959,9 +959,9 @@ stream_component_open(RendererCtx * renderer_ctx, int stream_index)
 			renderer_ctx->video_ctx = codecCtx;
 			// Initialize the frame timer and the initial
 			// previous frame delay: 1ms = 1e-6s
-			renderer_ctx->frame_timer = (double)av_gettime() / 1000000.0;
-			renderer_ctx->frame_last_delay = 40e-3;
-			renderer_ctx->video_current_pts_time = av_gettime();
+			/* renderer_ctx->frame_timer = (double)av_gettime() / 1000000.0; */
+			/* renderer_ctx->frame_last_delay = 40e-3; */
+			/* renderer_ctx->video_current_pts_time = av_gettime(); */
 			/* renderer_ctx->videoq = chancreate(sizeof(AVPacket*), MAX_VIDEOQ_SIZE); */
 			/* renderer_ctx->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
 			/* renderer_ctx->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE); */
