@@ -252,8 +252,8 @@ enum
 
 SDL_Window *sdl_window;
 /* AVPacket flush_pkt; */
-char *addr = "tcp!localhost!5640";
-char *aname;
+/* char *addr = "tcp!localhost!5640"; */
+/* char *aname = NULL; */
 
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
 void video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
@@ -297,49 +297,76 @@ demuxerPacketSeek(void *fid, int64_t offset, int whence)
 }
 
 
+/* CFsys* */
+/* xparse(char *name, char **path) */
+/* { */
+	/* int fd; */
+	/* char *p; */
+	/* CFsys *fs; */
+
+	/* if (addr == nil) { */
+		/* p = strchr(name, '/'); */
+		/* if(p == nil) */
+			/* p = name + strlen(name); */
+		/* else */
+			/* *p++ = 0; */
+		/* *path = p; */
+		/* fs = nsmnt(name, aname); */
+		/* if(fs == nil) */
+			/* sysfatal("mount: %r"); */
+	/* } */
+	/* else { */
+		/* LOG("setting path to: %s", name); */
+		/* *path = name; */
+		/* LOG("dialing address: %s ...", addr); */
+		/* if ((fd = dial(addr, nil, nil, nil)) < 0) */
+			/* sysfatal("dial: %r"); */
+		/* LOG("mounting address ..."); */
+		/* if ((fs = fsmnt(fd, aname)) == nil) */
+			/* sysfatal("mount: %r"); */
+	/* } */
+	/* return fs; */
+/* } */
+
+
+/* CFid* */
+/* xopen(char *name, int mode) */
+/* { */
+	/* CFid *fid; */
+	/* CFsys *fs; */
+
+	/* fs = xparse(name, &name); */
+	/* LOG("opening: %s", name); */
+	/* fid = fsopen(fs, name, mode); */
+	/* if (fid == nil) */
+		/* sysfatal("fsopen %s: %r", name); */
+	/* return fid; */
+/* } */
+
+
 CFsys*
-xparse(char *name, char **path)
+clientdial(char *addr)
 {
 	int fd;
-	char *p;
 	CFsys *fs;
 
-	if (addr == nil) {
-		p = strchr(name, '/');
-		if(p == nil)
-			p = name + strlen(name);
-		else
-			*p++ = 0;
-		*path = p;
-		fs = nsmnt(name, aname);
-		if(fs == nil)
-			sysfatal("mount: %r");
-	}
-	else {
-		LOG("setting path to: %s", name);
-		*path = name;
-		LOG("dialing address: %s ...", addr);
-		if ((fd = dial(addr, nil, nil, nil)) < 0)
-			sysfatal("dial: %r");
-		LOG("mounting address ...");
-		if ((fs = fsmnt(fd, aname)) == nil)
-			sysfatal("mount: %r");
-	}
+	LOG("dialing address: %s ...", addr);
+	if ((fd = dial(addr, nil, nil, nil)) < 0)
+		sysfatal("dial: %r");
+	LOG("mounting address ...");
+	if ((fs = fsmnt(fd, nil)) == nil)
+		sysfatal("mount: %r");
 	return fs;
 }
 
 
 CFid*
-xopen(char *name, int mode)
+clientopen(CFsys *fs, char *name, int mode)
 {
 	CFid *fid;
-	CFsys *fs;
 
-	fs = xparse(name, &name);
 	LOG("opening: %s", name);
 	fid = fsopen(fs, name, mode);
-	if (fid == nil)
-		sysfatal("fsopen %s: %r", name);
 	return fid;
 }
 
@@ -543,7 +570,9 @@ decoder_thread(void *arg)
 {
 	RendererCtx * renderer_ctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
-	// Set up 9P connection
+	LOG("opening 9P connection ...");
+	CFsys *fileserver = clientdial("tcp!localhost!5640");
+	start:
 	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
 		LOG("renderer stopped or no av stream file specified, waiting for command ...");
 		Command cmd;
@@ -564,8 +593,13 @@ decoder_thread(void *arg)
 			LOG("failed to receive command");
 		}
 	}
-	LOG("opening 9P connection ...");
-	CFid *fid = xopen(renderer_ctx->filename, OREAD);
+	LOG("opening 9P file ...");
+	CFid *fid = clientopen(fileserver, renderer_ctx->filename, OREAD);
+	/* CFid *fid = xopen(renderer_ctx->filename, OREAD); */
+	if (fid == nil) {
+		renderer_ctx->renderer_state = RSTATE_STOP;
+		goto start;
+	}
 	renderer_ctx->fid = fid;
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
@@ -590,7 +624,15 @@ decoder_thread(void *arg)
 	LOG("opening stream input ...");
 	int ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
 	if (ret < 0) {
-		sysfatal("Could not open file %s", renderer_ctx->filename);
+		LOG("Could not open file %s", renderer_ctx->filename);
+		if (pIOCtx) {
+			avio_context_free(&pIOCtx);
+		}
+		avformat_close_input(&pFormatCtx);
+		if (pFormatCtx) {
+			avformat_free_context(pFormatCtx);
+		}
+		goto start;
 	}
 	LOG("opened stream input");
 	// reset stream indexes
@@ -619,37 +661,37 @@ decoder_thread(void *arg)
 	}
 	if (videoStream == -1) {
 		LOG("Could not find video stream.");
-		/* goto fail; */
+		/* goto quit; */
 	}
 	else {
 		ret = stream_component_open(renderer_ctx, videoStream);
 		if (ret < 0) {
 			printf("Could not open video codec.\n");
-			goto fail;
+			goto quit;
 		}
 		LOG("video stream component opened successfully.");
 	}
 	if (audioStream == -1) {
 		LOG("Could not find audio stream.");
-		/* goto fail; */
+		/* goto quit; */
 	}
 	else {
 		ret = stream_component_open(renderer_ctx, audioStream);
 		// check audio codec was opened correctly
 		if (ret < 0) {
 			LOG("Could not open audio codec.");
-			goto fail;
+			goto quit;
 		}
 		LOG("audio stream component opened successfully.");
 	}
 	if (renderer_ctx->videoStream < 0 && renderer_ctx->audioStream < 0) {
 		LOG("both video and audio stream missing");
-		goto fail;
+		goto quit;
 	}
 	AVPacket *packet = av_packet_alloc();
 	if (packet == NULL) {
 		LOG("Could not allocate AVPacket.");
-		goto fail;
+		goto quit;
 	}
 	static AVFrame *pFrame = NULL;
 	pFrame = av_frame_alloc();
@@ -926,6 +968,8 @@ decoder_thread(void *arg)
 		av_packet_unref(packet);
 		av_frame_unref(pFrame);
 	}
+
+	quit:
 	// Clean up the decoder thread
 	if (pIOCtx) {
 		avio_context_free(&pIOCtx);
@@ -947,11 +991,6 @@ decoder_thread(void *arg)
 	// in case of failure, push the FF_QUIT_EVENT and return
 	LOG("quitting demuxer thread");
 	threadexitsall("end of file");
-	fail:
-	{
-		// create a quit event
-		return;
-	};
 }
 
 
