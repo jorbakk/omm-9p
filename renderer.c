@@ -435,9 +435,6 @@ threadmain(int argc, char **argv)
 	renderer_ctx->video_idx = 0;
 	renderer_ctx->video_pts = 0;
 	renderer_ctx->audio_only = 0;
-	// Create picture and audio sample queue
-	/* renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE); */
-	/* renderer_ctx->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE); */
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
 	renderer_ctx->decoder_tid = threadcreate(decoder_thread, renderer_ctx, THREAD_STACK_SIZE);
@@ -450,34 +447,34 @@ threadmain(int argc, char **argv)
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
 	for (;;) {
 		yield();
-	    SDL_Event event;
-        ret = SDL_PollEvent(&event);
-        if (ret) {
+		SDL_Event event;
+		ret = SDL_PollEvent(&event);
+		if (ret) {
 			LOG("received sdl event");
-	        switch(event.type)
-	        {
-	            case SDL_KEYDOWN:
-	            {
-	                switch(event.key.keysym.sym)
-	                {
-	                    case SDLK_LEFT:
-	                    {
+			switch(event.type)
+			{
+				case SDL_KEYDOWN:
+				{
+					switch(event.key.keysym.sym)
+					{
+						case SDLK_LEFT:
+						{
 							threadexitsall(0);
-			                SDL_Quit();
-	                    }
-	                    break;
-	                }
+							SDL_Quit();
+						}
+						break;
+					}
 
 				}
 				break;
-	            case SDL_QUIT:
-	            {
+				case SDL_QUIT:
+				{
 					threadexitsall(0);
-	                SDL_Quit();
-	            }
-	            break;
+					SDL_Quit();
+				}
+				break;
 			}
-        }
+		}
 	}
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
