@@ -83,6 +83,8 @@ void printloginfo(void)
 #define _DEBUG_ 1
 #define SDL_AUDIO_BUFFER_SIZE 1024
 #define MAX_AUDIO_FRAME_SIZE 192000
+#define MAX_CMD_STR_LEN 256
+#define MAX_COMMANDQ_SIZE (5)
 #define MAX_AUDIOQ_SIZE (5 * 16 * 1024)
 #define MAX_VIDEOQ_SIZE (5 * 256 * 1024)
 #define AV_SYNC_THRESHOLD 0.01
@@ -104,6 +106,7 @@ typedef struct RendererCtx
 {
 	AVFormatContext  *pFormatCtx;
 	int               renderer_state;
+	Channel          *cmdq;
 
 	// Audio Stream.
 	int                audioStream;
@@ -128,7 +131,7 @@ typedef struct RendererCtx
 	AVCodecContext    *video_ctx;
 	SDL_Texture       *texture;
 	SDL_Renderer      *renderer;
-	Channel           *videoq;
+	/* Channel           *videoq; */
 	Channel           *pictq;
 	struct SwsContext *sws_ctx;
 	struct SwsContext *rgb_ctx;
@@ -187,29 +190,36 @@ typedef struct AudioResamplingState
 
 } AudioResamplingState;
 
+typedef struct Command
+{
+	int         cmd;
+	char       *arg;
+	int         narg;
+} Command;
+
 typedef struct VideoPicture
 {
-    AVFrame *   frame;
-    uint8_t     *rgbbuf;
-    int         linesize;
-    /* uint8_t     *planes[AV_NUM_DATA_POINTERS]; */
-    /* int         linesizes[AV_NUM_DATA_POINTERS]; */
-    uint8_t     *planes[4];
-    int         linesizes[4];
-    int         width;
-    int         height;
-    int         pix_fmt;
-    double      pts;
-    int         idx;
+	AVFrame    *frame;
+	uint8_t    *rgbbuf;
+	int         linesize;
+	/* uint8_t     *planes[AV_NUM_DATA_POINTERS]; */
+	/* int         linesizes[AV_NUM_DATA_POINTERS]; */
+	uint8_t    *planes[4];
+	int         linesizes[4];
+	int         width;
+	int         height;
+	int         pix_fmt;
+	double      pts;
+	int         idx;
 } VideoPicture;
 
 typedef struct AudioSample
 {
 	/* uint8_t			 sample[(MAX_AUDIO_FRAME_SIZE * 3) /2]; */
-	uint8_t	*sample;
-	int size;
-	int idx;
-	double pts;
+	uint8_t	   *sample;
+	int         size;
+	int         idx;
+	double      pts;
 } AudioSample;
 
 enum
@@ -218,6 +228,16 @@ enum
 	RSTATE_STOP,
 	RSTATE_PLAY,
 	RSTATE_PAUSE,
+};
+
+enum
+{
+	CMD_QUIT,
+	CMD_STOP,
+	CMD_PLAY,
+	CMD_PAUSE,
+	CMD_SET,
+	CMD_NONE,
 };
 
 enum
@@ -349,9 +369,40 @@ srvwrite(Req *r)
 	// FIXME write is not called when using fuse with "echo foo > /srv/ctl" 
 	//       but "echo foo | 9p write ommrenderer/ctl" works
 	LOG("server write");
-	char cmd[256];
-	snprint(cmd, r->ifcall.count, "%s", r->ifcall.data);
-	LOG("server cmd: %s", cmd);
+	Command command;
+	char cmdstr[MAX_CMD_STR_LEN];
+	snprint(cmdstr, r->ifcall.count, "%s", r->ifcall.data);
+	int cmdlen = r->ifcall.count;
+	int arglen = 0;
+	char* argstr = strchr(cmdstr, ' ');
+	if (argstr != NULL) {
+		cmdlen = argstr - cmdstr;
+		arglen = r->ifcall.count - cmdlen + 1;
+		*argstr = '\0';
+		argstr++;
+		LOG("server cmd: %s, arg: %s", cmdstr, argstr);
+		command.narg = arglen;
+		command.arg = malloc(arglen);
+		memcpy(command.arg, argstr, arglen);
+	}
+	else {
+		LOG("server cmd: %s", cmdstr);
+	}
+	command.cmd = CMD_NONE;
+	if (strncmp(cmdstr, "set", 3) == 0) {
+		command.cmd = CMD_SET;
+	}
+	else if (strncmp(cmdstr, "play", 4) == 0) {
+		command.cmd = CMD_PLAY;
+	}
+	RendererCtx *renderer_ctx = r->fid->file->aux;
+	if (renderer_ctx) {
+		LOG("sending command: %d ...", command.cmd);
+		send(renderer_ctx->cmdq, &command);
+	}
+	else {
+		LOG("server file has no renderer context");
+	}
 	r->ofcall.count = r->ifcall.count;
 	respond(r, nil);
 }
@@ -372,7 +423,7 @@ threadmaybackground(void)
 
 
 void
-start_server(void)
+start_server(RendererCtx *renderer_ctx)
 {
 	LOG("starting 9P server ...");
 	char *srvname = "ommrenderer";
@@ -382,7 +433,9 @@ start_server(void)
 	// Workaround for the first directory entry not beeing visible (it exists and is readable/writable)
 	// This might be a bug in plan9port 9Pfile + fuse
 	/* createfile(server.tree->root, "dummy", nil, 0777, nil); */
-	createfile(server.tree->root, "ctl", nil, 0777, nil);
+	/* File *f = createfile(server.tree->root, "ctl", nil, 0777, nil); */
+	createfile(server.tree->root, "ctl", nil, 0777, renderer_ctx);
+	/* f->aux = renderer_ctx; */
 	/* srv(&server); */
 	/* postfd(srvname, server.srvfd); */
 	// Workaround for fuse not unmounting the service ... ? 
@@ -405,18 +458,19 @@ threadmain(int argc, char **argv)
 		chatty9pclient = 1;
 		/* chattyfuse = 1; */
 	}
-	start_server();
+	RendererCtx *renderer_ctx = av_mallocz(sizeof(RendererCtx));
+	start_server(renderer_ctx);
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (ret != 0) {
 		printf("Could not initialize SDL - %s\n.", SDL_GetError());
 		return;
 	}
-	RendererCtx *renderer_ctx = av_mallocz(sizeof(RendererCtx));
 	// copy the file name input by the user to the RendererCtx structure
 	renderer_ctx->filename = NULL;
 	if (argc >= 2) {
-		renderer_ctx->filename = argv[1];
+		int narg = strlen(argv[1]);
+		memcpy(renderer_ctx->filename, argv[1], narg);
 	}
 	// parse max frames to decode input by the user
 	char * pEnd;
@@ -435,6 +489,7 @@ threadmain(int argc, char **argv)
 	renderer_ctx->video_idx = 0;
 	renderer_ctx->video_pts = 0;
 	renderer_ctx->audio_only = 0;
+	renderer_ctx->cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
 	renderer_ctx->decoder_tid = threadcreate(decoder_thread, renderer_ctx, THREAD_STACK_SIZE);
@@ -489,9 +544,25 @@ decoder_thread(void *arg)
 	RendererCtx * renderer_ctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
 	// Set up 9P connection
-	if (!renderer_ctx->filename) {
-		LOG("no av stream file specified");
-		return;
+	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
+		LOG("renderer stopped or no av stream file specified, waiting for command ...");
+		Command cmd;
+		int cmdret = recv(renderer_ctx->cmdq, &cmd);
+		if (cmdret == 1) {
+			LOG("<== received command: %d", cmd.cmd);
+			if (cmd.cmd == CMD_SET) {
+				free(renderer_ctx->filename);
+				renderer_ctx->filename = malloc(cmd.narg);
+				memcpy(renderer_ctx->filename, cmd.arg, cmd.narg);
+				free(cmd.arg);
+			}
+			else if (cmd.cmd == CMD_PLAY) {
+				renderer_ctx->renderer_state = RSTATE_PLAY;
+			}
+		}
+		else {
+			LOG("failed to receive command");
+		}
 	}
 	LOG("opening 9P connection ...");
 	CFid *fid = xopen(renderer_ctx->filename, OREAD);
@@ -863,9 +934,9 @@ decoder_thread(void *arg)
 	if (pFormatCtx) {
 		avformat_free_context(pFormatCtx);
 	}
-	if (renderer_ctx->videoq) {
-		chanfree(renderer_ctx->videoq);
-	}
+	/* if (renderer_ctx->videoq) { */
+		/* chanfree(renderer_ctx->videoq); */
+	/* } */
 	if (renderer_ctx->audioq) {
 		chanfree(renderer_ctx->audioq);
 	}
