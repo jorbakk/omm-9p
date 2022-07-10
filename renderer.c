@@ -160,7 +160,7 @@ typedef struct RendererCtx
 	int                video_tid;
 	int                audio_tid;
 	// Input file name and plan 9 file reference
-	char               filename[1024];
+	char              *filename;
 	CFid              *fid;
 	// Quit flag
 	int                quit;
@@ -406,10 +406,10 @@ threadmain(int argc, char **argv)
 		chatty9pclient = 1;
 		/* chattyfuse = 1; */
 	}
-	if (argc != 3) {
-		printHelp();
-		return;
-	}
+	/* if (argc != 3) { */
+		/* printHelp(); */
+		/* return; */
+	/* } */
 	start_server();
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
@@ -419,10 +419,16 @@ threadmain(int argc, char **argv)
 	}
 	RendererCtx *renderer_ctx = av_mallocz(sizeof(RendererCtx));
 	// copy the file name input by the user to the RendererCtx structure
-	av_strlcpy(renderer_ctx->filename, argv[1], sizeof(renderer_ctx->filename));
+	renderer_ctx->filename = NULL;
+	if (argc >= 2) {
+		renderer_ctx->filename = argv[1];
+	}
 	// parse max frames to decode input by the user
 	char * pEnd;
-	renderer_ctx->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
+	renderer_ctx->maxFramesToDecode = 0;
+	if (argc == 3) {
+		renderer_ctx->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
+	}
 	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
 	renderer_ctx->renderer_state = RSTATE_STOP;
 	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
@@ -434,10 +440,6 @@ threadmain(int argc, char **argv)
 	renderer_ctx->video_idx = 0;
 	renderer_ctx->video_pts = 0;
 	renderer_ctx->audio_only = 0;
-	// Set up 9P connection
-	LOG("opening 9P connection ...");
-	CFid *fid = xopen(renderer_ctx->filename, OREAD);
-	renderer_ctx->fid = fid;
 	// Create picture and audio sample queue
 	/* renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE); */
 	/* renderer_ctx->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE); */
@@ -489,11 +491,11 @@ threadmain(int argc, char **argv)
 }
 
 
-void printHelp()
-{
-	printf("Invalid arguments.\n\n");
-	printf("Usage: renderer <filename> <max-frames-to-decode>\n\n");
-}
+/* void printHelp() */
+/* { */
+	/* printf("Invalid arguments.\n\n"); */
+	/* printf("Usage: renderer <filename> <max-frames-to-decode>\n\n"); */
+/* } */
 
 
 void
@@ -501,6 +503,14 @@ decoder_thread(void *arg)
 {
 	RendererCtx * renderer_ctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
+	// Set up 9P connection
+	if (!renderer_ctx->filename) {
+		LOG("no av stream file specified");
+		return;
+	}
+	LOG("opening 9P connection ...");
+	CFid *fid = xopen(renderer_ctx->filename, OREAD);
+	renderer_ctx->fid = fid;
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
@@ -815,7 +825,7 @@ decoder_thread(void *arg)
 				}
 			}
 			else if (codecCtx == renderer_ctx->audio_ctx) {
-				if (renderer_ctx->audio_idx > renderer_ctx->maxFramesToDecode) {
+				if (renderer_ctx->maxFramesToDecode && renderer_ctx->audio_idx > renderer_ctx->maxFramesToDecode) {
 					LOG("max frames reached");
 					threadexitsall("max frames reached");
 				}
