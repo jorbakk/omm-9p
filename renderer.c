@@ -594,6 +594,9 @@ decoder_thread(void *arg)
 			else if (cmd.cmd == CMD_PLAY) {
 				renderer_ctx->renderer_state = RSTATE_PLAY;
 			}
+			else if (cmd.cmd == CMD_QUIT) {
+				goto quit;
+			}
 		}
 		else {
 			LOG("failed to receive command");
@@ -753,6 +756,9 @@ decoder_thread(void *arg)
 						LOG("<== received command: %d", cmd.cmd);
 						cmdret = recv(renderer_ctx->cmdq, &cmd);
 					}
+				}
+				else if (cmd.cmd == CMD_QUIT) {
+					goto quit;
 				}
 			}
 		}
