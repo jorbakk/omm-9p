@@ -22,13 +22,12 @@
 
 
 // TODO:
-// 1. AV sync
+// 1. Keep video window open and resize videos
+// 2. AV sync
 // - improve video smootheness (orange.ts)
 // - remove audio delay (caused by samples in sdl queue?!)
 // - fix 5.1 audio tracks playing faster
-// 2. Keyboard events
-// - either use Plan 9 libdraw + SDL or integrate SDL Events into Plan 9 Channels
-// 3. 9P control server
+// 3. Seek
 
 // Thread layout:
 //   main_thread (event loop)
@@ -544,26 +543,47 @@ threadmain(int argc, char **argv)
 		ret = SDL_PollEvent(&event);
 		if (ret) {
 			LOG("received sdl event");
+			Command cmd;
+			cmd.cmd = CMD_NONE;
 			switch(event.type)
 			{
 				case SDL_KEYDOWN:
 				{
 					switch(event.key.keysym.sym)
 					{
-						case SDLK_LEFT:
+						case SDLK_q:
 						{
-							threadexitsall(0);
-							SDL_Quit();
+							cmd.cmd = CMD_QUIT;
 						}
 						break;
+						case SDLK_SPACE:
+						{
+							cmd.cmd = CMD_PAUSE;
+						}
+						break;
+						case SDLK_s:
+						case SDLK_ESCAPE:
+						{
+							cmd.cmd = CMD_STOP;
+						}
+						break;
+						case SDLK_p:
+						case SDLK_RETURN:
+						{
+							cmd.cmd = CMD_PLAY;
+						}
+						break;
+					}
+					if (cmd.cmd != CMD_NONE) {
+						send(renderer_ctx->cmdq, &cmd);
 					}
 
 				}
 				break;
 				case SDL_QUIT:
 				{
-					threadexitsall(0);
-					SDL_Quit();
+					cmd.cmd = CMD_QUIT;
+					send(renderer_ctx->cmdq, &cmd);
 				}
 				break;
 			}
