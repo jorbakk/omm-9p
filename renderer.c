@@ -103,6 +103,7 @@ void printloginfo(void)
 typedef struct RendererCtx
 {
 	AVFormatContext  *pFormatCtx;
+	int               renderer_state;
 
 	// Audio Stream.
 	int                audioStream;
@@ -210,6 +211,14 @@ typedef struct AudioSample
 	int idx;
 	double pts;
 } AudioSample;
+
+enum
+{
+	RSTATE_QUIT,
+	RSTATE_STOP,
+	RSTATE_PLAY,
+	RSTATE_PAUSE,
+};
 
 enum
 {
@@ -415,6 +424,7 @@ threadmain(int argc, char **argv)
 	char * pEnd;
 	renderer_ctx->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
 	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
+	renderer_ctx->renderer_state = RSTATE_STOP;
 	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
 	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
 	renderer_ctx->video_ctx = NULL;
