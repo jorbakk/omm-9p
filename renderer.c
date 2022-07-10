@@ -757,6 +757,10 @@ decoder_thread(void *arg)
 						cmdret = recv(renderer_ctx->cmdq, &cmd);
 					}
 				}
+				else if (cmd.cmd == CMD_STOP) {
+					renderer_ctx->renderer_state = RSTATE_STOP;
+					goto start;
+				}
 				else if (cmd.cmd == CMD_QUIT) {
 					goto quit;
 				}
