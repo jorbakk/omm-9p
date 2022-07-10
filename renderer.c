@@ -507,6 +507,7 @@ threadmain(int argc, char **argv)
 	renderer_ctx->filename = NULL;
 	if (argc >= 2) {
 		int narg = strlen(argv[1]);
+		renderer_ctx->filename = malloc(narg);
 		memcpy(renderer_ctx->filename, argv[1], narg);
 	}
 	// parse max frames to decode input by the user
