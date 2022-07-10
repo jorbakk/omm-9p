@@ -131,7 +131,6 @@ typedef struct RendererCtx
 	AVCodecContext    *video_ctx;
 	SDL_Texture       *texture;
 	SDL_Renderer      *renderer;
-	/* Channel           *videoq; */
 	Channel           *pictq;
 	struct SwsContext *sws_ctx;
 	struct SwsContext *rgb_ctx;
@@ -165,8 +164,6 @@ typedef struct RendererCtx
 	// Input file name and plan 9 file reference
 	char              *filename;
 	CFid              *fid;
-	// Quit flag
-	int                quit;
 	// Maximum number of frames to be decoded
 	long               maxFramesToDecode;
 	int	               currentFrameIndex;
@@ -421,6 +418,15 @@ srvwrite(Req *r)
 	}
 	else if (strncmp(cmdstr, "play", 4) == 0) {
 		command.cmd = CMD_PLAY;
+	}
+	else if (strncmp(cmdstr, "pause", 5) == 0) {
+		command.cmd = CMD_PAUSE;
+	}
+	else if (strncmp(cmdstr, "stop", 4) == 0) {
+		command.cmd = CMD_STOP;
+	}
+	else if (strncmp(cmdstr, "quit", 4) == 0) {
+		command.cmd = CMD_QUIT;
 	}
 	RendererCtx *renderer_ctx = r->fid->file->aux;
 	if (renderer_ctx) {
@@ -736,23 +742,29 @@ decoder_thread(void *arg)
 
 	// Main decoder loop
 	for (;;) {
-		if (renderer_ctx->quit) {
-			break;
+		if (renderer_ctx->renderer_state == RSTATE_PLAY) {
+			Command cmd;
+			int cmdret = nbrecv(renderer_ctx->cmdq, &cmd);
+			if (cmdret == 1) {
+				LOG("<== received command: %d", cmd.cmd);
+				if (cmd.cmd == CMD_PAUSE) {
+					cmdret = recv(renderer_ctx->cmdq, &cmd);
+					while (cmdret != 1 || cmd.cmd != CMD_PAUSE) {
+						LOG("<== received command: %d", cmd.cmd);
+						cmdret = recv(renderer_ctx->cmdq, &cmd);
+					}
+				}
+			}
 		}
 		int demuxer_ret = av_read_frame(renderer_ctx->pFormatCtx, packet);
 		LOG("read av packet of size: %i", packet->size);
 		if (demuxer_ret < 0) {
 			LOG("failed to read av packet: %s", av_err2str(demuxer_ret));
 			if (demuxer_ret == AVERROR_EOF) {
+				// media EOF reached
 				LOG("EOF");
-				// media EOF reached, quit
-				renderer_ctx->quit = 1;
-				break;
 			}
-			else {
-				// exit for loop in case of error
-				break;
-			}
+			goto quit;
 		}
 		if (packet->size == 0) {
 			LOG("packet size is zero, exiting demuxer thread");
