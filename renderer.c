@@ -221,18 +221,20 @@ typedef struct AudioSample
 
 enum
 {
-	RSTATE_QUIT,
 	RSTATE_STOP,
 	RSTATE_PLAY,
 	RSTATE_PAUSE,
+	RSTATE_SEEK,
+	RSTATE_QUIT,
 };
 
 enum
 {
-	CMD_QUIT,
 	CMD_STOP,
 	CMD_PLAY,
 	CMD_PAUSE,
+	CMD_SEEK,
+	CMD_QUIT,
 	CMD_SET,
 	CMD_NONE,
 };
@@ -416,14 +418,17 @@ srvwrite(Req *r)
 	if (strncmp(cmdstr, "set", 3) == 0) {
 		command.cmd = CMD_SET;
 	}
+	else if (strncmp(cmdstr, "stop", 4) == 0) {
+		command.cmd = CMD_STOP;
+	}
 	else if (strncmp(cmdstr, "play", 4) == 0) {
 		command.cmd = CMD_PLAY;
 	}
 	else if (strncmp(cmdstr, "pause", 5) == 0) {
 		command.cmd = CMD_PAUSE;
 	}
-	else if (strncmp(cmdstr, "stop", 4) == 0) {
-		command.cmd = CMD_STOP;
+	else if (strncmp(cmdstr, "seek", 4) == 0) {
+		command.cmd = CMD_SEEK;
 	}
 	else if (strncmp(cmdstr, "quit", 4) == 0) {
 		command.cmd = CMD_QUIT;
@@ -751,11 +756,13 @@ decoder_thread(void *arg)
 			if (cmdret == 1) {
 				LOG("<== received command: %d", cmd.cmd);
 				if (cmd.cmd == CMD_PAUSE) {
+					renderer_ctx->renderer_state = RSTATE_PAUSE;
 					cmdret = recv(renderer_ctx->cmdq, &cmd);
 					while (cmdret != 1 || cmd.cmd != CMD_PAUSE) {
 						LOG("<== received command: %d", cmd.cmd);
 						cmdret = recv(renderer_ctx->cmdq, &cmd);
 					}
+					renderer_ctx->renderer_state = RSTATE_PLAY;
 				}
 				else if (cmd.cmd == CMD_STOP) {
 					renderer_ctx->renderer_state = RSTATE_STOP;
@@ -993,6 +1000,7 @@ decoder_thread(void *arg)
 	}
 
 	quit:
+	renderer_ctx->renderer_state = RSTATE_QUIT;
 	// Clean up the decoder thread
 	if (pIOCtx) {
 		avio_context_free(&pIOCtx);
