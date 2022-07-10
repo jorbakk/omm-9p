@@ -235,7 +235,6 @@ SDL_Window *sdl_window;
 char *addr = "tcp!localhost!5640";
 char *aname;
 
-void printHelp();
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
 void video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
 void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
@@ -406,10 +405,6 @@ threadmain(int argc, char **argv)
 		chatty9pclient = 1;
 		/* chattyfuse = 1; */
 	}
-	/* if (argc != 3) { */
-		/* printHelp(); */
-		/* return; */
-	/* } */
 	start_server();
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
@@ -489,13 +484,6 @@ threadmain(int argc, char **argv)
 	av_free(renderer_ctx);
 	return;
 }
-
-
-/* void printHelp() */
-/* { */
-	/* printf("Invalid arguments.\n\n"); */
-	/* printf("Usage: renderer <filename> <max-frames-to-decode>\n\n"); */
-/* } */
 
 
 void
