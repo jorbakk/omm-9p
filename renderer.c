@@ -770,7 +770,8 @@ decoder_thread(void *arg)
 				// media EOF reached
 				LOG("EOF");
 			}
-			goto quit;
+			renderer_ctx->renderer_state = RSTATE_STOP;
+			goto start;
 		}
 		if (packet->size == 0) {
 			LOG("packet size is zero, exiting demuxer thread");
