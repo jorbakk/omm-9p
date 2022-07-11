@@ -34,7 +34,7 @@
 // 4. Blanking screen on stop/eof doesn't work allways
 // 5. High cpu load in stop/pause state
 // 6. Fixes / refactoring
-// - move scaling video from decoder thread to video thread
+// - move video scaling from decoder thread to video thread
 // - test keyboard / server input (fuzz testing ...)
 // 7. Experiment with serving video and audio output channels via the 9P server
 // 8. Build renderer into drawterm-av
@@ -504,7 +504,7 @@ start_server(RendererCtx *renderer_ctx)
 void
 blank_window(RendererCtx *renderer_ctx)
 {
-	SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, 255);
+	SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 	SDL_RenderClear(renderer_ctx->renderer);
 	SDL_RenderPresent(renderer_ctx->renderer);
 }
@@ -1422,7 +1422,7 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 			LOG("failed to update sdl texture: %s", SDL_GetError());
 		}
 		// clear the current rendering target with the drawing color
-		SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, 255);  // FIXME needed ...?
+		SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
 		SDL_RenderClear(renderer_ctx->renderer);
 		// copy a portion of the texture to the current rendering target
 		SDL_RenderCopy(renderer_ctx->renderer, renderer_ctx->texture, NULL, NULL);
