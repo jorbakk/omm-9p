@@ -22,7 +22,7 @@
 
 
 // TODO:
-// 1. Keep video window open and resize videos
+// 1. SDL video window
 // - center and crop video in sdl window
 // - redraw, resize sdl window
 // - fullscreen mode
@@ -31,8 +31,13 @@
 // - improve video smootheness (orange.ts)
 // - fix 5.1 audio tracks playing faster
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
-// 4. High cpu load in stop/pause state
-// 5. Blanking screen on stop/eof doesn't work allways
+// 4. Blanking screen on stop/eof doesn't work allways
+// 5. High cpu load in stop/pause state
+// 6. Fixes / refactoring
+// - move scaling video from decoder thread to video thread
+// - test keyboard / server input (fuzz testing ...)
+// 7. Experiment with serving video and audio output channels via the 9P server
+// 8. Build renderer into drawterm-av
 
 // Thread layout:
 //   main_thread (event loop)
