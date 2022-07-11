@@ -528,18 +528,16 @@ threadmain(int argc, char **argv)
 	}
 	renderer_ctx->screen_width  = DM.w;
 	renderer_ctx->screen_height = DM.h;
-	renderer_ctx->window_width  = DM.w;
-	renderer_ctx->window_height = DM.h;
-	/* renderer_ctx->window_width  = 800; */
-	/* renderer_ctx->window_height = 600; */
+	int requested_window_width  = 800;
+	int requested_window_height = 600;
 	if (!sdl_window) {
 		// create a window with the specified position, dimensions, and flags.
 		sdl_window = SDL_CreateWindow(
 			"OMM Renderer",
 			SDL_WINDOWPOS_UNDEFINED,
 			SDL_WINDOWPOS_UNDEFINED,
-			renderer_ctx->window_width,
-			renderer_ctx->window_height,
+			requested_window_width,
+			requested_window_height,
 			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
 			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
 			);
@@ -565,10 +563,9 @@ threadmain(int argc, char **argv)
 			renderer_ctx->renderer,
 			SDL_PIXELFORMAT_YV12,
 			SDL_TEXTUREACCESS_STREAMING,
-			// set video size here (texture can also be larger, that doesn't matter)
-			w, h
-			/* renderer_ctx->window_width, */
-			/* renderer_ctx->window_height */
+			// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
+			renderer_ctx->screen_width,
+			renderer_ctx->screen_height
 			);
 	}
 
@@ -1017,15 +1014,12 @@ decoder_thread(void *arg)
 			    }
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
 				    videoPicture.frame = av_frame_alloc();
-					/* yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t)); */
 					av_image_fill_arrays(
 							videoPicture.frame->data,
 							videoPicture.frame->linesize,
 							yuvbuffer,
 							AV_PIX_FMT_YUV420P,
-			                // set video size here
-							/* codecCtx->width, */
-							/* codecCtx->height, */
+			                // set video size of picture to send to queue here
 							w, h,
 							32
 					);
@@ -1034,13 +1028,8 @@ decoder_thread(void *arg)
 		                (uint8_t const * const *)pFrame->data,
 		                pFrame->linesize,
 		                0,
-		                // set video height here to select the slice in the SOURCE picture to scale (usually the whole picture)
-		                /* h, */
+		                // set video height here to select the slice in the *SOURCE* picture to scale (usually the whole picture)
 		                codecCtx->height,
-		                /* 100, */
-
-		                /* renderer_ctx->window_height, */
-		                /* renderer_ctx->screen_height, */
 		                videoPicture.frame->data,
 		                videoPicture.frame->linesize
 		            );
@@ -1241,13 +1230,6 @@ stream_component_open(RendererCtx * renderer_ctx, int stream_index)
 												 renderer_ctx->video_ctx->pix_fmt,
 												 // set video size here to actually scale the image
 												 w, h,
-												 /* renderer_ctx->video_ctx->width, */
-												 /* renderer_ctx->video_ctx->height, */
-
-												 /* renderer_ctx->window_width, */
-												 /* renderer_ctx->window_height, */
-												 /* renderer_ctx->screen_width, */
-												 /* renderer_ctx->screen_height, */
 												 AV_PIX_FMT_YUV420P,
 												 SWS_BILINEAR,
 												 NULL,
@@ -1447,8 +1429,6 @@ video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 		rect.y = 0;
 		rect.w = screen_width;
 		rect.h = screen_height;
-		/* rect.w = videoPicture->width; */
-		/* rect.h = videoPicture->height; */
 		// update the texture with the new pixel data
 		int textupd = SDL_UpdateYUVTexture(
 				renderer_ctx->texture,
