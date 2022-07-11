@@ -262,7 +262,7 @@ SDL_Window *sdl_window;
 /* char *aname = NULL; */
 
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
-void video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
+void display_video(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
 void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
 void decoder_thread(void *arg);
 int stream_component_open(RendererCtx * renderer_ctx, int stream_index);
@@ -1293,7 +1293,7 @@ video_thread(void *arg)
 		else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
 			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, renderer_ctx->current_audio_pts);
 			if (renderer_ctx->current_audio_pts >= videoPicture.pts) {
-				video_display(renderer_ctx, &videoPicture);
+				display_video(renderer_ctx, &videoPicture);
 				if (videoPicture.frame) {
 					av_frame_unref(videoPicture.frame);
 					av_frame_free(&videoPicture.frame);
@@ -1354,38 +1354,8 @@ audio_thread(void *arg)
 
 
 void
-video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
+display_video(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 {
-	/* if (!sdl_window) { */
-		/* // create a window with the specified position, dimensions, and flags. */
-		/* sdl_window = SDL_CreateWindow( */
-			/* "OMM Renderer", */
-			/* SDL_WINDOWPOS_UNDEFINED, */
-			/* SDL_WINDOWPOS_UNDEFINED, */
-			/* renderer_ctx->video_ctx->width, */
-			/* renderer_ctx->video_ctx->height, */
-			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
-			/* ); */
-		/* SDL_GL_SetSwapInterval(1); */
-	/* } */
-	/* if (!sdl_window) { */
-		/* printf("SDL: could not create window - exiting.\n"); */
-		/* return; */
-	/* } */
-	/* if (!renderer_ctx->renderer) { */
-		/* // create a 2D rendering context for the SDL_Window */
-		/* renderer_ctx->renderer = SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE); */
-	/* } */
-	/* if (!renderer_ctx->texture) { */
-		/* // create a texture for a rendering context */
-		/* renderer_ctx->texture = SDL_CreateTexture( */
-			/* renderer_ctx->renderer, */
-			/* SDL_PIXELFORMAT_YV12, */
-			/* SDL_TEXTUREACCESS_STREAMING, */
-			/* renderer_ctx->video_ctx->width, */
-			/* renderer_ctx->video_ctx->height */
-			/* ); */
-	/* } */
 	double aspect_ratio;
 	/* int w, h, x, y; */
 	int w, h;
