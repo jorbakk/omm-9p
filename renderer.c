@@ -23,6 +23,7 @@
 
 // TODO:
 // 1. Keep video window open and resize videos
+// - center and crop video in sdl window
 // - redraw, resize sdl window
 // - fullscreen mode
 // 2. Seek
@@ -30,6 +31,8 @@
 // - improve video smootheness (orange.ts)
 // - fix 5.1 audio tracks playing faster
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
+// 4. High cpu load in stop/pause state
+// 5. Blanking screen on stop/eof doesn't work allways
 
 // Thread layout:
 //   main_thread (event loop)
@@ -917,6 +920,8 @@ decoder_thread(void *arg)
 		}
 		if (decsend_ret == AVERROR_EOF) {
 			LOG("AVERROR = EOF: decoder has been flushed");
+			renderer_ctx->renderer_state = RSTATE_STOP;
+			blank_window(renderer_ctx);
 		}
 		if (decsend_ret < 0) {
 			LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
