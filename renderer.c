@@ -23,7 +23,6 @@
 
 // TODO:
 // 1. Keep video window open and resize videos
-// - keep aspect ratio
 // - redraw, resize sdl window
 // - fullscreen mode
 // 2. Seek
@@ -262,7 +261,7 @@ SDL_Window *sdl_window;
 /* char *aname = NULL; */
 
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
-void display_video(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
+void display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
 void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
 void decoder_thread(void *arg);
 int stream_component_open(RendererCtx * renderer_ctx, int stream_index);
@@ -813,7 +812,15 @@ decoder_thread(void *arg)
 	int w;
 	int h;
 	SDL_GetWindowSize(sdl_window, &w, &h);
-	LOG("window size when allocating scaled picture buffer: %dx%d", w, h);
+	float war = (float)h / w;
+	float far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
+	int aw = h / far;
+	int ah = h;
+	if (war > far) {
+		aw = w;
+		ah = w * far;
+	}
+	LOG("window size when allocating scaled picture buffer: %dx%d, aspect ratio win: %f, frame: %f, aspected size: %dx%d", w, h, war, far, aw, ah);
 
 	if (renderer_ctx->video_ctx) {
 	    pFrameRGB = av_frame_alloc();
@@ -1013,6 +1020,20 @@ decoder_thread(void *arg)
 				    memcpy(videoPicture.rgbbuf, pFrameRGB->data[0], numBytes);
 			    }
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
+					/* LOG("setting scale context to target size %dx%d", w, h); */
+					LOG("setting scale context to target size %dx%d", aw, ah);
+					renderer_ctx->sws_ctx = sws_getContext(
+						renderer_ctx->video_ctx->width,
+						renderer_ctx->video_ctx->height,
+						renderer_ctx->video_ctx->pix_fmt,
+						// set video size here to actually scale the image
+						aw, ah,
+						AV_PIX_FMT_YUV420P,
+						SWS_BILINEAR,
+						NULL,
+						NULL,
+						NULL
+					);
 				    videoPicture.frame = av_frame_alloc();
 					av_image_fill_arrays(
 							videoPicture.frame->data,
@@ -1020,7 +1041,7 @@ decoder_thread(void *arg)
 							yuvbuffer,
 							AV_PIX_FMT_YUV420P,
 			                // set video size of picture to send to queue here
-							w, h,
+							aw, ah,
 							32
 					);
 		            sws_scale(
@@ -1036,6 +1057,8 @@ decoder_thread(void *arg)
 			    }
 				renderer_ctx->video_idx++;
 				videoPicture.idx = renderer_ctx->video_idx;
+				videoPicture.width = aw;
+				videoPicture.height = ah;
 				/* double frame_duration = 1000.0 / av_q2d(codecCtx->framerate); */
 				double frame_duration = 1000.0 * av_q2d(codecCtx->time_base);
 				LOG("video frame duration: %fms, fps: %f", frame_duration, 1000.0 / frame_duration);
@@ -1219,33 +1242,35 @@ stream_component_open(RendererCtx * renderer_ctx, int stream_index)
 				renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE);
 				LOG("Video thread created with id: %i", renderer_ctx->video_tid);
 			}
-			/* int w = renderer_ctx->screen_width; */
-			/* int h = renderer_ctx->screen_height; */
-			int w;
-			int h;
-			SDL_GetWindowSize(sdl_window, &w, &h);
-			LOG("setting scale context to target size %dx%d", w, h);
-			renderer_ctx->sws_ctx = sws_getContext(renderer_ctx->video_ctx->width,
-												 renderer_ctx->video_ctx->height,
-												 renderer_ctx->video_ctx->pix_fmt,
-												 // set video size here to actually scale the image
-												 w, h,
-												 AV_PIX_FMT_YUV420P,
-												 SWS_BILINEAR,
-												 NULL,
-												 NULL,
-												 NULL
-			);
-			renderer_ctx->rgb_ctx = sws_getContext(renderer_ctx->video_ctx->width,
-												 renderer_ctx->video_ctx->height,
-												 renderer_ctx->video_ctx->pix_fmt,
-												 renderer_ctx->video_ctx->width,
-												 renderer_ctx->video_ctx->height,
-												 AV_PIX_FMT_RGB24,
-												 SWS_BILINEAR,
-												 NULL,
-												 NULL,
-												 NULL
+			/* int w; */
+			/* int h; */
+			/* SDL_GetWindowSize(sdl_window, &w, &h); */
+			/* float ar = (float)renderer_ctx->video_ctx->width / renderer_ctx->video_ctx->height; */
+			/* float ah = w / ar; */
+			/* LOG("setting scale context to target size %dx%d", w, h); */
+			/* renderer_ctx->sws_ctx = sws_getContext( */
+				/* renderer_ctx->video_ctx->width, */
+				/* renderer_ctx->video_ctx->height, */
+				/* renderer_ctx->video_ctx->pix_fmt, */
+				/* // set video size here to actually scale the image */
+				/* w, ah, */
+				/* AV_PIX_FMT_YUV420P, */
+				/* SWS_BILINEAR, */
+				/* NULL, */
+				/* NULL, */
+				/* NULL */
+			/* ); */
+			renderer_ctx->rgb_ctx = sws_getContext(
+				renderer_ctx->video_ctx->width,
+				renderer_ctx->video_ctx->height,
+				renderer_ctx->video_ctx->pix_fmt,
+				renderer_ctx->video_ctx->width,
+				renderer_ctx->video_ctx->height,
+				AV_PIX_FMT_RGB24,
+				SWS_BILINEAR,
+				NULL,
+				NULL,
+				NULL
 			);
 		}
 			break;
@@ -1293,7 +1318,7 @@ video_thread(void *arg)
 		else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
 			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, renderer_ctx->current_audio_pts);
 			if (renderer_ctx->current_audio_pts >= videoPicture.pts) {
-				display_video(renderer_ctx, &videoPicture);
+				display_picture(renderer_ctx, &videoPicture);
 				if (videoPicture.frame) {
 					av_frame_unref(videoPicture.frame);
 					av_frame_free(&videoPicture.frame);
@@ -1354,53 +1379,22 @@ audio_thread(void *arg)
 
 
 void
-display_video(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
+display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 {
-	double aspect_ratio;
-	/* int w, h, x, y; */
-	int w, h;
 	if (videoPicture->frame) {
-		if (renderer_ctx->video_ctx->sample_aspect_ratio.num == 0) {
-			aspect_ratio = 0;
-		}
-		else {
-			aspect_ratio = av_q2d(renderer_ctx->video_ctx->sample_aspect_ratio) * renderer_ctx->video_ctx->width / renderer_ctx->video_ctx->height;
-		}
-		if (aspect_ratio <= 0.0) {
-			aspect_ratio = (float)renderer_ctx->video_ctx->width /
-						   (float)renderer_ctx->video_ctx->height;
-		}
-		// get the size of a window's client area
-		int window_width;
-		int window_height;
-		SDL_GetWindowSize(sdl_window, &window_width, &window_height);
-		// global SDL_Surface height
-		h = window_height;
-		// retrieve width using the calculated aspect ratio and the screen height
-		w = ((int) rint(h * aspect_ratio)) & -3;
-		// if the new width is bigger than the screen width
-		if (w > window_width) {
-			// set the width to the screen width
-			w = window_width;
-			// recalculate height using the calculated aspect ratio and the screen width
-			h = ((int) rint(w / aspect_ratio)) & -3;
-		}
-		// TODO: Add full screen support
-		/* x = (window_width - w); */
-		/* y = (window_height - h); */
 		// set blit area x and y coordinates, width and height
 		// set video size here
-		SDL_Rect rect;
+		/* SDL_Rect rect; */
 		/* rect.x = x; */
 		/* rect.y = y; */
 		/* rect.w = w; */
 		/* rect.h = h; */
-		rect.x = 0;
+		/* rect.x = 0; */
 		/* rect.x = 100; */
-		rect.y = 0;
+		/* rect.y = 0; */
 		/* rect.y = 100; */
-		rect.w = window_width;
-		rect.h = window_height;
+		/* rect.w = window_width; */
+		/* rect.h = window_height; */
 		/* rect.h = window_height - 100; */
 		// update the texture with the new pixel data
 		int textupd = SDL_UpdateYUVTexture(
@@ -1418,6 +1412,7 @@ display_video(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 			LOG("failed to update sdl texture: %s", SDL_GetError());
 		}
 		// clear the current rendering target with the drawing color
+		SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, 255);  // FIXME needed ...?
 		SDL_RenderClear(renderer_ctx->renderer);
 		// copy a portion of the texture to the current rendering target
 		SDL_RenderCopy(renderer_ctx->renderer, renderer_ctx->texture, NULL, NULL);
