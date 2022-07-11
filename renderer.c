@@ -23,11 +23,12 @@
 
 // TODO:
 // 1. Keep video window open and resize videos
-// 2. AV sync
+// - resize decoded pictures
+// 2. Seek
+// 3. AV sync
 // - improve video smootheness (orange.ts)
-// - remove audio delay (caused by samples in sdl queue?!)
 // - fix 5.1 audio tracks playing faster
-// 3. Seek
+// - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 
 // Thread layout:
 //   main_thread (event loop)
@@ -491,6 +492,15 @@ start_server(RendererCtx *renderer_ctx)
 }
 
 
+void
+blank_window(RendererCtx *renderer_ctx)
+{
+	SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, 255);
+	SDL_RenderClear(renderer_ctx->renderer);
+	SDL_RenderPresent(renderer_ctx->renderer);
+}
+
+
 static FILE *audio_out;
 
 void
@@ -567,6 +577,7 @@ threadmain(int argc, char **argv)
 	}
 	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
 	renderer_ctx->renderer_state = RSTATE_STOP;
+	blank_window(renderer_ctx);
 	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
 	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
 	renderer_ctx->video_ctx = NULL;
@@ -656,6 +667,7 @@ decoder_thread(void *arg)
 	start:
 	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
 		LOG("renderer stopped or no av stream file specified, waiting for command ...");
+		blank_window(renderer_ctx);
 		Command cmd;
 		int cmdret = recv(renderer_ctx->cmdq, &cmd);
 		if (cmdret == 1) {
@@ -682,6 +694,7 @@ decoder_thread(void *arg)
 	/* CFid *fid = xopen(renderer_ctx->filename, OREAD); */
 	if (fid == nil) {
 		renderer_ctx->renderer_state = RSTATE_STOP;
+		blank_window(renderer_ctx);
 		goto start;
 	}
 	renderer_ctx->fid = fid;
@@ -836,6 +849,7 @@ decoder_thread(void *arg)
 				}
 				else if (cmd.cmd == CMD_STOP) {
 					renderer_ctx->renderer_state = RSTATE_STOP;
+					blank_window(renderer_ctx);
 					goto start;
 				}
 				else if (cmd.cmd == CMD_QUIT) {
@@ -852,6 +866,7 @@ decoder_thread(void *arg)
 				LOG("EOF");
 			}
 			renderer_ctx->renderer_state = RSTATE_STOP;
+			blank_window(renderer_ctx);
 			goto start;
 		}
 		if (packet->size == 0) {
