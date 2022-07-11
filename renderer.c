@@ -24,6 +24,8 @@
 // TODO:
 // 1. Keep video window open and resize videos
 // - resize decoded pictures
+// - redraw, resize sdl window
+// - fullscreen mode
 // 2. Seek
 // 3. AV sync
 // - improve video smootheness (orange.ts)
@@ -32,7 +34,7 @@
 
 // Thread layout:
 //   main_thread (event loop)
-//   -> 9P command server thread
+//   -> 9P command server thread/proc
 //   -> decoder_thread
 //      -> video_thread reads from video channel
 //      -> audio_thread reads from audio channel
@@ -549,16 +551,24 @@ threadmain(int argc, char **argv)
 	}
 	if (!renderer_ctx->renderer) {
 		// create a 2D rendering context for the SDL_Window
-		renderer_ctx->renderer = SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+		renderer_ctx->renderer = SDL_CreateRenderer(
+			sdl_window,
+			-1,
+			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
 	}
 	if (!renderer_ctx->texture) {
 		// create a texture for a rendering context
+		int w;
+		int h;
+		SDL_GetWindowSize(sdl_window, &w, &h);
 		renderer_ctx->texture = SDL_CreateTexture(
 			renderer_ctx->renderer,
 			SDL_PIXELFORMAT_YV12,
 			SDL_TEXTUREACCESS_STREAMING,
-			renderer_ctx->window_width,
-			renderer_ctx->window_height
+			// set video size here (texture can also be larger, that doesn't matter)
+			w, h
+			/* renderer_ctx->window_width, */
+			/* renderer_ctx->window_height */
 			);
 	}
 
@@ -802,6 +812,12 @@ decoder_thread(void *arg)
     static AVFrame *pFrameRGB = NULL;
     uint8_t * buffer = NULL;
     uint8_t * yuvbuffer = NULL;
+    int yuvNumBytes = 0;
+	int w;
+	int h;
+	SDL_GetWindowSize(sdl_window, &w, &h);
+	LOG("window size when allocating scaled picture buffer: %dx%d", w, h);
+
 	if (renderer_ctx->video_ctx) {
 	    pFrameRGB = av_frame_alloc();
 	    int numBytes;
@@ -822,10 +838,12 @@ decoder_thread(void *arg)
 			32
 	    );
 
-	    int yuvNumBytes = av_image_get_buffer_size(
+	    yuvNumBytes = av_image_get_buffer_size(
 			AV_PIX_FMT_YUV420P,
-			renderer_ctx->video_ctx->width,
-			renderer_ctx->video_ctx->height,
+			/* renderer_ctx->video_ctx->width, */
+			/* renderer_ctx->video_ctx->height, */
+			w,
+			h,
 			32
 			);
 		yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t));
@@ -900,6 +918,8 @@ decoder_thread(void *arg)
 			LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
 			return;
 		}
+
+
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
 		int decoder_ret = 0;
@@ -997,13 +1017,16 @@ decoder_thread(void *arg)
 			    }
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
 				    videoPicture.frame = av_frame_alloc();
+					/* yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t)); */
 					av_image_fill_arrays(
 							videoPicture.frame->data,
 							videoPicture.frame->linesize,
 							yuvbuffer,
 							AV_PIX_FMT_YUV420P,
-							codecCtx->width,
-							codecCtx->height,
+			                // set video size here
+							/* codecCtx->width, */
+							/* codecCtx->height, */
+							w, h,
 							32
 					);
 		            sws_scale(
@@ -1011,7 +1034,12 @@ decoder_thread(void *arg)
 		                (uint8_t const * const *)pFrame->data,
 		                pFrame->linesize,
 		                0,
+		                // set video height here to select the slice in the SOURCE picture to scale (usually the whole picture)
+		                /* h, */
 		                codecCtx->height,
+		                /* 100, */
+
+		                /* renderer_ctx->window_height, */
 		                /* renderer_ctx->screen_height, */
 		                videoPicture.frame->data,
 		                videoPicture.frame->linesize
@@ -1202,11 +1230,24 @@ stream_component_open(RendererCtx * renderer_ctx, int stream_index)
 				renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE);
 				LOG("Video thread created with id: %i", renderer_ctx->video_tid);
 			}
+			/* int w = renderer_ctx->screen_width; */
+			/* int h = renderer_ctx->screen_height; */
+			int w;
+			int h;
+			SDL_GetWindowSize(sdl_window, &w, &h);
+			LOG("setting scale context to target size %dx%d", w, h);
 			renderer_ctx->sws_ctx = sws_getContext(renderer_ctx->video_ctx->width,
 												 renderer_ctx->video_ctx->height,
 												 renderer_ctx->video_ctx->pix_fmt,
-												 renderer_ctx->video_ctx->width,
-												 renderer_ctx->video_ctx->height,
+												 // set video size here to actually scale the image
+												 w, h,
+												 /* renderer_ctx->video_ctx->width, */
+												 /* renderer_ctx->video_ctx->height, */
+
+												 /* renderer_ctx->window_width, */
+												 /* renderer_ctx->window_height, */
+												 /* renderer_ctx->screen_width, */
+												 /* renderer_ctx->screen_height, */
 												 AV_PIX_FMT_YUV420P,
 												 SWS_BILINEAR,
 												 NULL,
@@ -1364,7 +1405,8 @@ video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 			/* ); */
 	/* } */
 	double aspect_ratio;
-	int w, h, x, y;
+	/* int w, h, x, y; */
+	int w, h;
 	if (videoPicture->frame) {
 		if (renderer_ctx->video_ctx->sample_aspect_ratio.num == 0) {
 			aspect_ratio = 0;
@@ -1392,18 +1434,26 @@ video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 			h = ((int) rint(w / aspect_ratio)) & -3;
 		}
 		// TODO: Add full screen support
-		x = (screen_width - w);
-		y = (screen_height - h);
+		/* x = (screen_width - w); */
+		/* y = (screen_height - h); */
 		// set blit area x and y coordinates, width and height
+		// set video size here
 		SDL_Rect rect;
-		rect.x = x;
-		rect.y = y;
-		rect.w = w;
-		rect.h = h;
+		/* rect.x = x; */
+		/* rect.y = y; */
+		/* rect.w = w; */
+		/* rect.h = h; */
+		rect.x = 0;
+		rect.y = 0;
+		rect.w = screen_width;
+		rect.h = screen_height;
+		/* rect.w = videoPicture->width; */
+		/* rect.h = videoPicture->height; */
 		// update the texture with the new pixel data
-		SDL_UpdateYUVTexture(
+		int textupd = SDL_UpdateYUVTexture(
 				renderer_ctx->texture,
 				&rect,
+				/* NULL, */
 				videoPicture->frame->data[0],
 				videoPicture->frame->linesize[0],
 				videoPicture->frame->data[1],
@@ -1411,6 +1461,9 @@ video_display(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 				videoPicture->frame->data[2],
 				videoPicture->frame->linesize[2]
 		);
+		if (textupd != 0) {
+			LOG("failed to update sdl texture: %s", SDL_GetError());
+		}
 		// clear the current rendering target with the drawing color
 		SDL_RenderClear(renderer_ctx->renderer);
 		// copy a portion of the texture to the current rendering target
