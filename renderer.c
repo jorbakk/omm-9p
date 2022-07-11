@@ -23,7 +23,7 @@
 
 // TODO:
 // 1. Keep video window open and resize videos
-// - resize decoded pictures
+// - keep aspect ratio
 // - redraw, resize sdl window
 // - fullscreen mode
 // 2. Seek
@@ -1371,23 +1371,23 @@ display_video(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 						   (float)renderer_ctx->video_ctx->height;
 		}
 		// get the size of a window's client area
-		int screen_width;
-		int screen_height;
-		SDL_GetWindowSize(sdl_window, &screen_width, &screen_height);
+		int window_width;
+		int window_height;
+		SDL_GetWindowSize(sdl_window, &window_width, &window_height);
 		// global SDL_Surface height
-		h = screen_height;
+		h = window_height;
 		// retrieve width using the calculated aspect ratio and the screen height
 		w = ((int) rint(h * aspect_ratio)) & -3;
 		// if the new width is bigger than the screen width
-		if (w > screen_width) {
+		if (w > window_width) {
 			// set the width to the screen width
-			w = screen_width;
+			w = window_width;
 			// recalculate height using the calculated aspect ratio and the screen width
 			h = ((int) rint(w / aspect_ratio)) & -3;
 		}
 		// TODO: Add full screen support
-		/* x = (screen_width - w); */
-		/* y = (screen_height - h); */
+		/* x = (window_width - w); */
+		/* y = (window_height - h); */
 		// set blit area x and y coordinates, width and height
 		// set video size here
 		SDL_Rect rect;
@@ -1396,14 +1396,17 @@ display_video(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 		/* rect.w = w; */
 		/* rect.h = h; */
 		rect.x = 0;
+		/* rect.x = 100; */
 		rect.y = 0;
-		rect.w = screen_width;
-		rect.h = screen_height;
+		/* rect.y = 100; */
+		rect.w = window_width;
+		rect.h = window_height;
+		/* rect.h = window_height - 100; */
 		// update the texture with the new pixel data
 		int textupd = SDL_UpdateYUVTexture(
 				renderer_ctx->texture,
-				&rect,
-				/* NULL, */
+				/* &rect, */
+				NULL,
 				videoPicture->frame->data[0],
 				videoPicture->frame->linesize[0],
 				videoPicture->frame->data[1],
