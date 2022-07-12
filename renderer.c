@@ -31,10 +31,12 @@
 // - improve video smootheness (orange.ts)
 // - fix 5.1 audio tracks playing faster
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
-// 4. Blanking screen on stop/eof doesn't work allways
-// 5. High cpu load in stop/pause state
-// 6. Fixes / refactoring
+// - add video-only (for videos with or w/o audio) and fix audio-only video playback
+// 4. Query renderer info (current position, state, audio volume) from 9P server
+// 5. High cpu load in stop / pause state
+// 6. Fixes / refactoring / testing
 // - move video scaling from decoder thread to video thread
+// - blanking screen on stop/eof doesn't work allways
 // - test keyboard / server input (fuzz testing ...)
 // 7. Experiment with serving video and audio output channels via the 9P server
 // 8. Build renderer into drawterm-av
@@ -614,7 +616,9 @@ threadmain(int argc, char **argv)
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
 	for (;;) {
 		yield();
+		/* p9sleep(100); */
 		SDL_Event event;
+		LOG("polling sdl event ...");
 		ret = SDL_PollEvent(&event);
 		if (ret) {
 			LOG("received sdl event");
