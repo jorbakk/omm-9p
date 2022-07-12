@@ -37,8 +37,8 @@
 // 6. High cpu load in stop / pause state
 // 7. Display single still images
 // 8. Fixes / refactoring / testing
-// - move video scaling from decoder thread to video thread
-// - blanking screen on stop/eof doesn't work allways
+// - allow video scaling in decoder thread and in video thread
+// - blanking screen on stop / eof doesn't work allways
 // - test keyboard / server input combinations (fuzz testing ...)
 // 9. Experiment with serving video and audio output channels via the 9P server
 // 10. Build renderer into drawterm-av
