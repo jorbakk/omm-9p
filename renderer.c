@@ -32,15 +32,16 @@
 // - fix 5.1 audio tracks playing faster
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
-// 4. Add configurable server address to dial
+// 4. Don't hard code server address to dial
 // 5. Query renderer info (current position, state, audio volume) from 9P server
 // 6. High cpu load in stop / pause state
-// 7. Fixes / refactoring / testing
+// 7. Display single still images
+// 8. Fixes / refactoring / testing
 // - move video scaling from decoder thread to video thread
 // - blanking screen on stop/eof doesn't work allways
-// - test keyboard / server input (fuzz testing ...)
-// 8. Experiment with serving video and audio output channels via the 9P server
-// 9. Build renderer into drawterm-av
+// - test keyboard / server input combinations (fuzz testing ...)
+// 9. Experiment with serving video and audio output channels via the 9P server
+// 10. Build renderer into drawterm-av
 
 // Thread layout:
 //   main_thread (event loop)
@@ -615,6 +616,7 @@ threadmain(int argc, char **argv)
 	}
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
+	/* yield(); */
 	for (;;) {
 		yield();
 		/* p9sleep(100); */
@@ -682,8 +684,8 @@ decoder_thread(void *arg)
 	RendererCtx * renderer_ctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
 	LOG("opening 9P connection ...");
-	/* CFsys *fileserver = clientdial("tcp!localhost!5640"); */
-	CFsys *fileserver = clientdial("tcp!192.168.1.85!5640");
+	CFsys *fileserver = clientdial("tcp!localhost!5640");
+	/* CFsys *fileserver = clientdial("tcp!192.168.1.85!5640"); */
 	start:
 	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
 		LOG("renderer stopped or no av stream file specified, waiting for command ...");
