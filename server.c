@@ -39,16 +39,21 @@
 static char *srvname = "ommserver";
 static char *uname = "omm";
 static char *gname = "omm";
+static char *datafname = "data";
+/* static char *metafname = "meta"; */
 static char *queryfname = "query";
-static char *queryres = "Hello from 9P!\n";
+static char *queryres = "Hello from query\n";
 
 static int nrootdir = 4;
+static int nobjdir = 1;
 
 enum
 {
 	Qroot = 0,
-	Qmediaobj,
-	Qqueryfile,
+	Qobj,
+	Qdata,
+	Qmeta,
+	Qquery,
 };
 
 
@@ -97,20 +102,21 @@ dostat(vlong path, Qid *qid, Dir *dir)
 	switch(QTYPE(path)) {
 	default:
 		sysfatal("dostat %#llux", path);
-
 	case Qroot:
 		q.type = QTDIR;
 		name = "/";
 		break;
-
-	case Qmediaobj:
+	case Qobj:
 		q.type = QTDIR;
 		char namestr[128];
 		snprint(namestr, 5 ,"obj%d", QOBJ(path));
 		name = namestr;
 		break;
-
-	case Qqueryfile:
+	case Qdata:
+		q.type = QTFILE;
+		name = datafname;
+		break;
+	case Qquery:
 		q.type = QTFILE;
 		name = queryfname;
 		mode = 0666;
@@ -142,11 +148,22 @@ rootgen(int i, Dir *d, void *v)
 		// End of directory
 		return -1;
 	if (i == 0) {
-		dostat(qpath(Qqueryfile, i), nil, d);
+		dostat(qpath(Qquery, i), nil, d);
 	}
 	else {
-		dostat(qpath(Qmediaobj, i), nil, d);
+		dostat(qpath(Qobj, i), nil, d);
 	}
+	return 0;
+}
+
+
+static int
+objgen(int i, Dir *d, void *v)
+{
+	if(i >= nobjdir)
+		// End of directory
+		return -1;
+	dostat(qpath(Qdata, i), nil, d);
 	return 0;
 }
 
@@ -180,7 +197,7 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 			LOG("walk1 name: %s", name);
 			if(strcmp(queryfname, name) == 0) {
 				LOG("found query file");
-				path = QTFILE | Qqueryfile;
+				path = QTFILE | Qquery;
 				goto Found;
 			}
 			char namestr[128];
@@ -188,15 +205,22 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 			// FIXME properly check objdir name
 			/* if(strncmp(namestr, name, 4) == 0) { */
 				LOG("found obj dir");
-				path = qpath(Qmediaobj, i);
+				path = qpath(Qobj, i);
 				goto Found;
 			/* } */
 		}
 		goto NotFound;
-	case Qmediaobj:
+	case Qobj:
 		if(dotdot) {
 			path = Qroot;
 			break;
+		}
+		LOG("walk1 name: %s", name);
+		if(strcmp(datafname, name) == 0) {
+			LOG("found data file");
+			// FIXME path should point to data file of different objs, use qpath()
+			path = QTFILE | Qdata;
+			goto Found;
 		}
 		/*
 		n = strtol(name, &p, 10);
@@ -250,7 +274,10 @@ srvread(Req *r)
 	case Qroot:
 		dirread9p(r, rootgen, nil);
 		break;
-	case Qqueryfile:
+	case Qobj:
+		dirread9p(r, objgen, nil);
+		break;
+	case Qquery:
 		readstr(r, queryres);
 		break;
 	}
@@ -271,7 +298,7 @@ srvwrite(Req *r)
 	/* offset = r->ifcall.offset; */
 	count = r->ifcall.count;
 	switch(QTYPE(path)) {
-	case Qqueryfile:
+	case Qquery:
 		snprint(querystr, count, "%s", r->ifcall.data);
 		LOG("query: %s", querystr);
 		break;
