@@ -42,8 +42,8 @@ static char *gname      = "omm";
 static char *datafname  = "data";
 static char *metafname  = "meta";
 static char *queryfname = "query";
-static char *datares    = "Hello from data\n";
-static char *metares    = "Hello from meta\n";
+/* static char *datares    = "Hello from data\n"; */
+/* static char *metares    = "Hello from meta\n"; */
 static char *queryres   = "Hello from query\n";
 
 static int nrootdir = 4;
@@ -154,7 +154,7 @@ rootgen(int i, Dir *d, void *v)
 		// End of directory
 		return -1;
 	if (i == 0) {
-		dostat(qpath(Qquery, i), nil, d);
+		dostat(qpath(Qquery, 0), nil, d);
 	}
 	else {
 		dostat(qpath(Qobj, i), nil, d);
@@ -167,12 +167,14 @@ static int
 objgen(int i, Dir *d, void *v)
 {
 	if(i >= nobjdir)
-		// End of directory
+		// End of directory entries
 		return -1;
 	if (i == 0) {
+		// FIXME i is not the obj index here
 		dostat(qpath(Qdata, i), nil, d);
 	}
 	else {
+		// FIXME i is not the obj index here
 		dostat(qpath(Qmeta, i), nil, d);
 	}
 	return 0;
@@ -200,22 +202,23 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 	switch(QTYPE(path)) {
 	default:
 	NotFound:
-		return "media obj not found";
+		return "obj not found";
 	case Qroot:
 		if(dotdot)
 			break;
 		for(i=0; i<nrootdir; i++) {
 			LOG("walk1 name: %s", name);
 			if(strcmp(queryfname, name) == 0) {
-				LOG("found query file");
-				path = QTFILE | Qquery;
+				LOG("query file");
+				path = qpath(Qquery, 0);
+				/* path = QTFILE | Qquery; */
 				goto Found;
 			}
 			char namestr[128];
 			snprint(namestr, 5 ,"obj%d", QOBJ(path));
 			// FIXME properly check objdir name
 			/* if(strncmp(namestr, name, 4) == 0) { */
-				LOG("found obj dir");
+				LOG("dir of obj: %lld", QOBJ(path));
 				path = qpath(Qobj, i);
 				goto Found;
 			/* } */
@@ -228,31 +231,15 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 		}
 		LOG("walk1 name: %s", name);
 		if(strcmp(datafname, name) == 0) {
-			LOG("found data file");
-			// FIXME path should point to data file of different objs, use qpath()
-			path = QTFILE | Qdata;
+			LOG("data file of obj: %lld", QOBJ(path));
+			path = qpath(Qdata, QOBJ(path));
 			goto Found;
 		}
 		if(strcmp(metafname, name) == 0) {
-			LOG("found meta file");
-			// FIXME path should point to meta file of different objs, use qpath()
-			path = QTFILE | Qmeta;
+			LOG("meta file of obj: %lld", QOBJ(path));
+			path = qpath(Qmeta, QOBJ(path));
 			goto Found;
 		}
-		/*
-		n = strtol(name, &p, 10);
-		if(n == 0)
-			goto NotFound;
-		a = 0;
-		if(*p == 'a') {
-			a = 1;
-			p++;
-		}
-		if(*p != 0)
-			goto NotFound;
-		*/
-		/* path += Qsizedir - Qfontdir + qpath(0, 0, n, a, 0); */
-		/* path = ; */
 		break;
 	}
 
@@ -274,7 +261,8 @@ srvstat(Req *r)
 static void
 srvopen(Req *r)
 {
-	LOG("server open on qid path: %lld, vers: %ld, type: %c", r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+	LOG("server open on qid path: %lld, vers: %ld, type: %d",
+		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
 	r->ofcall.qid = r->fid->qid;
 	respond(r, nil);
 }
@@ -283,10 +271,13 @@ srvopen(Req *r)
 static void
 srvread(Req *r)
 {
-	LOG("server read on qid path: %lld, vers: %ld, type: %c", r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+	LOG("server read on qid path: %lld, vers: %ld, type: %d",
+		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
 	vlong path;
-
 	path = r->fid->qid.path;
+	vlong objid = QOBJ(path);
+	char objstr[128];
+	sprint(objstr, "%lld", objid);
 	switch(QTYPE(path)) {
 	case Qroot:
 		dirread9p(r, rootgen, nil);
@@ -295,10 +286,12 @@ srvread(Req *r)
 		dirread9p(r, objgen, nil);
 		break;
 	case Qdata:
-		readstr(r, datares);
+		readstr(r, objstr);
+		/* readstr(r, datares); */
 		break;
 	case Qmeta:
-		readstr(r, metares);
+		readstr(r, objstr);
+		/* readstr(r, metares); */
 		break;
 	case Qquery:
 		readstr(r, queryres);
@@ -311,7 +304,8 @@ srvread(Req *r)
 static void
 srvwrite(Req *r)
 {
-	LOG("server write on qid path: %lld, vers: %ld, type: %c", r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+	LOG("server write on qid path: %lld, vers: %ld, type: %d",
+		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
 	/* vlong offset; */
 	vlong path;
 	long count;
