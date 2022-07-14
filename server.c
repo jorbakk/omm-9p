@@ -33,6 +33,8 @@
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 #define QTYPE(p) ((p) & 0xF)
+#define QOBJ(p) (((p) >> 4) & 0xFFFFFFFF)
+
 
 static char *srvname = "ommserver";
 static char *uname = "omm";
@@ -40,7 +42,7 @@ static char *gname = "omm";
 static char *queryfname = "query";
 static char *queryres = "Hello from 9P!\n";
 
-static int nrootdir = 3;
+static int nrootdir = 4;
 
 enum
 {
@@ -48,6 +50,13 @@ enum
 	Qmediaobj,
 	Qqueryfile,
 };
+
+
+static vlong
+qpath(int type, int obj)
+{
+	return type | (obj << 4);
+}
 
 
 static struct timespec curtime;
@@ -96,7 +105,9 @@ dostat(vlong path, Qid *qid, Dir *dir)
 
 	case Qmediaobj:
 		q.type = QTDIR;
-		name = "mediaobj";
+		char namestr[128];
+		snprint(namestr, 5 ,"obj%d", QOBJ(path));
+		name = namestr;
 		break;
 
 	case Qqueryfile:
@@ -131,7 +142,8 @@ rootgen(int i, Dir *d, void *v)
 	if(i >= nrootdir)
 		// End of directory
 		return -1;
-	dostat(QTDIR | i, nil, d);
+	/* dostat(QTDIR | i, nil, d); */
+	dostat(qpath(Qmediaobj, i), nil, d);
 	return 0;
 }
 
@@ -152,15 +164,12 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 {
 	int i, dotdot;
 	vlong path;
-
 	path = fid->qid.path;
 	dotdot = strcmp(name, "..") == 0;
-
 	switch(QTYPE(path)) {
 	default:
 	NotFound:
 		return "file not found";
-
 	case Qroot:
 		if(dotdot)
 			break;
@@ -169,10 +178,16 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 				path = QTFILE | Qqueryfile;
 				goto Found;
 			}
-			if(strcmp("mediaobj", name) == 0) {
-				path = QTFILE | Qmediaobj;
+			char namestr[128];
+			snprint(namestr, 5 ,"obj%d", QOBJ(path));
+			if(strcmp(namestr, name) == 0) {
+				path = qpath(Qmediaobj, i);
 				goto Found;
 			}
+			/* if(strcmp("obj", name) == 0) { */
+				/* path = QTFILE | Qmediaobj; */
+				/* goto Found; */
+			/* } */
 		}
 		goto NotFound;
 	}
