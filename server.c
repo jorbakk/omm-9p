@@ -135,15 +135,18 @@ dostat(vlong path, Qid *qid, Dir *dir)
 }
 
 
-// FIXME "/" is an entry in the root directory
 static int
 rootgen(int i, Dir *d, void *v)
 {
 	if(i >= nrootdir)
 		// End of directory
 		return -1;
-	/* dostat(QTDIR | i, nil, d); */
-	dostat(qpath(Qmediaobj, i), nil, d);
+	if (i == 0) {
+		dostat(qpath(Qqueryfile, i), nil, d);
+	}
+	else {
+		dostat(qpath(Qmediaobj, i), nil, d);
+	}
 	return 0;
 }
 
@@ -184,10 +187,6 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 				path = qpath(Qmediaobj, i);
 				goto Found;
 			}
-			/* if(strcmp("obj", name) == 0) { */
-				/* path = QTFILE | Qmediaobj; */
-				/* goto Found; */
-			/* } */
 		}
 		goto NotFound;
 	}
