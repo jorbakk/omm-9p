@@ -38,11 +38,14 @@ static char *srvname = "ommserver";
 static char *uname = "omm";
 static char *gname = "omm";
 static char *queryfname = "query";
-static char *querystr = "Hello from 9P!\n";
+static char *queryres = "Hello from 9P!\n";
+
+static int nrootdir = 3;
 
 enum
 {
 	Qroot = 0,
+	Qmediaobj,
 	Qqueryfile,
 };
 
@@ -91,11 +94,16 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		name = "/";
 		break;
 
+	case Qmediaobj:
+		q.type = QTDIR;
+		name = "mediaobj";
+		break;
+
 	case Qqueryfile:
 		q.type = QTFILE;
 		name = queryfname;
 		mode = 0666;
-		length = strlen(querystr);
+		length = strlen(queryres);
 		break;
 	}
 
@@ -120,7 +128,7 @@ dostat(vlong path, Qid *qid, Dir *dir)
 static int
 rootgen(int i, Dir *d, void *v)
 {
-	if(i >= 2)
+	if(i >= nrootdir)
 		// End of directory
 		return -1;
 	dostat(QTDIR | i, nil, d);
@@ -156,9 +164,13 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 	case Qroot:
 		if(dotdot)
 			break;
-		for(i=0; i<2; i++) {
+		for(i=0; i<nrootdir; i++) {
 			if(strcmp(queryfname, name) == 0) {
 				path = QTFILE | Qqueryfile;
+				goto Found;
+			}
+			if(strcmp("mediaobj", name) == 0) {
+				path = QTFILE | Qmediaobj;
 				goto Found;
 			}
 		}
@@ -201,7 +213,7 @@ srvread(Req *r)
 		dirread9p(r, rootgen, nil);
 		break;
 	case Qqueryfile:
-		readstr(r, querystr);
+		readstr(r, queryres);
 		break;
 	}
 	respond(r, nil);
