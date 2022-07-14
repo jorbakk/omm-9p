@@ -32,10 +32,25 @@
 #define _DEBUG_ 1
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
+#define QTYPE(p) ((p) & 0xF)
+
+static char *srvname = "ommserver";
+static char *uname = "omm";
+static char *gname = "omm";
+static char *hellofname = "hello";
+static char *hellostr = "Hello from 9P!\n";
+
+enum
+{
+	Qroot = 0,
+	Qhellofile,
+};
+
 
 static struct timespec curtime;
 
-void printloginfo(void)
+static void
+printloginfo(void)
 {
     long            ms; // Milliseconds
     time_t          s;  // Seconds
@@ -52,47 +67,155 @@ void printloginfo(void)
 }
 
 
+static void
+dostat(vlong path, Qid *qid, Dir *dir)
+{
+	char *name;
+	Qid q;
+	ulong mode;
+	vlong length;
+
+	q.type = 0;
+	q.vers = 0;
+	q.path = path;
+	mode = 0444;
+	length = 0;
+	name = "???";
+
+	switch(QTYPE(path)) {
+	default:
+		sysfatal("dostat %#llux", path);
+
+	case Qroot:
+		q.type = QTDIR;
+		name = "/";
+		break;
+
+	case Qhellofile:
+		q.type = QTFILE;
+		name = hellofname;
+		length = strlen(hellostr);
+		break;
+	}
+
+	if(qid)
+		*qid = q;
+	if(dir) {
+		memset(dir, 0, sizeof *dir);
+		dir->name = estrdup9p(name);
+		dir->muid = estrdup9p("");
+		dir->uid  = estrdup9p(uname);
+		dir->gid  = estrdup9p(gname);
+		dir->qid  = q;
+		if(q.type == QTDIR)
+			mode |= DMDIR | 0111;
+		dir->mode = mode;
+		dir->length = length;
+	}
+}
+
+
+// FIXME "/" is an entry in the root directory
+static int
+rootgen(int i, Dir *d, void *v)
+{
+	if(i >= 2)
+		// End of directory
+		return -1;
+	dostat(QTDIR | i, nil, d);
+	return 0;
+}
+
+
+static void
+srvattach(Req *r)
+{
+	/* dostat(0, &r->ofcall.qid, nil); */
+	// Maybe more explicitly writing the path of the root dir ...
+	dostat(QTDIR | Qroot, &r->ofcall.qid, nil);
+	r->fid->qid = r->ofcall.qid;
+	respond(r, nil);
+}
+
+
+static char*
+srvwalk1(Fid *fid, char *name, Qid *qid)
+{
+	int i, dotdot;
+	vlong path;
+
+	path = fid->qid.path;
+	dotdot = strcmp(name, "..") == 0;
+
+	switch(QTYPE(path)) {
+	default:
+	NotFound:
+		return "file not found";
+
+	case Qroot:
+		if(dotdot)
+			break;
+		for(i=0; i<2; i++) {
+			if(strcmp(hellofname, name) == 0) {
+				path = QTFILE | Qhellofile;
+				goto Found;
+			}
+		}
+		goto NotFound;
+	}
+
+Found:
+	dostat(path, qid, nil);
+	fid->qid = *qid;
+	return nil;
+}
+
+
 void
+srvstat(Req *r)
+{
+	dostat(r->fid->qid.path, nil, &r->d);
+	respond(r, nil);
+}
+
+
+
+
+
+static void
 srvopen(Req *r)
 {
-	LOG("server open");
+	LOG("server open on qid path: %lld, vers: %ld, type: %c", r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+	r->ofcall.qid = r->fid->qid;
 	respond(r, nil);
 }
 
 
-static int hello_read = 0;
-
-void
+static void
 srvread(Req *r)
 {
-	LOG("server read");
-	if (hello_read == 1) {
-		r->ofcall.count = 0;
-		r->ofcall.data = "";
-		hello_read = 0;
-	}
-	else {
-		r->ofcall.count = 6;
-		r->ofcall.data = "hello\n";
-		hello_read = 1;
-	}
-	respond(r, nil);
-}
+	LOG("server read on qid path: %lld, vers: %ld, type: %c", r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+	vlong path;
 
-
-void
-srvwrite(Req *r)
-{
-	LOG("server write");
-	r->ofcall.count = r->ifcall.count;
+	path = r->fid->qid.path;
+	switch(QTYPE(path)) {
+	case Qroot:
+		dirread9p(r, rootgen, nil);
+		break;
+	case Qhellofile:
+		readstr(r, hellostr);
+		break;
+	}
 	respond(r, nil);
 }
 
 
 Srv server = {
+	.attach = srvattach,
+	.walk1  = srvwalk1,
+	.stat   = srvstat,
 	.open  = srvopen,
 	.read  = srvread,
-	.write = srvwrite,
 };
 
 
@@ -103,16 +226,13 @@ threadmaybackground(void)
 }
 
 
-void
+static void
 start_server(void *arg)
 {
 	LOG("starting 9P server ...");
-	char *srvname = "ommserver";
 	char *mtpt = nil;
-	server.tree = alloctree(nil, nil, DMDIR|0777, nil);
-	createfile(server.tree->root, "ctl", nil, 0777, arg);
 	server.foreground = 1;
-	threadpostmountsrv(&server, srvname, mtpt, MREPL|MCREATE);
+	threadpostmountsrv(&server, srvname, mtpt, MREPL | MCREATE);
 	LOG("9P server started.");
 }
 
