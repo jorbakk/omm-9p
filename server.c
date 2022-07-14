@@ -21,8 +21,7 @@
  */
 
 // TODO
-// 1. Fix object id of media objects always zero (except for root dir listing)
-// - need 9P protocol logs
+// 1. Database backend
 
 
 #include <u.h>
@@ -184,11 +183,9 @@ objgen(int i, Dir *d, void *v)
 		// End of directory entries
 		return -1;
 	if (i == 0) {
-		// FIXME i is not the obj index here
 		dostat(qpath(Qdata, i), nil, d);
 	}
 	else {
-		// FIXME i is not the obj index here
 		dostat(qpath(Qmeta, i), nil, d);
 	}
 	return 0;
@@ -210,7 +207,6 @@ srvattach(Req *r)
 static char*
 srvwalk1(Fid *fid, char *name, Qid *qid)
 {
-	// FIXME QOBJID(fid->qid.path) is always 0
 	int i, dotdot;
 	vlong path;
 	path = fid->qid.path;
@@ -226,20 +222,16 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 			break;
 		for(i=0; i<nrootdir; i++) {
 			if(strcmp(queryfname, name) == 0) {
-				/* LOG("query file"); */
 				path = qpath(Qquery, 0);
-				/* path = QTFILE | Qquery; */
 				goto Found;
 			}
-			/* char namestr[128]; */
-			/* snprint(namestr, 5 ,"obj%d", QOBJID(path)); */
-			/* snprint(namestr, 5 ,"obj%d", i); */
-			// FIXME properly check objdir name
-			/* if(strncmp(namestr, name, 4) == 0) { */
-				/* LOG("dir of obj: %lld", QOBJID(path)); */
+			char namestr[128];
+			snprint(namestr, 5 ,"obj%d", i);
+			if(strncmp(namestr, name, 5) == 0) {
+				LOG("FOUND obj");
 				path = qpath(Qobj, i);
 				goto Found;
-			/* } */
+			}
 		}
 		goto NotFound;
 	case Qobj:
