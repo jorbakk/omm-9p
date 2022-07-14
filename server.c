@@ -20,6 +20,11 @@
  * SOFTWARE.
  */
 
+// TODO
+// 1. Fix object id of media objects always zero (except for root dir listing)
+// - need 9P protocol logs
+
+
 #include <u.h>
 #include <stdio.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
@@ -33,7 +38,8 @@
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 #define QTYPE(p) ((p) & 0xF)
-#define QOBJ(p) (((p) >> 4) & 0xFFFFFFFF)
+#define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
+/* #define QOBJID(p) (((p) >> 8) & 0xFFFFFFFF) */
 
 
 static char *srvname    = "ommserver";
@@ -42,9 +48,7 @@ static char *gname      = "omm";
 static char *datafname  = "data";
 static char *metafname  = "meta";
 static char *queryfname = "query";
-/* static char *datares    = "Hello from data\n"; */
-/* static char *metares    = "Hello from meta\n"; */
-static char *queryres   = "Hello from query\n";
+static char *queryres   = "query result";
 
 static int nrootdir = 4;
 static int nobjdir = 2;
@@ -63,6 +67,8 @@ static vlong
 qpath(int type, int obj)
 {
 	return type | (obj << 4);
+	/* return type | (obj << 8); */
+	/* return type | ((vlong)obj << 4); */
 }
 
 
@@ -71,8 +77,8 @@ static struct timespec curtime;
 static void
 printloginfo(void)
 {
-    long            ms; // Milliseconds
-    time_t          s;  // Seconds
+    long ms; // Milliseconds
+    time_t s;  // Seconds
 	pid_t tid;
 	tid = threadid();
 	timespec_get(&curtime, TIME_UTC);
@@ -87,8 +93,16 @@ printloginfo(void)
 
 
 static void
+logpath(char *logstr, vlong path)
+{
+	LOG("%s path: 0%08llo, type: %lld, objid: %lld", logstr, path, QTYPE(path), QOBJID(path));
+}
+
+
+static void
 dostat(vlong path, Qid *qid, Dir *dir)
 {
+	logpath("stat", path);
 	char *name;
 	Qid q;
 	ulong mode;
@@ -111,7 +125,7 @@ dostat(vlong path, Qid *qid, Dir *dir)
 	case Qobj:
 		q.type = QTDIR;
 		char namestr[128];
-		snprint(namestr, 5 ,"obj%d", QOBJ(path));
+		snprint(namestr, 5 ,"obj%d", QOBJID(path));
 		name = namestr;
 		break;
 	case Qdata:
@@ -186,7 +200,8 @@ srvattach(Req *r)
 {
 	/* dostat(0, &r->ofcall.qid, nil); */
 	// Maybe more explicitly writing the path of the root dir ...
-	dostat(QTDIR | Qroot, &r->ofcall.qid, nil);
+	/* dostat(QTDIR | Qroot, &r->ofcall.qid, nil); */
+	dostat(Qroot, &r->ofcall.qid, nil);
 	r->fid->qid = r->ofcall.qid;
 	respond(r, nil);
 }
@@ -195,9 +210,12 @@ srvattach(Req *r)
 static char*
 srvwalk1(Fid *fid, char *name, Qid *qid)
 {
+	// FIXME QOBJID(fid->qid.path) is always 0
 	int i, dotdot;
 	vlong path;
 	path = fid->qid.path;
+	logpath("walk1 obj", path);
+	LOG("walk1 name: %s", name);
 	dotdot = strcmp(name, "..") == 0;
 	switch(QTYPE(path)) {
 	default:
@@ -207,18 +225,18 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 		if(dotdot)
 			break;
 		for(i=0; i<nrootdir; i++) {
-			LOG("walk1 name: %s", name);
 			if(strcmp(queryfname, name) == 0) {
-				LOG("query file");
+				/* LOG("query file"); */
 				path = qpath(Qquery, 0);
 				/* path = QTFILE | Qquery; */
 				goto Found;
 			}
-			char namestr[128];
-			snprint(namestr, 5 ,"obj%d", QOBJ(path));
+			/* char namestr[128]; */
+			/* snprint(namestr, 5 ,"obj%d", QOBJID(path)); */
+			/* snprint(namestr, 5 ,"obj%d", i); */
 			// FIXME properly check objdir name
 			/* if(strncmp(namestr, name, 4) == 0) { */
-				LOG("dir of obj: %lld", QOBJ(path));
+				/* LOG("dir of obj: %lld", QOBJID(path)); */
 				path = qpath(Qobj, i);
 				goto Found;
 			/* } */
@@ -229,21 +247,22 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 			path = Qroot;
 			break;
 		}
-		LOG("walk1 name: %s", name);
 		if(strcmp(datafname, name) == 0) {
-			LOG("data file of obj: %lld", QOBJ(path));
-			path = qpath(Qdata, QOBJ(path));
+			path = qpath(Qdata, QOBJID(path));
+			LOG("data file");
 			goto Found;
 		}
 		if(strcmp(metafname, name) == 0) {
-			LOG("meta file of obj: %lld", QOBJ(path));
-			path = qpath(Qmeta, QOBJ(path));
+			path = qpath(Qmeta, QOBJID(path));
+			LOG("meta file");
 			goto Found;
 		}
+		goto NotFound;
 		break;
 	}
 
 Found:
+	logpath("new qid", path);
 	dostat(path, qid, nil);
 	fid->qid = *qid;
 	return nil;
@@ -261,7 +280,7 @@ srvstat(Req *r)
 static void
 srvopen(Req *r)
 {
-	LOG("server open on qid path: %lld, vers: %ld, type: %d",
+	LOG("server open on qid path: 0%08llo, vers: %ld, type: %d",
 		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
 	r->ofcall.qid = r->fid->qid;
 	respond(r, nil);
@@ -271,11 +290,11 @@ srvopen(Req *r)
 static void
 srvread(Req *r)
 {
-	LOG("server read on qid path: %lld, vers: %ld, type: %d",
+	LOG("server read on qid path: 0%08llo, vers: %ld, type: %d",
 		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
 	vlong path;
 	path = r->fid->qid.path;
-	vlong objid = QOBJ(path);
+	vlong objid = QOBJID(path);
 	char objstr[128];
 	sprint(objstr, "%lld", objid);
 	switch(QTYPE(path)) {
@@ -287,11 +306,9 @@ srvread(Req *r)
 		break;
 	case Qdata:
 		readstr(r, objstr);
-		/* readstr(r, datares); */
 		break;
 	case Qmeta:
 		readstr(r, objstr);
-		/* readstr(r, metares); */
 		break;
 	case Qquery:
 		readstr(r, queryres);
@@ -304,7 +321,7 @@ srvread(Req *r)
 static void
 srvwrite(Req *r)
 {
-	LOG("server write on qid path: %lld, vers: %ld, type: %d",
+	LOG("server write on qid path: 0%08llo, vers: %ld, type: %d",
 		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
 	/* vlong offset; */
 	vlong path;
