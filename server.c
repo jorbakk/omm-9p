@@ -172,23 +172,47 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 	switch(QTYPE(path)) {
 	default:
 	NotFound:
-		return "file not found";
+		return "media obj not found";
 	case Qroot:
 		if(dotdot)
 			break;
 		for(i=0; i<nrootdir; i++) {
+			LOG("walk1 name: %s", name);
 			if(strcmp(queryfname, name) == 0) {
+				LOG("found query file");
 				path = QTFILE | Qqueryfile;
 				goto Found;
 			}
 			char namestr[128];
 			snprint(namestr, 5 ,"obj%d", QOBJ(path));
-			if(strcmp(namestr, name) == 0) {
+			// FIXME properly check objdir name
+			/* if(strncmp(namestr, name, 4) == 0) { */
+				LOG("found obj dir");
 				path = qpath(Qmediaobj, i);
 				goto Found;
-			}
+			/* } */
 		}
 		goto NotFound;
+	case Qmediaobj:
+		if(dotdot) {
+			path = Qroot;
+			break;
+		}
+		/*
+		n = strtol(name, &p, 10);
+		if(n == 0)
+			goto NotFound;
+		a = 0;
+		if(*p == 'a') {
+			a = 1;
+			p++;
+		}
+		if(*p != 0)
+			goto NotFound;
+		*/
+		/* path += Qsizedir - Qfontdir + qpath(0, 0, n, a, 0); */
+		/* path = ; */
+		break;
 	}
 
 Found:
