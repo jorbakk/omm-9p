@@ -37,13 +37,13 @@
 static char *srvname = "ommserver";
 static char *uname = "omm";
 static char *gname = "omm";
-static char *hellofname = "hello";
-static char *hellostr = "Hello from 9P!\n";
+static char *queryfname = "query";
+static char *querystr = "Hello from 9P!\n";
 
 enum
 {
 	Qroot = 0,
-	Qhellofile,
+	Qqueryfile,
 };
 
 
@@ -91,10 +91,11 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		name = "/";
 		break;
 
-	case Qhellofile:
+	case Qqueryfile:
 		q.type = QTFILE;
-		name = hellofname;
-		length = strlen(hellostr);
+		name = queryfname;
+		mode = 0666;
+		length = strlen(querystr);
 		break;
 	}
 
@@ -156,8 +157,8 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 		if(dotdot)
 			break;
 		for(i=0; i<2; i++) {
-			if(strcmp(hellofname, name) == 0) {
-				path = QTFILE | Qhellofile;
+			if(strcmp(queryfname, name) == 0) {
+				path = QTFILE | Qqueryfile;
 				goto Found;
 			}
 		}
@@ -177,9 +178,6 @@ srvstat(Req *r)
 	dostat(r->fid->qid.path, nil, &r->d);
 	respond(r, nil);
 }
-
-
-
 
 
 static void
@@ -202,10 +200,33 @@ srvread(Req *r)
 	case Qroot:
 		dirread9p(r, rootgen, nil);
 		break;
-	case Qhellofile:
-		readstr(r, hellostr);
+	case Qqueryfile:
+		readstr(r, querystr);
 		break;
 	}
+	respond(r, nil);
+}
+
+
+static void
+srvwrite(Req *r)
+{
+	LOG("server write on qid path: %lld, vers: %ld, type: %c", r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+	/* vlong offset; */
+	vlong path;
+	long count;
+	char querystr[128];
+
+	path = r->fid->qid.path;
+	/* offset = r->ifcall.offset; */
+	count = r->ifcall.count;
+	switch(QTYPE(path)) {
+	case Qqueryfile:
+		snprint(querystr, count, "%s", r->ifcall.data);
+		LOG("query: %s", querystr);
+		break;
+	}
+	r->ofcall.count = count;
 	respond(r, nil);
 }
 
@@ -214,8 +235,9 @@ Srv server = {
 	.attach = srvattach,
 	.walk1  = srvwalk1,
 	.stat   = srvstat,
-	.open  = srvopen,
-	.read  = srvread,
+	.open   = srvopen,
+	.read   = srvread,
+	.write  = srvwrite,
 };
 
 
