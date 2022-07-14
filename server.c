@@ -36,16 +36,18 @@
 #define QOBJ(p) (((p) >> 4) & 0xFFFFFFFF)
 
 
-static char *srvname = "ommserver";
-static char *uname = "omm";
-static char *gname = "omm";
-static char *datafname = "data";
-/* static char *metafname = "meta"; */
+static char *srvname    = "ommserver";
+static char *uname      = "omm";
+static char *gname      = "omm";
+static char *datafname  = "data";
+static char *metafname  = "meta";
 static char *queryfname = "query";
-static char *queryres = "Hello from query\n";
+static char *datares    = "Hello from data\n";
+static char *metares    = "Hello from meta\n";
+static char *queryres   = "Hello from query\n";
 
 static int nrootdir = 4;
-static int nobjdir = 1;
+static int nobjdir = 2;
 
 enum
 {
@@ -116,6 +118,10 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		q.type = QTFILE;
 		name = datafname;
 		break;
+	case Qmeta:
+		q.type = QTFILE;
+		name = metafname;
+		break;
 	case Qquery:
 		q.type = QTFILE;
 		name = queryfname;
@@ -163,7 +169,12 @@ objgen(int i, Dir *d, void *v)
 	if(i >= nobjdir)
 		// End of directory
 		return -1;
-	dostat(qpath(Qdata, i), nil, d);
+	if (i == 0) {
+		dostat(qpath(Qdata, i), nil, d);
+	}
+	else {
+		dostat(qpath(Qmeta, i), nil, d);
+	}
 	return 0;
 }
 
@@ -222,6 +233,12 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 			path = QTFILE | Qdata;
 			goto Found;
 		}
+		if(strcmp(metafname, name) == 0) {
+			LOG("found meta file");
+			// FIXME path should point to meta file of different objs, use qpath()
+			path = QTFILE | Qmeta;
+			goto Found;
+		}
 		/*
 		n = strtol(name, &p, 10);
 		if(n == 0)
@@ -276,6 +293,12 @@ srvread(Req *r)
 		break;
 	case Qobj:
 		dirread9p(r, objgen, nil);
+		break;
+	case Qdata:
+		readstr(r, datares);
+		break;
+	case Qmeta:
+		readstr(r, metares);
 		break;
 	case Qquery:
 		readstr(r, queryres);
