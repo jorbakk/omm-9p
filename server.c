@@ -23,7 +23,6 @@
 // TODO
 // 1. Database backend
 
-
 #include <u.h>
 #include <stdio.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
@@ -32,14 +31,13 @@
 #include <thread.h>
 #include <9p.h>
 #include <9pclient.h>
+#include <sqlite3.h>
 
 #define _DEBUG_ 1
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 #define QTYPE(p) ((p) & 0xF)
 #define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
-/* #define QOBJID(p) (((p) >> 8) & 0xFFFFFFFF) */
-
 
 static char *srvname    = "ommserver";
 static char *uname      = "omm";

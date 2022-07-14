@@ -1,9 +1,9 @@
 LIBS        := -lz -lm
-9PLIBS      := -l9 -l9p -l9pclient
-# 9PLIBS      := -l9 -l9p -l9pclient -ldraw
+9PLIBS      := -l9 -l9p -l9pclient  # -ldraw
 AVLIBS      := -lavutil -lavformat -lavcodec -lswscale -lswresample
 SDL2LIBS    := $(shell pkg-config --libs sdl2)
 SDL2CFLAGS  := $(shell pkg-config --cflags sdl2)
+SQLITE3LIBS := $(shell pkg-config --libs sqlite3)
 
 LIBS   += $(9PLIBS) $(AVLIBS) $(SDL2LIBS)
 CFLAGS += $(SDL2CFLAGS)
@@ -16,7 +16,7 @@ build/renderer: renderer.c
 
 build/server: server.c
 	9c -g -o build/server.o server.c
-	9l -g -o build/server build/server.o $(9PLIBS)
+	9l -g -o build/server build/server.o $(9PLIBS) $(SQLITE3LIBS)
 
 clean:
 	rm -r build/*
