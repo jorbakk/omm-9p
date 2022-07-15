@@ -693,9 +693,9 @@ decoder_thread(void *arg)
 	RendererCtx * renderer_ctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
 	LOG("opening 9P connection ...");
-	CFsys *fileserver = clientdial("tcp!localhost!5640");
+	/* CFsys *fileserver = clientdial("tcp!localhost!5640"); */
+	CFsys *fileserver = clientmount("ommserver");
 	/* CFsys *fileserver = clientdial("tcp!192.168.1.85!5640"); */
-	/* CFsys *fileserver = clientmount("ommserver"); */
 	start:
 	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
 		LOG("renderer stopped or no av stream file specified, waiting for command ...");

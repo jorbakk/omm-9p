@@ -21,9 +21,8 @@
  */
 
 // TODO
-// 1. Seek on data file
-// 2. Test server on a network (replace u9fs)
-// 3. Test multiple clients
+// 1. Test server on a network (replace u9fs)
+// 2. Test multiple clients
 
 #include <u.h>
 #include <stdio.h>
@@ -318,8 +317,9 @@ srvread(Req *r)
 {
 	LOG("server read on qid path: 0%08llo, objid: %lld, vers: %ld, type: %d",
 		r->fid->qid.path, QOBJID(r->fid->qid.path), r->fid->qid.vers, r->fid->qid.type);
-	vlong path;
+	vlong path, offset;
 	path = r->fid->qid.path;
+	offset = r->ifcall.offset;
 	vlong objid = QOBJID(path);
 	long count = r->ifcall.count;
 	const unsigned char *title;
@@ -332,6 +332,8 @@ srvread(Req *r)
 		break;
 	case Qdata:
 		if (r->fid->aux) {
+			// FIXME is seek type = 0 correct ?
+			seek(r->fid->aux, offset, 0);
 			size_t bytesread = read(r->fid->aux, r->ofcall.data, count);
 			r->ofcall.count = bytesread;
 		}
