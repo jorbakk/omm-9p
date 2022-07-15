@@ -39,17 +39,19 @@
 #define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
 #define IDSTR_MAXLEN 10
 
-static char *srvname    = "ommserver";
-static char *uname      = "omm";
-static char *gname      = "omm";
-static char *datafname  = "data";
-static char *metafname  = "meta";
-static char *queryfname = "query";
-static char *queryres   = "query result";
-static char *dbfile     = NULL;
-static sqlite3 *db      = NULL;
+static char *srvname           = "ommserver";
+static char *uname             = "omm";
+static char *gname             = "omm";
+static char *datafname         = "data";
+static char *metafname         = "meta";
+static char *queryfname        = "query";
+static char *queryres          = "query result";
+static sqlite3 *db             = NULL;
+static sqlite3_stmt *stmt      = NULL;
+static sqlite3_stmt *countstmt = NULL;
 
-static int nrootdir = 4;
+/* static int nrootdir = 4; */
+static int objcount = 0;
 static int nobjdir = 2;
 
 enum
@@ -61,6 +63,7 @@ enum
 	Qquery,
 };
 
+static void closedb(void);
 
 static vlong
 qpath(int type, int obj)
@@ -163,16 +166,23 @@ dostat(vlong path, Qid *qid, Dir *dir)
 static int
 rootgen(int i, Dir *d, void *v)
 {
-	if(i >= nrootdir)
-		// End of directory
+	if(i >= objcount + 1)
+		// End of root directory with objcount obj dirs and one query file
 		return -1;
 	if (i == 0) {
+		LOG("rootgen: query file");
 		dostat(qpath(Qquery, 0), nil, d);
 	}
 	else {
 		// SELECT id FROM obj LIMIT 1 OFFSET i
-		/* dostat(qpath(Qobj, id), nil, d); */
-		dostat(qpath(Qobj, i), nil, d);
+		sqlite3_bind_int(stmt, 1, i - 1);
+		int ret = sqlite3_step(stmt);
+		if (ret == SQLITE_ROW) {
+			int id = sqlite3_column_int(stmt, 0);
+			LOG("rootgen: select row %d returned objid: %d", i, id);
+			dostat(qpath(Qobj, id), nil, d);
+		}
+		sqlite3_reset(stmt);
 	}
 	return 0;
 }
@@ -336,6 +346,13 @@ srvwrite(Req *r)
 }
 
 
+int
+threadmaybackground(void)
+{
+	return 1;
+}
+
+
 Srv server = {
 	.attach = srvattach,
 	.walk1  = srvwalk1,
@@ -345,16 +362,8 @@ Srv server = {
 	.write  = srvwrite,
 };
 
-
-int
-threadmaybackground(void)
-{
-	return 1;
-}
-
-
 static void
-start_server(void *arg)
+startserver(void *arg)
 {
 	LOG("starting 9P server ...");
 	char *mtpt = nil;
@@ -366,21 +375,42 @@ start_server(void *arg)
 
 // FIXME should execute stop_server() on exit note (signal)
 static void
-stop_server(void)
+stopserver(void)
 {
 	LOG("stopping server ...");
-	sqlite3_close(db);
 	LOG("server stopped");
 }
 
 
 static void
-initdb(char *dbfile)
+opendb(char *dbfile)
 {
 	LOG("opening db: %s", dbfile);
 	if (sqlite3_open(dbfile, &db)) {
 		sysfatal("failed to open db");
 	}
+	if (sqlite3_prepare_v2(db, "SELECT id FROM obj LIMIT 1 OFFSET ?", -1, &stmt, NULL)) {
+		closedb();
+		sysfatal("failed to prepare sql statement");
+	}
+	if (sqlite3_prepare_v2(db, "SELECT COUNT(id) FROM obj LIMIT 1", -1, &countstmt, NULL)) {
+		closedb();
+		sysfatal("failed to prepare sql count statement");
+	}
+	int ret = sqlite3_step(countstmt);
+	if (ret == SQLITE_ROW) {
+		objcount = sqlite3_column_int(countstmt, 0);
+		LOG("select of objcount returned: %d", objcount);
+	}
+}
+
+
+static void
+closedb(void)
+{
+	LOG("closing db ...");
+	sqlite3_close(db);
+	LOG("db closed");
 }
 
 
@@ -390,7 +420,8 @@ threadmain(int argc, char **argv)
 	if (argc == 1) {
 		sysfatal("no db file provided");
 	}
-	initdb(argv[1]);
-	start_server(nil);
-	stop_server();
+	opendb(argv[1]);
+	startserver(nil);
+	stopserver();
+	closedb();
 }
