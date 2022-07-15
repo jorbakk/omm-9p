@@ -21,7 +21,7 @@
  */
 
 // TODO
-// 1. Serve file data in data file
+// 1. Seek on data file
 // 2. Test server on a network (replace u9fs)
 // 3. Test multiple clients
 
