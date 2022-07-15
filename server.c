@@ -30,7 +30,6 @@
 #include <fcall.h>
 #include <thread.h>
 #include <9p.h>
-#include <9pclient.h>
 #include <sqlite3.h>
 
 #define _DEBUG_ 1
@@ -46,6 +45,8 @@ static char *datafname  = "data";
 static char *metafname  = "meta";
 static char *queryfname = "query";
 static char *queryres   = "query result";
+static char *dbfile     = NULL;
+static sqlite3 *db      = NULL;
 
 static int nrootdir = 4;
 static int nobjdir = 2;
@@ -360,12 +361,29 @@ start_server(void *arg)
 }
 
 
+// FIXME should execute stop_server() on exit note (signal)
+static void
+stop_server(void)
+{
+	LOG("stopping server ...");
+	sqlite3_close(db);
+	LOG("server stopped");
+}
+
+
 void
 threadmain(int argc, char **argv)
 {
-	if (_DEBUG_) {
-		chatty9pclient = 1;
-		/* chattyfuse = 1; */
+	if (argc > 1) {
+		dbfile = argv[1];
+		LOG("opening db: %s", dbfile);
+		if (sqlite3_open(dbfile, &db)) {
+			sysfatal("failed to open db");
+		}
+	}
+	else {
+		sysfatal("no db file provided");
 	}
 	start_server(nil);
+	stop_server();
 }
