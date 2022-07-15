@@ -21,7 +21,9 @@
  */
 
 // TODO
-// 1. Database backend
+// 1. Serve file data in data file
+// 2. Test server on a network (replace u9fs)
+// 3. Test multiple clients
 
 #include <u.h>
 #include <stdio.h>
@@ -312,6 +314,7 @@ srvread(Req *r)
 		dirread9p(r, objgen, nil);
 		break;
 	case Qdata:
+		// TODO move this from srvread() to srvopen() and just read from an opened file handle here
 		// SELECT title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
 		sqlret = sqlite3_step(metastmt);
@@ -442,6 +445,9 @@ threadmain(int argc, char **argv)
 {
 	if (argc == 1) {
 		sysfatal("no db file provided");
+	}
+	if (_DEBUG_) {
+		chatty9p = 1;
 	}
 	opendb(argv[1]);
 	startserver(nil);
