@@ -290,9 +290,28 @@ srvstat(Req *r)
 static void
 srvopen(Req *r)
 {
+	vlong path = r->fid->qid.path;
+	vlong objid = QOBJID(path);
+	/* const unsigned char *objpath; */
+	const char *objpath;
 	LOG("server open on qid path: 0%08llo, vers: %ld, type: %d",
-		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+		path, r->fid->qid.vers, r->fid->qid.type);
 	r->ofcall.qid = r->fid->qid;
+	if (QTYPE(path) == Qdata && r->fid->aux == nil) {
+		// SELECT title, path FROM obj WHERE id = objid LIMIT 1
+		sqlite3_bind_int(metastmt, 1, objid);
+		int sqlret = sqlite3_step(metastmt);
+		if (sqlret == SQLITE_ROW) {
+			objpath = sqlite3_column_text(metastmt, 1);
+			LOG("meta query returned file path: %s", objpath);
+			// FIXME use plan 9 open() or stdio fopen() ?
+			r->fid->aux = fopen(objpath, "r");
+			if(r->fid->aux == nil) {
+				LOG("failed to open file system handle for media object");
+			}
+		}
+		sqlite3_reset(metastmt);
+	}
 	respond(r, nil);
 }
 
@@ -305,10 +324,8 @@ srvread(Req *r)
 	vlong path;
 	path = r->fid->qid.path;
 	vlong objid = QOBJID(path);
-	char objstr[128];
-	sprint(objstr, "%lld", objid);
-	const unsigned char *title, *objpath;
-	int sqlret;
+	long count = r->ifcall.count;
+	const unsigned char *title;
 	switch(QTYPE(path)) {
 	case Qroot:
 		dirread9p(r, rootgen, nil);
@@ -317,21 +334,15 @@ srvread(Req *r)
 		dirread9p(r, objgen, nil);
 		break;
 	case Qdata:
-		// TODO move this from srvread() to srvopen() and just read from an opened file handle here
-		// SELECT title, path FROM obj WHERE id = objid LIMIT 1
-		sqlite3_bind_int(metastmt, 1, objid);
-		sqlret = sqlite3_step(metastmt);
-		if (sqlret == SQLITE_ROW) {
-			objpath = sqlite3_column_text(metastmt, 1);
-			LOG("meta query returned file path: %s", objpath);
-			readstr(r, objpath);
+		if (r->fid->aux) {
+			size_t bytesread = fread(r->ofcall.data, 1, count, r->fid->aux);
+			r->ofcall.count = bytesread;
 		}
-		sqlite3_reset(metastmt);
 		break;
 	case Qmeta:
 		// SELECT title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
-		sqlret = sqlite3_step(metastmt);
+		int sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
 			title   = sqlite3_column_text(metastmt, 0);
 			LOG("meta query returned title: %s", title);
@@ -371,21 +382,35 @@ srvwrite(Req *r)
 }
 
 
+static void
+srvdestroyfid(Fid *fid)
+{
+	FILE *datafh = fid->aux;
+	if(datafh == nil)
+		return;
+	LOG("closing file data handle");
+	fclose(datafh);
+	fid->aux = nil;
+}
+
+
+Srv server = {
+	.attach     = srvattach,
+	.walk1      = srvwalk1,
+	.stat       = srvstat,
+	.open       = srvopen,
+	.read       = srvread,
+	.write      = srvwrite,
+	.destroyfid = srvdestroyfid,
+};
+
+
 int
 threadmaybackground(void)
 {
 	return 1;
 }
 
-
-Srv server = {
-	.attach = srvattach,
-	.walk1  = srvwalk1,
-	.stat   = srvstat,
-	.open   = srvopen,
-	.read   = srvread,
-	.write  = srvwrite,
-};
 
 static void
 startserver(void *arg)
