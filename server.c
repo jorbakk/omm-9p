@@ -207,7 +207,7 @@ srvattach(Req *r)
 static char*
 srvwalk1(Fid *fid, char *name, Qid *qid)
 {
-	int i, dotdot;
+	int dotdot;
 	vlong path;
 	path = fid->qid.path;
 	logpath("walk1 obj", path);
@@ -220,22 +220,20 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 	case Qroot:
 		if(dotdot)
 			break;
-
-		for(i=0; i<nrootdir; i++) {
-			if(strcmp(queryfname, name) == 0) {
-				path = qpath(Qquery, 0);
-				goto Found;
-			}
-			char idstr[IDSTR_MAXLEN];
-			snprint(idstr, IDSTR_MAXLEN ,"%d", i);
-			if(strncmp(idstr, name, IDSTR_MAXLEN) == 0) {
-				LOG("FOUND obj");
-				path = qpath(Qobj, i);
-				goto Found;
-			}
+		if(strcmp(queryfname, name) == 0) {
+			path = qpath(Qquery, 0);
+			goto Found;
 		}
-
-		goto NotFound;
+		char *endnum;
+		vlong objid = strtoull(name, &endnum, 10);
+		if (objid == 0 || endnum == name) {
+			LOG("failed to convert obj file name to objid");
+			/* werrstr("failed to convert obj file name to objid"); */
+			goto NotFound;
+        }
+		LOG("FOUND obj");
+		path = qpath(Qobj, objid);
+		goto Found;
 	case Qobj:
 		if(dotdot) {
 			path = Qroot;
