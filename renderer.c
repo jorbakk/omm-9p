@@ -371,7 +371,17 @@ clientdial(char *addr)
 		sysfatal("dial: %r");
 	LOG("mounting address ...");
 	if ((fs = fsmnt(fd, nil)) == nil)
-		sysfatal("mount: %r");
+		sysfatal("fsmount: %r");
+	return fs;
+}
+
+
+CFsys*
+clientmount(char *name)
+{
+	CFsys *fs;
+	if ((fs = nsmnt(name, nil)) == nil)
+		sysfatal("nsmount: %r");
 	return fs;
 }
 
@@ -685,6 +695,7 @@ decoder_thread(void *arg)
 	LOG("opening 9P connection ...");
 	CFsys *fileserver = clientdial("tcp!localhost!5640");
 	/* CFsys *fileserver = clientdial("tcp!192.168.1.85!5640"); */
+	/* CFsys *fileserver = clientmount("ommserver"); */
 	start:
 	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
 		LOG("renderer stopped or no av stream file specified, waiting for command ...");
