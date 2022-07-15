@@ -37,6 +37,7 @@
 
 #define QTYPE(p) ((p) & 0xF)
 #define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
+#define IDSTR_MAXLEN 10
 
 static char *srvname    = "ommserver";
 static char *uname      = "omm";
@@ -122,9 +123,9 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		break;
 	case Qobj:
 		q.type = QTDIR;
-		char namestr[128];
-		snprint(namestr, 5 ,"obj%d", QOBJID(path));
-		name = namestr;
+		char idstr[IDSTR_MAXLEN + 1];
+		snprint(idstr, IDSTR_MAXLEN ,"%d", QOBJID(path));
+		name = idstr;
 		break;
 	case Qdata:
 		q.type = QTFILE;
@@ -219,19 +220,21 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 	case Qroot:
 		if(dotdot)
 			break;
+
 		for(i=0; i<nrootdir; i++) {
 			if(strcmp(queryfname, name) == 0) {
 				path = qpath(Qquery, 0);
 				goto Found;
 			}
-			char namestr[128];
-			snprint(namestr, 5 ,"obj%d", i);
-			if(strncmp(namestr, name, 5) == 0) {
+			char idstr[IDSTR_MAXLEN];
+			snprint(idstr, IDSTR_MAXLEN ,"%d", i);
+			if(strncmp(idstr, name, IDSTR_MAXLEN) == 0) {
 				LOG("FOUND obj");
 				path = qpath(Qobj, i);
 				goto Found;
 			}
 		}
+
 		goto NotFound;
 	case Qobj:
 		if(dotdot) {
