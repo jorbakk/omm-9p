@@ -34,14 +34,13 @@
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
 // 4. Don't hard code server address to dial
 // 5. Query renderer info (current position, state, audio volume) from 9P server
-// 6. High cpu load in stop / pause state
-// 7. Display single still images
-// 8. Fixes / refactoring / testing
+// 6. Display single still images
+// 7. Fixes / refactoring / testing
 // - allow video scaling in decoder thread and in video thread
 // - blanking screen on stop / eof doesn't work allways
 // - test keyboard / server input combinations (fuzz testing ...)
-// 9. Experiment with serving video and audio output channels via the 9P server
-// 10. Build renderer into drawterm-av
+// 8. Experiment with serving video and audio output channels via the 9P server
+// 9. Build renderer into drawterm-av
 
 // Thread layout:
 //   main_thread (event loop)
@@ -616,12 +615,12 @@ threadmain(int argc, char **argv)
 	}
 	/* av_init_packet(&flush_pkt); */
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
-	/* yield(); */
 	for (;;) {
 		yield();
-		/* p9sleep(100); */
+		if (renderer_ctx->renderer_state == RSTATE_STOP || renderer_ctx->renderer_state == RSTATE_PAUSE) {
+			p9sleep(100);
+		}
 		SDL_Event event;
-		/* LOG("polling sdl event ..."); */
 		ret = SDL_PollEvent(&event);
 		if (ret) {
 			LOG("received sdl event");
