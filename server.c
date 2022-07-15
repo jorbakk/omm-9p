@@ -170,6 +170,8 @@ rootgen(int i, Dir *d, void *v)
 		dostat(qpath(Qquery, 0), nil, d);
 	}
 	else {
+		// SELECT id FROM obj LIMIT 1 OFFSET i
+		/* dostat(qpath(Qobj, id), nil, d); */
 		dostat(qpath(Qobj, i), nil, d);
 	}
 	return 0;
@@ -372,19 +374,23 @@ stop_server(void)
 }
 
 
+static void
+initdb(char *dbfile)
+{
+	LOG("opening db: %s", dbfile);
+	if (sqlite3_open(dbfile, &db)) {
+		sysfatal("failed to open db");
+	}
+}
+
+
 void
 threadmain(int argc, char **argv)
 {
-	if (argc > 1) {
-		dbfile = argv[1];
-		LOG("opening db: %s", dbfile);
-		if (sqlite3_open(dbfile, &db)) {
-			sysfatal("failed to open db");
-		}
-	}
-	else {
+	if (argc == 1) {
 		sysfatal("no db file provided");
 	}
+	initdb(argv[1]);
 	start_server(nil);
 	stop_server();
 }
