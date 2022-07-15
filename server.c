@@ -75,8 +75,6 @@ static vlong
 qpath(int type, int obj)
 {
 	return type | (obj << 4);
-	/* return type | (obj << 8); */
-	/* return type | ((vlong)obj << 4); */
 }
 
 
@@ -304,8 +302,7 @@ srvopen(Req *r)
 		if (sqlret == SQLITE_ROW) {
 			objpath = sqlite3_column_text(metastmt, 1);
 			LOG("meta query returned file path: %s", objpath);
-			// FIXME use plan 9 open() or stdio fopen() ?
-			r->fid->aux = fopen(objpath, "r");
+			r->fid->aux = open(objpath, OREAD);
 			if(r->fid->aux == nil) {
 				LOG("failed to open file system handle for media object");
 			}
@@ -335,7 +332,7 @@ srvread(Req *r)
 		break;
 	case Qdata:
 		if (r->fid->aux) {
-			size_t bytesread = fread(r->ofcall.data, 1, count, r->fid->aux);
+			size_t bytesread = read(r->fid->aux, r->ofcall.data, count);
 			r->ofcall.count = bytesread;
 		}
 		break;
@@ -385,12 +382,12 @@ srvwrite(Req *r)
 static void
 srvdestroyfid(Fid *fid)
 {
-	FILE *datafh = fid->aux;
-	if(datafh == nil)
+	int datafh = fid->aux;
+	if(!datafh)
 		return;
 	LOG("closing file data handle");
-	fclose(datafh);
-	fid->aux = nil;
+	close(datafh);
+	fid->aux = 0;
 }
 
 
