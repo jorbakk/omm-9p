@@ -52,6 +52,9 @@ static sqlite3 *db             = NULL;
 static sqlite3_stmt *idstmt    = NULL;
 static sqlite3_stmt *countstmt = NULL;
 static sqlite3_stmt *metastmt  = NULL;
+static const char *idqry       = "SELECT id FROM obj LIMIT 1 OFFSET ?";
+static const char *countqry    = "SELECT COUNT(id) FROM obj LIMIT 1";
+static const char *metaqry     = "SELECT title, path FROM obj WHERE id = ? LIMIT 1";
 
 /* static int nrootdir = 4; */
 static int objcount = 0;
@@ -411,11 +414,11 @@ opendb(char *dbfile)
 	if (sqlite3_open(dbfile, &db)) {
 		sysfatal("failed to open db");
 	}
-	if (sqlite3_prepare_v2(db, "SELECT id FROM obj LIMIT 1 OFFSET ?", -1, &idstmt, NULL)) {
+	if (sqlite3_prepare_v2(db, idqry, -1, &idstmt, NULL)) {
 		closedb();
 		sysfatal("failed to prepare sql statement");
 	}
-	if (sqlite3_prepare_v2(db, "SELECT COUNT(id) FROM obj LIMIT 1", -1, &countstmt, NULL)) {
+	if (sqlite3_prepare_v2(db, countqry, -1, &countstmt, NULL)) {
 		closedb();
 		sysfatal("failed to prepare sql count statement");
 	}
@@ -424,7 +427,7 @@ opendb(char *dbfile)
 		objcount = sqlite3_column_int(countstmt, 0);
 		LOG("select of objcount returned: %d", objcount);
 	}
-	if (sqlite3_prepare_v2(db, "SELECT title, path FROM obj WHERE id = ? LIMIT 1", -1, &metastmt, NULL)) {
+	if (sqlite3_prepare_v2(db, metaqry, -1, &metastmt, NULL)) {
 		closedb();
 		sysfatal("failed to prepare sql obj meta data statement");
 	}
