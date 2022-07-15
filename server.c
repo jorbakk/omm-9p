@@ -47,8 +47,9 @@ static char *metafname         = "meta";
 static char *queryfname        = "query";
 static char *queryres          = "query result";
 static sqlite3 *db             = NULL;
-static sqlite3_stmt *stmt      = NULL;
+static sqlite3_stmt *idstmt    = NULL;
 static sqlite3_stmt *countstmt = NULL;
+static sqlite3_stmt *metastmt  = NULL;
 
 /* static int nrootdir = 4; */
 static int objcount = 0;
@@ -175,14 +176,14 @@ rootgen(int i, Dir *d, void *v)
 	}
 	else {
 		// SELECT id FROM obj LIMIT 1 OFFSET i
-		sqlite3_bind_int(stmt, 1, i - 1);
-		int ret = sqlite3_step(stmt);
+		sqlite3_bind_int(idstmt, 1, i - 1);
+		int ret = sqlite3_step(idstmt);
 		if (ret == SQLITE_ROW) {
-			int id = sqlite3_column_int(stmt, 0);
+			int id = sqlite3_column_int(idstmt, 0);
 			LOG("rootgen: select row %d returned objid: %d", i, id);
 			dostat(qpath(Qobj, id), nil, d);
 		}
-		sqlite3_reset(stmt);
+		sqlite3_reset(idstmt);
 	}
 	return 0;
 }
@@ -294,13 +295,15 @@ srvopen(Req *r)
 static void
 srvread(Req *r)
 {
-	LOG("server read on qid path: 0%08llo, vers: %ld, type: %d",
-		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+	LOG("server read on qid path: 0%08llo, objid: %lld, vers: %ld, type: %d",
+		r->fid->qid.path, QOBJID(r->fid->qid.path), r->fid->qid.vers, r->fid->qid.type);
 	vlong path;
 	path = r->fid->qid.path;
 	vlong objid = QOBJID(path);
 	char objstr[128];
 	sprint(objstr, "%lld", objid);
+	const unsigned char *title, *objpath;
+	int sqlret;
 	switch(QTYPE(path)) {
 	case Qroot:
 		dirread9p(r, rootgen, nil);
@@ -309,10 +312,26 @@ srvread(Req *r)
 		dirread9p(r, objgen, nil);
 		break;
 	case Qdata:
-		readstr(r, objstr);
+		// SELECT title, path FROM obj WHERE id = objid LIMIT 1
+		sqlite3_bind_int(metastmt, 1, objid);
+		sqlret = sqlite3_step(metastmt);
+		if (sqlret == SQLITE_ROW) {
+			objpath = sqlite3_column_text(metastmt, 1);
+			LOG("meta query returned file path: %s", objpath);
+			readstr(r, objpath);
+		}
+		sqlite3_reset(metastmt);
 		break;
 	case Qmeta:
-		readstr(r, objstr);
+		// SELECT title, path FROM obj WHERE id = objid LIMIT 1
+		sqlite3_bind_int(metastmt, 1, objid);
+		sqlret = sqlite3_step(metastmt);
+		if (sqlret == SQLITE_ROW) {
+			title   = sqlite3_column_text(metastmt, 0);
+			LOG("meta query returned title: %s", title);
+			readstr(r, title);
+		}
+		sqlite3_reset(metastmt);
 		break;
 	case Qquery:
 		readstr(r, queryres);
@@ -389,7 +408,7 @@ opendb(char *dbfile)
 	if (sqlite3_open(dbfile, &db)) {
 		sysfatal("failed to open db");
 	}
-	if (sqlite3_prepare_v2(db, "SELECT id FROM obj LIMIT 1 OFFSET ?", -1, &stmt, NULL)) {
+	if (sqlite3_prepare_v2(db, "SELECT id FROM obj LIMIT 1 OFFSET ?", -1, &idstmt, NULL)) {
 		closedb();
 		sysfatal("failed to prepare sql statement");
 	}
@@ -401,6 +420,10 @@ opendb(char *dbfile)
 	if (ret == SQLITE_ROW) {
 		objcount = sqlite3_column_int(countstmt, 0);
 		LOG("select of objcount returned: %d", objcount);
+	}
+	if (sqlite3_prepare_v2(db, "SELECT title, path FROM obj WHERE id = ? LIMIT 1", -1, &metastmt, NULL)) {
+		closedb();
+		sysfatal("failed to prepare sql obj meta data statement");
 	}
 }
 
