@@ -839,7 +839,10 @@ decoder_thread(void *arg)
 	int h;
 	SDL_GetWindowSize(sdl_window, &w, &h);
 	float war = (float)h / w;
-	float far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
+	float far = 1.0;
+	if (renderer_ctx->video_ctx) {
+		far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
+	}
 	int aw = h / far;
 	int ah = h;
 	if (war > far) {

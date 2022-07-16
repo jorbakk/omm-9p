@@ -332,7 +332,6 @@ srvread(Req *r)
 		break;
 	case Qdata:
 		if (r->fid->aux) {
-			// FIXME is seek type = 0 correct ?
 			seek(r->fid->aux, offset, 0);
 			size_t bytesread = read(r->fid->aux, r->ofcall.data, count);
 			r->ofcall.count = bytesread;
