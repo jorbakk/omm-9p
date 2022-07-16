@@ -117,6 +117,7 @@ void printloginfo(void)
 
 typedef struct RendererCtx
 {
+	CFsys            *fileserver;
 	AVFormatContext  *pFormatCtx;
 	int               renderer_state;
 	Channel          *cmdq;
@@ -605,6 +606,7 @@ threadmain(int argc, char **argv)
 	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
 	renderer_ctx->renderer_state = RSTATE_STOP;
 	blank_window(renderer_ctx);
+	renderer_ctx->fileserver = NULL;
 	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
 	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
 	renderer_ctx->video_ctx = NULL;
@@ -692,10 +694,6 @@ decoder_thread(void *arg)
 {
 	RendererCtx * renderer_ctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
-	LOG("opening 9P connection ...");
-	/* CFsys *fileserver = clientdial("tcp!localhost!5640"); */
-	CFsys *fileserver = clientmount("ommserver");
-	/* CFsys *fileserver = clientdial("tcp!192.168.1.85!5640"); */
 	start:
 	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
 		LOG("renderer stopped or no av stream file specified, waiting for command ...");
@@ -721,8 +719,14 @@ decoder_thread(void *arg)
 			LOG("failed to receive command");
 		}
 	}
+	LOG("opening 9P connection ...");
+	if (!renderer_ctx->fileserver) {
+		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
+		renderer_ctx->fileserver = clientmount("ommserver");
+		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
+	}
 	LOG("opening 9P file ...");
-	CFid *fid = clientopen(fileserver, renderer_ctx->filename, OREAD);
+	CFid *fid = clientopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
 	/* CFid *fid = xopen(renderer_ctx->filename, OREAD); */
 	if (fid == nil) {
 		renderer_ctx->renderer_state = RSTATE_STOP;
