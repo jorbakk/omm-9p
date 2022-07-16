@@ -286,8 +286,6 @@ static int audio_resampling(
 );
 AudioResamplingState * getAudioResampling(uint64_t channel_layout);
 void stream_seek(RendererCtx *renderer_ctx, int64_t pos, int rel);
-CFsys *(*nsmnt)(char*, char*) = nsmount;
-CFsys *(*fsmnt)(int, char*) = fsmount;
 
 
 void
@@ -354,7 +352,7 @@ demuxerPacketSeek(void *fid, int64_t offset, int whence)
 		/* else */
 			/* *p++ = 0; */
 		/* *path = p; */
-		/* fs = nsmnt(name, aname); */
+		/* fs = nsmount(name, aname); */
 		/* if(fs == nil) */
 			/* sysfatal("mount: %r"); */
 	/* } */
@@ -365,7 +363,7 @@ demuxerPacketSeek(void *fid, int64_t offset, int whence)
 		/* if ((fd = dial(addr, nil, nil, nil)) < 0) */
 			/* sysfatal("dial: %r"); */
 		/* LOG("mounting address ..."); */
-		/* if ((fs = fsmnt(fd, aname)) == nil) */
+		/* if ((fs = fsmount(fd, aname)) == nil) */
 			/* sysfatal("mount: %r"); */
 	/* } */
 	/* return fs; */
@@ -397,7 +395,7 @@ clientdial(char *addr)
 	if ((fd = dial(addr, nil, nil, nil)) < 0)
 		sysfatal("dial: %r");
 	LOG("mounting address ...");
-	if ((fs = fsmnt(fd, nil)) == nil)
+	if ((fs = fsmount(fd, nil)) == nil)
 		sysfatal("fsmount: %r");
 	return fs;
 }
@@ -407,7 +405,7 @@ CFsys*
 clientmount(char *name)
 {
 	CFsys *fs;
-	if ((fs = nsmnt(name, nil)) == nil)
+	if ((fs = nsmount(name, nil)) == nil)
 		sysfatal("nsmount: %r");
 	return fs;
 }
