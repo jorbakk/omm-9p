@@ -94,6 +94,7 @@ void printloginfo(void)
 
 
 #define _DEBUG_ 1
+#define DEFAULT_SERVER_NAME "ommserver"
 #define SDL_AUDIO_BUFFER_SIZE 1024
 #define MAX_AUDIO_FRAME_SIZE 192000
 #define MAX_CMD_STR_LEN 256
@@ -117,15 +118,23 @@ void printloginfo(void)
 
 typedef struct RendererCtx
 {
-	CFsys            *fileserver;
-	AVFormatContext  *pFormatCtx;
-	int               renderer_state;
-	Channel          *cmdq;
-	int               screen_width;
-	int               screen_height;
-	int               window_width;
-	int               window_height;
-
+	// Input file name, plan 9 file reference, os window
+	char              *fileservername;
+	CFsys             *fileserver;
+	char              *filename;
+	CFid              *fid;
+	AVFormatContext   *pFormatCtx;
+	int                renderer_state;
+	Channel           *cmdq;
+	int                screen_width;
+	int                screen_height;
+	int                window_width;
+	int                window_height;
+	// Threads
+	int                server_tid;
+	int                decoder_tid;
+	int                video_tid;
+	int                audio_tid;
 	// Audio Stream.
 	int                audioStream;
 	AVStream          *audio_st;
@@ -136,9 +145,6 @@ typedef struct RendererCtx
 	unsigned int       audio_buf_index;
 	AVFrame            audio_frame;
 	AVPacket           audio_pkt;
-	/* uint8_t *          audio_pkt_data; */
-	/* int                audio_pkt_size; */
-	/* double             audio_clock; */
 	int                audio_idx;
 	double             audio_pts;
 	double             current_audio_pts;
@@ -152,6 +158,24 @@ typedef struct RendererCtx
 	Channel           *pictq;
 	struct SwsContext *sws_ctx;
 	struct SwsContext *rgb_ctx;
+	SDL_AudioSpec      specs;
+	int                video_idx;
+	double             video_pts;
+	// Seeking
+	int	               seek_req;
+	int	               seek_flags;
+	int64_t            seek_pos;
+	// Maximum number of frames to be decoded
+	long               maxFramesToDecode;
+	int	               currentFrameIndex;
+	int                frame_fmt;
+	SDL_AudioDeviceID  audioDevId;
+	int                audio_only;
+	// AV Sync
+	/* double             audio_clock; */
+	/* int	              av_sync_type; */
+	/* double             external_clock; */
+	/* int64_t            external_clock_time; */
 	/* double             frame_timer; */
 	/* double             frame_last_pts; */
 	/* double             frame_last_delay; */
@@ -162,32 +186,6 @@ typedef struct RendererCtx
 	/* double             audio_diff_avg_coef; */
 	/* double             audio_diff_threshold; */
 	/* int                audio_diff_avg_count; */
-
-	SDL_AudioSpec      specs;
-	int                video_idx;
-	double             video_pts;
-	// AV Sync
-	/* int	               av_sync_type; */
-	/* double             external_clock; */
-	/* int64_t            external_clock_time; */
-	// Seeking
-	int	               seek_req;
-	int	               seek_flags;
-	int64_t            seek_pos;
-	// Threads
-	int                server_tid;
-	int                decoder_tid;
-	int                video_tid;
-	int                audio_tid;
-	// Input file name and plan 9 file reference
-	char              *filename;
-	CFid              *fid;
-	// Maximum number of frames to be decoded
-	long               maxFramesToDecode;
-	int	               currentFrameIndex;
-	int                frame_fmt;
-	SDL_AudioDeviceID  audioDevId;
-	int                audio_only;
 } RendererCtx;
 
 typedef struct AudioResamplingState
@@ -580,6 +578,7 @@ threadmain(int argc, char **argv)
 	}
 
 	// copy the file name input by the user to the RendererCtx structure
+	renderer_ctx->fileservername = DEFAULT_SERVER_NAME;
 	renderer_ctx->filename = NULL;
 	if (argc >= 2) {
 		int narg = strlen(argv[1]);
@@ -711,7 +710,7 @@ decoder_thread(void *arg)
 	LOG("opening 9P connection ...");
 	if (!renderer_ctx->fileserver) {
 		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
-		renderer_ctx->fileserver = clientmount("ommserver");
+		renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername);
 		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
 	}
 	LOG("opening 9P file ...");
