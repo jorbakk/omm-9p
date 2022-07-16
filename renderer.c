@@ -313,6 +313,8 @@ reset_filectx(RendererCtx *renderer_ctx)
 		free(renderer_ctx->filename);
 		renderer_ctx->filename = NULL;
 	}
+	// FIXME do we need to close the network connection?
+	/* fsclose(renderer_ctx->fileserver); */
 }
 
 
@@ -914,6 +916,7 @@ decoder_thread(void *arg)
 				}
 				else if (cmd.cmd == CMD_STOP) {
 					renderer_ctx->renderer_state = RSTATE_STOP;
+					reset_filectx(renderer_ctx);
 					blank_window(renderer_ctx);
 					goto start;
 				}
@@ -931,6 +934,7 @@ decoder_thread(void *arg)
 				LOG("EOF");
 			}
 			renderer_ctx->renderer_state = RSTATE_STOP;
+			reset_filectx(renderer_ctx);
 			blank_window(renderer_ctx);
 			goto start;
 		}
@@ -961,6 +965,7 @@ decoder_thread(void *arg)
 		if (decsend_ret == AVERROR_EOF) {
 			LOG("AVERROR = EOF: decoder has been flushed");
 			renderer_ctx->renderer_state = RSTATE_STOP;
+			reset_filectx(renderer_ctx);
 			blank_window(renderer_ctx);
 		}
 		if (decsend_ret < 0) {
