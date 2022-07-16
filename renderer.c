@@ -387,17 +387,6 @@ clientmount(char *name)
 }
 
 
-CFid*
-clientopen(CFsys *fs, char *name, int mode)
-{
-	CFid *fid;
-
-	LOG("opening: %s", name);
-	fid = fsopen(fs, name, mode);
-	return fid;
-}
-
-
 void
 srvopen(Req *r)
 {
@@ -726,8 +715,7 @@ decoder_thread(void *arg)
 		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
 	}
 	LOG("opening 9P file ...");
-	CFid *fid = clientopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
-	/* CFid *fid = xopen(renderer_ctx->filename, OREAD); */
+	CFid *fid = fsopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
 	if (fid == nil) {
 		renderer_ctx->renderer_state = RSTATE_STOP;
 		blank_window(renderer_ctx);
