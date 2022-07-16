@@ -94,7 +94,7 @@ void printloginfo(void)
 
 
 #define _DEBUG_ 1
-#define DEFAULT_SERVER_NAME "ommserver"
+#define DEFAULT_SERVER_NAME ("ommserver")
 #define SDL_AUDIO_BUFFER_SIZE 1024
 #define MAX_AUDIO_FRAME_SIZE 192000
 #define MAX_CMD_STR_LEN 256
@@ -288,6 +288,32 @@ AudioResamplingState * getAudioResampling(uint64_t channel_layout);
 void stream_seek(RendererCtx *renderer_ctx, int64_t pos, int rel);
 CFsys *(*nsmnt)(char*, char*) = nsmount;
 CFsys *(*fsmnt)(int, char*) = fsmount;
+
+
+void
+setstr(char **str, char *instr, int ninstr)
+{
+	if (*str) {
+		free(*str);
+	}
+	if (ninstr == 0) {
+		ninstr = strlen(instr);
+	}
+	*str = malloc(ninstr + 1);
+	memcpy(*str, instr, ninstr);
+	*(*str + ninstr) = '\0';
+}
+
+
+void
+reset_filectx(RendererCtx *renderer_ctx)
+{
+	fsclose(renderer_ctx->fid);
+	if (renderer_ctx->filename) {
+		free(renderer_ctx->filename);
+		renderer_ctx->filename = NULL;
+	}
+}
 
 
 int
@@ -578,12 +604,10 @@ threadmain(int argc, char **argv)
 	}
 
 	// copy the file name input by the user to the RendererCtx structure
-	renderer_ctx->fileservername = DEFAULT_SERVER_NAME;
+	setstr(&renderer_ctx->fileservername, DEFAULT_SERVER_NAME, 0);
 	renderer_ctx->filename = NULL;
 	if (argc >= 2) {
-		int narg = strlen(argv[1]);
-		renderer_ctx->filename = malloc(narg);
-		memcpy(renderer_ctx->filename, argv[1], narg);
+		setstr(&renderer_ctx->filename, argv[1], 0);
 	}
 	// parse max frames to decode input by the user
 	char * pEnd;
@@ -691,10 +715,9 @@ decoder_thread(void *arg)
 		if (cmdret == 1) {
 			LOG("<== received command: %d", cmd.cmd);
 			if (cmd.cmd == CMD_SET) {
-				free(renderer_ctx->filename);
-				renderer_ctx->filename = malloc(cmd.narg);
-				memcpy(renderer_ctx->filename, cmd.arg, cmd.narg);
+				setstr(&renderer_ctx->filename, cmd.arg, cmd.narg);
 				free(cmd.arg);
+				cmd.arg = NULL;
 			}
 			else if (cmd.cmd == CMD_PLAY) {
 				renderer_ctx->renderer_state = RSTATE_PLAY;
