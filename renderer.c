@@ -119,10 +119,13 @@ void printloginfo(void)
 typedef struct RendererCtx
 {
 	// Input file name, plan 9 file reference, os window
+	char              *url;
 	char              *fileservername;
-	CFsys             *fileserver;
 	char              *filename;
-	CFid              *fid;
+	int                isaddr;
+	int                fileserverfd;
+	CFid              *fileserverfid;
+	CFsys             *fileserver;
 	AVFormatContext   *pFormatCtx;
 	int                renderer_state;
 	Channel           *cmdq;
@@ -303,19 +306,6 @@ setstr(char **str, char *instr, int ninstr)
 }
 
 
-void
-reset_filectx(RendererCtx *renderer_ctx)
-{
-	fsclose(renderer_ctx->fid);
-	if (renderer_ctx->filename) {
-		free(renderer_ctx->filename);
-		renderer_ctx->filename = NULL;
-	}
-	// FIXME do we need to close the network connection?
-	/* fsclose(renderer_ctx->fileserver); */
-}
-
-
 int
 demuxerPacketRead(void *fid, uint8_t *buf, int count)
 {
@@ -338,76 +328,103 @@ demuxerPacketSeek(void *fid, int64_t offset, int whence)
 }
 
 
-/* CFsys* */
-/* xparse(char *name, char **path) */
-/* { */
-	/* int fd; */
-	/* char *p; */
-	/* CFsys *fs; */
-
-	/* if (addr == nil) { */
-		/* p = strchr(name, '/'); */
-		/* if(p == nil) */
-			/* p = name + strlen(name); */
-		/* else */
-			/* *p++ = 0; */
-		/* *path = p; */
-		/* fs = nsmount(name, aname); */
-		/* if(fs == nil) */
-			/* sysfatal("mount: %r"); */
-	/* } */
-	/* else { */
-		/* LOG("setting path to: %s", name); */
-		/* *path = name; */
-		/* LOG("dialing address: %s ...", addr); */
-		/* if ((fd = dial(addr, nil, nil, nil)) < 0) */
-			/* sysfatal("dial: %r"); */
-		/* LOG("mounting address ..."); */
-		/* if ((fs = fsmount(fd, aname)) == nil) */
-			/* sysfatal("mount: %r"); */
-	/* } */
-	/* return fs; */
-/* } */
-
-
-/* CFid* */
-/* xopen(char *name, int mode) */
-/* { */
-	/* CFid *fid; */
-	/* CFsys *fs; */
-
-	/* fs = xparse(name, &name); */
-	/* LOG("opening: %s", name); */
-	/* fid = fsopen(fs, name, mode); */
-	/* if (fid == nil) */
-		/* sysfatal("fsopen %s: %r", name); */
-	/* return fid; */
-/* } */
-
-
-CFsys*
-clientdial(char *addr)
+int
+parseurl(char *url, char **fileservername, char **filename, int *isaddr)
 {
-	int fd;
-	CFsys *fs;
-
-	LOG("dialing address: %s ...", addr);
-	if ((fd = dial(addr, nil, nil, nil)) < 0)
-		sysfatal("dial: %r");
-	LOG("mounting address ...");
-	if ((fs = fsmount(fd, nil)) == nil)
-		sysfatal("fsmount: %r");
-	return fs;
+	char *pfileservername = nil;
+	char *pfilename = nil;
+	char *pbang = strchr(url, '!');
+	char *pslash = strchr(url, '/');
+	int fisaddr = 0;
+	if (pslash == nil) {
+		if (pbang != nil) {
+			return -1;
+		}
+		pfilename = url;
+	}
+	else {
+		*pslash = '\0';
+		pfileservername = url;
+		pfilename = pslash + 1;
+		if (pbang != nil) {
+			fisaddr = 1;
+		}
+	}
+	*fileservername = pfileservername;
+	*filename = pfilename;
+	*isaddr = fisaddr;
+	return 0;
 }
 
 
-CFsys*
-clientmount(char *name)
+void
+seturl(RendererCtx *renderer_ctx, char *url)
 {
-	CFsys *fs;
-	if ((fs = nsmount(name, nil)) == nil)
-		sysfatal("nsmount: %r");
-	return fs;
+	/* setstr(&renderer_ctx->url, url, 0); */
+	char *s, *f;
+	int ret = parseurl(renderer_ctx->url, &s, &f, &renderer_ctx->isaddr);
+	if (ret == -1) {
+		LOG("failed to parse url %s", url);
+		renderer_ctx->fileservername = NULL;
+		renderer_ctx->filename = NULL;
+		return;
+	}
+	setstr(&renderer_ctx->fileservername, s, 0);
+	setstr(&renderer_ctx->filename, f, 0);
+}
+
+
+int
+clientdial(RendererCtx *renderer_ctx)
+{
+	LOG("dialing address: %s ...", renderer_ctx->fileservername);
+	if ((renderer_ctx->fileserverfd = dial(renderer_ctx->fileservername, nil, nil, nil)) < 0)
+		return -1;
+		/* sysfatal("dial: %r"); */
+	LOG("mounting address ...");
+	if ((renderer_ctx->fileserver = fsmount(renderer_ctx->fileserverfd, nil)) == nil)
+		return -1;
+		/* sysfatal("fsmount: %r"); */
+	return 0;
+}
+
+
+int
+clientmount(RendererCtx *renderer_ctx)
+{
+	if ((renderer_ctx->fileserver = nsmount(renderer_ctx->fileservername, nil)) == nil)
+		return -1;
+		/* sysfatal("nsmount: %r"); */
+	return 0;
+}
+
+
+void
+reset_filectx(RendererCtx *renderer_ctx)
+{
+	LOG("deleting fileserver name ...");
+	if (renderer_ctx->filename) {
+		free(renderer_ctx->filename);
+		renderer_ctx->filename = NULL;
+	}
+	LOG("unmounting fileserver ...");
+	fsclose(renderer_ctx->fileserverfid);
+	if (renderer_ctx->fileserver) {
+		fsunmount(renderer_ctx->fileserver);
+		renderer_ctx->fileserver = nil;
+	}
+	// FIXME crash here ...
+	/* LOG("closing the network connection ..."); */
+	/* if (renderer_ctx->fileserverfid) { */
+		/* fsclose(renderer_ctx->fileserverfid); */
+		/* renderer_ctx->fileserverfid = nil; */
+	/* } */
+	/* LOG("closing server file descriptor ..."); */
+	/* if (renderer_ctx->fileserverfd != -1) { */
+		/* close(renderer_ctx->fileserverfd); */
+		/* renderer_ctx->fileserverfd = -1; */
+	/* } */
+	LOG("server closed");
 }
 
 
@@ -422,7 +439,6 @@ srvopen(Req *r)
 void
 srvread(Req *r)
 {
-	// FIXME read is called continuously, not only once
 	LOG("server read");
 	r->ofcall.count = 6;
 	r->ofcall.data = "hello\n";
@@ -433,8 +449,6 @@ srvread(Req *r)
 void
 srvwrite(Req *r)
 {
-	// FIXME write is not called when using fuse with "echo foo > /srv/ctl" 
-	//       but "echo foo | 9p write ommrenderer/ctl" works
 	LOG("server write");
 	Command command;
 	char cmdstr[MAX_CMD_STR_LEN];
@@ -603,12 +617,15 @@ threadmain(int argc, char **argv)
 			);
 	}
 
-	// copy the file name input by the user to the RendererCtx structure
-	setstr(&renderer_ctx->fileservername, DEFAULT_SERVER_NAME, 0);
+	/* setstr(&renderer_ctx->fileservername, DEFAULT_SERVER_NAME, 0); */
+	renderer_ctx->fileservername = NULL;
 	renderer_ctx->filename = NULL;
 	if (argc >= 2) {
-		setstr(&renderer_ctx->filename, argv[1], 0);
+		seturl(renderer_ctx, argv[1]);
 	}
+	renderer_ctx->fileserverfd = -1;
+	renderer_ctx->fileserverfid = nil;
+	renderer_ctx->fileserver = nil;
 	// parse max frames to decode input by the user
 	char * pEnd;
 	renderer_ctx->maxFramesToDecode = 0;
@@ -715,7 +732,9 @@ decoder_thread(void *arg)
 		if (cmdret == 1) {
 			LOG("<== received command: %d", cmd.cmd);
 			if (cmd.cmd == CMD_SET) {
-				setstr(&renderer_ctx->filename, cmd.arg, cmd.narg);
+				/* setstr(&renderer_ctx->filename, cmd.arg, cmd.narg); */
+				setstr(&renderer_ctx->url, cmd.arg, cmd.narg);
+				seturl(renderer_ctx, renderer_ctx->url);
 				free(cmd.arg);
 				cmd.arg = NULL;
 			}
@@ -730,11 +749,25 @@ decoder_thread(void *arg)
 			LOG("failed to receive command");
 		}
 	}
+
+
+	// FIXME restructure server open/close code
 	LOG("opening 9P connection ...");
 	if (!renderer_ctx->fileserver) {
+		int ret;
+		if (renderer_ctx->isaddr) {
+			/* renderer_ctx->fileserver = clientdial(renderer_ctx->fileservername); */
+			ret = clientdial(renderer_ctx);
+		}
+		else {
+			/* renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername); */
+			ret = clientmount(renderer_ctx);
+		}
 		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
-		renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername);
 		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
+		if (ret == -1) {
+			LOG("failed to open 9P connection");
+		}
 	}
 	LOG("opening 9P file ...");
 	CFid *fid = fsopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
@@ -743,7 +776,9 @@ decoder_thread(void *arg)
 		blank_window(renderer_ctx);
 		goto start;
 	}
-	renderer_ctx->fid = fid;
+	renderer_ctx->fileserverfid = fid;
+
+
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
@@ -751,7 +786,7 @@ decoder_thread(void *arg)
 		avctxBuffer,		 // buffer
 		avctxBufferSize,	 // buffer size
 		0,				     // buffer is only readable - set to 1 for read/write
-		renderer_ctx->fid,	 // user specified data
+		fid,	             // user specified data
 		demuxerPacketRead,   // function for reading packets
 		NULL,				 // function for writing packets
 		demuxerPacketSeek	 // function for seeking to position in stream
