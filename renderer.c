@@ -32,15 +32,14 @@
 // - fix 5.1 audio tracks playing faster
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
-// 4. Don't hard code server address to dial
-// 5. Query renderer info (current position, state, audio volume) from 9P server
-// 6. Display single still images
-// 7. Fixes / refactoring / testing
+// 4. Query renderer info (current position, state, audio volume) from 9P server
+// 5. Display single still images
+// 6. Fixes / refactoring / testing
 // - allow video scaling in decoder thread and in video thread
 // - blanking screen on stop / eof doesn't work allways
 // - test keyboard / server input combinations (fuzz testing ...)
-// 8. Experiment with serving video and audio output channels via the 9P server
-// 9. Build renderer into drawterm-av
+// 7. Experiment with serving video and audio output channels via the 9P server
+// 8. Build renderer into drawterm-av
 
 // Thread layout:
 //   main_thread (event loop)
