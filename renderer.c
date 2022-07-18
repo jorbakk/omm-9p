@@ -408,22 +408,20 @@ reset_filectx(RendererCtx *renderer_ctx)
 		renderer_ctx->filename = NULL;
 	}
 	LOG("unmounting fileserver ...");
-	fsclose(renderer_ctx->fileserverfid);
 	if (renderer_ctx->fileserver) {
 		fsunmount(renderer_ctx->fileserver);
 		renderer_ctx->fileserver = nil;
 	}
-	// FIXME crash here ...
-	/* LOG("closing the network connection ..."); */
-	/* if (renderer_ctx->fileserverfid) { */
-		/* fsclose(renderer_ctx->fileserverfid); */
-		/* renderer_ctx->fileserverfid = nil; */
-	/* } */
-	/* LOG("closing server file descriptor ..."); */
-	/* if (renderer_ctx->fileserverfd != -1) { */
-		/* close(renderer_ctx->fileserverfd); */
-		/* renderer_ctx->fileserverfd = -1; */
-	/* } */
+	LOG("closing the network connection ...");
+	if (renderer_ctx->fileserverfid) {
+		fsclose(renderer_ctx->fileserverfid);
+		renderer_ctx->fileserverfid = nil;
+	}
+	LOG("closing server file descriptor ...");
+	if (renderer_ctx->fileserverfd != -1) {
+		close(renderer_ctx->fileserverfd);
+		renderer_ctx->fileserverfd = -1;
+	}
 	LOG("server closed");
 }
 
