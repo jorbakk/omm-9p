@@ -28,7 +28,6 @@
 // - fullscreen mode
 // 2. Seek
 // 3. AV sync
-// - improve smootheness (orange.ts, toxic.avi)
 // - fix 5.1 audio tracks playing faster
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
@@ -152,6 +151,8 @@ typedef struct RendererCtx
 	int                audio_idx;
 	double             audio_pts;
 	double             current_audio_pts;
+	double             current_video_pts;
+	double             previous_video_pts;
 	int64_t            audio_start_rt;
 	// Video Stream.
 	int                videoStream;
@@ -1141,8 +1142,10 @@ decoder_thread(void *arg)
 				videoPicture.idx = renderer_ctx->video_idx;
 				videoPicture.width = aw;
 				videoPicture.height = ah;
-				/* double frame_duration = 1000.0 / av_q2d(codecCtx->framerate); */
-				double frame_duration = 1000.0 * av_q2d(codecCtx->time_base);
+				double frame_duration = 1000.0 / av_q2d(codecCtx->framerate);
+
+				/* double frame_duration = 1000.0 * av_q2d(codecCtx->time_base); */
+				/* double frame_duration = 2.0 * 1000.0 * av_q2d(codecCtx->time_base); */
 				LOG("video frame duration: %fms, fps: %f", frame_duration, 1000.0 / frame_duration);
 				renderer_ctx->video_pts += frame_duration;
 				videoPicture.pts = renderer_ctx->video_pts;
@@ -1320,10 +1323,12 @@ stream_component_open(RendererCtx * renderer_ctx, int stream_index)
 			/* renderer_ctx->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
 			/* renderer_ctx->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE); */
 			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-			if (!renderer_ctx->audio_only) {
-				renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE);
-				LOG("Video thread created with id: %i", renderer_ctx->video_tid);
-			}
+
+			/* if (!renderer_ctx->audio_only) { */
+				/* renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE); */
+				/* LOG("Video thread created with id: %i", renderer_ctx->video_tid); */
+			/* } */
+
 			/* int w; */
 			/* int h; */
 			/* SDL_GetWindowSize(sdl_window, &w, &h); */
@@ -1414,46 +1419,117 @@ video_thread(void *arg)
 }
 
 
+// FIXME need to store the renderer context in a global static variable for now to access
+//       it from the timer notification handler
+/* static RendererCtx *rctx = nil; */
+
+/* int */
+/* handle_display_picture_timer(void *plan9_internal, char *notification) */
+/* { */
+	/* LOG("received notification '%s'", notification); */
+	/* if (strcmp(notification, "alarm") != 0) { */
+		/* return 0; */
+	/* } */
+	/* RendererCtx *renderer_ctx = rctx; */
+	/* VideoPicture videoPicture; */
+	/* receive_pic(renderer_ctx, &videoPicture); */
+	/* display_picture(renderer_ctx, &videoPicture); */
+	/* if (videoPicture.frame) { */
+		/* av_frame_unref(videoPicture.frame); */
+		/* av_frame_free(&videoPicture.frame); */
+	/* } */
+	/* long time_left = alarm(33); */
+	/* LOG("alarm set, time left: %ld", time_left); */
+	/* yield(); */
+	/* return 1; */
+/* } */
+
+
+/* void */
+/* grab_and_display_picture(RendererCtx *renderer_ctx) */
+/* { */
+	/* VideoPicture videoPicture; */
+	/* receive_pic(renderer_ctx, &videoPicture); */
+	/* display_picture(renderer_ctx, &videoPicture); */
+	/* if (videoPicture.frame) { */
+		/* av_frame_unref(videoPicture.frame); */
+		/* av_frame_free(&videoPicture.frame); */
+	/* } */
+/* } */
+
+
 void
 audio_thread(void *arg)
 {
 	RendererCtx *renderer_ctx = arg;
+	renderer_ctx->current_video_pts = 0;
+	renderer_ctx->previous_video_pts = 0;
 	renderer_ctx->audio_start_rt = av_gettime();
 	for (;;) {
-		LOG("receiving and playing sample from audio queue ...");
+		LOG("receiving sample from audio queue ...");
 		AudioSample audioSample;
 		int recret = recv(renderer_ctx->audioq, &audioSample);
-		if (recret == 1) {
-			LOG("<== received audio sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
-			/* fwrite(audioSample.sample, 1, audioSample.size, audio_out); */
-			int ret = SDL_QueueAudio(renderer_ctx->audioDevId, audioSample.sample, audioSample.size);
-			if (ret < 0) {
-				LOG("failed to write audio sample: %s", SDL_GetError());
-			}
-			else {
-				LOG("audio sample idx: %d, size: %d, audio clock: %f written", audioSample.idx, audioSample.size, renderer_ctx->current_audio_pts);
-				int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audioDevId);
-				int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_ctx->channels;
-				double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
-				int samples_queued = audioq_size / audioSample.size;
-				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
-				LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d", audioq_size, queue_duration, samples_queued);
-				/* renderer_ctx->current_audio_pts = audioSample.pts - queue_duration; */
-				renderer_ctx->current_audio_pts = audioSample.pts;
-				if (samples_queued > 5) {
-					LOG("sleeping");
-					p9sleep(sample_duration);
-				}
-				LOG("audio clock: %f, real time: %f", renderer_ctx->current_audio_pts, (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0);
-			}
+		if (recret != 1) {
+			LOG("<== error when receiving sample from audio queue");
+			continue;
+		}
+		LOG("<== received sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
+
+		/* if (samples_queued < 5) { */
+			/* yield(); */
+			/* LOG("sleeping"); */
+			/* sleep(sample_duration); */
+		/* } */
+
+		/* fwrite(audioSample.sample, 1, audioSample.size, audio_out); */
+		int ret = SDL_QueueAudio(renderer_ctx->audioDevId, audioSample.sample, audioSample.size);
+		if (ret < 0) {
+			LOG("failed to write audio sample: %s", SDL_GetError());
 			free(audioSample.sample);
+			continue;
 		}
-		else if (recret == -1) {
-			LOG("<== reveiving audio sample from audio queue interrupted");
+		LOG("audio sample idx: %d, size: %d, audio clock: %f written", audioSample.idx, audioSample.size, renderer_ctx->current_audio_pts);
+
+		int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audioDevId);
+		int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_ctx->channels;
+		double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
+		int samples_queued = audioq_size / audioSample.size;
+		double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
+		/* renderer_ctx->current_audio_pts = audioSample.pts - queue_duration; */
+		renderer_ctx->current_audio_pts = audioSample.pts;
+		double real_time = (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0;
+		double time_diff = renderer_ctx->current_audio_pts - real_time;
+		LOG("audio clock: %f, real time: %f", renderer_ctx->current_audio_pts, real_time);
+		LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d",
+			audioq_size, queue_duration, samples_queued);
+		/* if (!rctx) { */
+			/* // Install timer notification handler */
+			/* LOG("installing timer notification handler"); */
+			/* rctx = renderer_ctx; */
+			/* atnotify(handle_display_picture_timer, 1); */
+			/* alarm(sample_duration); */
+			/* yield(); */
+		/* } */
+
+		LOG("current video pts %f", renderer_ctx->current_video_pts);
+		if (renderer_ctx->current_audio_pts >= renderer_ctx->current_video_pts) {
+			VideoPicture videoPicture;
+			receive_pic(renderer_ctx, &videoPicture);
+			renderer_ctx->previous_video_pts = renderer_ctx->current_video_pts;
+			renderer_ctx->current_video_pts = videoPicture.pts;
+			display_picture(renderer_ctx, &videoPicture);
+			if (videoPicture.frame) {
+				av_frame_unref(videoPicture.frame);
+				av_frame_free(&videoPicture.frame);
+			}
 		}
-		else {
-			LOG("<== unforseen error when receiving audio sample from audio queue");
+
+		if (time_diff > 0) {
+			yield();
+			sleep(time_diff);
 		}
+
+		free(audioSample.sample);
 	}
 }
 
@@ -1461,45 +1537,49 @@ audio_thread(void *arg)
 void
 display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 {
-	if (videoPicture->frame) {
-		// set blit area x and y coordinates, width and height
-		// set video size here
-		/* SDL_Rect rect; */
-		/* rect.x = x; */
-		/* rect.y = y; */
-		/* rect.w = w; */
-		/* rect.h = h; */
-		/* rect.x = 0; */
-		/* rect.x = 100; */
-		/* rect.y = 0; */
-		/* rect.y = 100; */
-		/* rect.w = window_width; */
-		/* rect.h = window_height; */
-		/* rect.h = window_height - 100; */
-		// update the texture with the new pixel data
-		int textupd = SDL_UpdateYUVTexture(
-				renderer_ctx->texture,
-				/* &rect, */
-				NULL,
-				videoPicture->frame->data[0],
-				videoPicture->frame->linesize[0],
-				videoPicture->frame->data[1],
-				videoPicture->frame->linesize[1],
-				videoPicture->frame->data[2],
-				videoPicture->frame->linesize[2]
-		);
-		if (textupd != 0) {
-			LOG("failed to update sdl texture: %s", SDL_GetError());
-		}
-		// clear the current rendering target with the drawing color
-		SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
-		SDL_RenderClear(renderer_ctx->renderer);
-		// copy a portion of the texture to the current rendering target
-		SDL_RenderCopy(renderer_ctx->renderer, renderer_ctx->texture, NULL, NULL);
-		// update the screen with any rendering performed since the previous call
-		LOG("displaying picture %d", videoPicture->idx);
-		SDL_RenderPresent(renderer_ctx->renderer);
+	if (!videoPicture->frame) {
+		LOG("no picture to display");
+		return;
 	}
+	LOG("displaying picture %d, delta pts: %f ...",
+		videoPicture->idx, renderer_ctx->current_video_pts - renderer_ctx->previous_video_pts);
+	// set blit area x and y coordinates, width and height
+	// set video size here
+	/* SDL_Rect rect; */
+	/* rect.x = x; */
+	/* rect.y = y; */
+	/* rect.w = w; */
+	/* rect.h = h; */
+	/* rect.x = 0; */
+	/* rect.x = 100; */
+	/* rect.y = 0; */
+	/* rect.y = 100; */
+	/* rect.w = window_width; */
+	/* rect.h = window_height; */
+	/* rect.h = window_height - 100; */
+	// update the texture with the new pixel data
+	int textupd = SDL_UpdateYUVTexture(
+			renderer_ctx->texture,
+			/* &rect, */
+			NULL,
+			videoPicture->frame->data[0],
+			videoPicture->frame->linesize[0],
+			videoPicture->frame->data[1],
+			videoPicture->frame->linesize[1],
+			videoPicture->frame->data[2],
+			videoPicture->frame->linesize[2]
+	);
+	if (textupd != 0) {
+		LOG("failed to update sdl texture: %s", SDL_GetError());
+	}
+	// clear the current rendering target with the drawing color
+	SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
+	SDL_RenderClear(renderer_ctx->renderer);
+	// copy a portion of the texture to the current rendering target
+	SDL_RenderCopy(renderer_ctx->renderer, renderer_ctx->texture, NULL, NULL);
+	// update the screen with any rendering performed since the previous call
+	/* LOG("displaying picture %d", videoPicture->idx); */
+	SDL_RenderPresent(renderer_ctx->renderer);
 }
 
 
