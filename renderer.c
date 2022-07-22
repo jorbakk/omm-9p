@@ -1513,9 +1513,14 @@ audio_thread(void *arg)
 			/* yield(); */
 		/* } */
 
-		if (renderer_ctx->video_ctx && (renderer_ctx->current_audio_pts >= renderer_ctx->current_video_pts)) {
+		if (renderer_ctx->video_ctx &&
+			(renderer_ctx->current_audio_pts >= renderer_ctx->current_video_pts))
+		/* if (renderer_ctx->video_ctx &&  */
+			/* fabs(renderer_ctx->current_audio_pts - renderer_ctx->current_video_pts) < sample_duration) */
+		{
 			VideoPicture videoPicture;
 			receive_picture(renderer_ctx, &videoPicture);
+			renderer_ctx->current_video_pts = videoPicture.pts;
 			display_picture(renderer_ctx, &videoPicture);
 			if (videoPicture.frame) {
 				av_frame_unref(videoPicture.frame);
@@ -1525,6 +1530,7 @@ audio_thread(void *arg)
 
 		if (time_diff > 0) {
 			yield();
+			LOG("sleeping %fms", time_diff);
 			sleep(time_diff);
 		}
 
