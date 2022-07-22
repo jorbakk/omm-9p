@@ -1373,7 +1373,7 @@ stream_component_open(RendererCtx * renderer_ctx, int stream_index)
 
 
 void
-receive_pic(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
+receive_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 {
 	LOG("receiving picture from picture queue ...");
 	int recret = recv(renderer_ctx->pictq, videoPicture);
@@ -1389,35 +1389,35 @@ receive_pic(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 }
 
 
-void
-video_thread(void *arg)
-{
-	RendererCtx *renderer_ctx = arg;
-	VideoPicture videoPicture;
-	for (;;) {
-		receive_pic(renderer_ctx, &videoPicture);
-		if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
-			savePicture(renderer_ctx, &videoPicture, (int)videoPicture.pts);
-			if (videoPicture.rgbbuf) {
-				av_free(videoPicture.rgbbuf);
-			}
-		}
-		else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
-			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, renderer_ctx->current_audio_pts);
-			if (renderer_ctx->current_audio_pts >= videoPicture.pts) {
-				display_picture(renderer_ctx, &videoPicture);
-			}
-			else {
-				LOG("yielding video_thread");
-				yield();
-			}
-		}
-		if (videoPicture.frame) {
-			av_frame_unref(videoPicture.frame);
-			av_frame_free(&videoPicture.frame);
-		}
-	}
-}
+/* void */
+/* video_thread(void *arg) */
+/* { */
+	/* RendererCtx *renderer_ctx = arg; */
+	/* VideoPicture videoPicture; */
+	/* for (;;) { */
+		/* receive_picture(renderer_ctx, &videoPicture); */
+		/* if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) { */
+			/* savePicture(renderer_ctx, &videoPicture, (int)videoPicture.pts); */
+			/* if (videoPicture.rgbbuf) { */
+				/* av_free(videoPicture.rgbbuf); */
+			/* } */
+		/* } */
+		/* else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) { */
+			/* LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, renderer_ctx->current_audio_pts); */
+			/* if (renderer_ctx->current_audio_pts >= videoPicture.pts) { */
+				/* display_picture(renderer_ctx, &videoPicture); */
+			/* } */
+			/* else { */
+				/* LOG("yielding video_thread"); */
+				/* yield(); */
+			/* } */
+		/* } */
+		/* if (videoPicture.frame) { */
+			/* av_frame_unref(videoPicture.frame); */
+			/* av_frame_free(&videoPicture.frame); */
+		/* } */
+	/* } */
+/* } */
 
 
 // FIXME need to store the renderer context in a global static variable for now to access
@@ -1433,7 +1433,7 @@ video_thread(void *arg)
 	/* } */
 	/* RendererCtx *renderer_ctx = rctx; */
 	/* VideoPicture videoPicture; */
-	/* receive_pic(renderer_ctx, &videoPicture); */
+	/* receive_picture(renderer_ctx, &videoPicture); */
 	/* display_picture(renderer_ctx, &videoPicture); */
 	/* if (videoPicture.frame) { */
 		/* av_frame_unref(videoPicture.frame); */
@@ -1450,7 +1450,7 @@ video_thread(void *arg)
 /* grab_and_display_picture(RendererCtx *renderer_ctx) */
 /* { */
 	/* VideoPicture videoPicture; */
-	/* receive_pic(renderer_ctx, &videoPicture); */
+	/* receive_picture(renderer_ctx, &videoPicture); */
 	/* display_picture(renderer_ctx, &videoPicture); */
 	/* if (videoPicture.frame) { */
 		/* av_frame_unref(videoPicture.frame); */
@@ -1490,8 +1490,6 @@ audio_thread(void *arg)
 			free(audioSample.sample);
 			continue;
 		}
-		LOG("audio sample idx: %d, size: %d, audio clock: %f written", audioSample.idx, audioSample.size, renderer_ctx->current_audio_pts);
-
 		int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audioDevId);
 		int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_ctx->channels;
 		double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
@@ -1501,6 +1499,7 @@ audio_thread(void *arg)
 		renderer_ctx->current_audio_pts = audioSample.pts;
 		double real_time = (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0;
 		double time_diff = renderer_ctx->current_audio_pts - real_time;
+		LOG("audio sample idx: %d, size: %d", audioSample.idx, audioSample.size);
 		LOG("audio clock: %f, real time: %f, current video pts %f",
 		renderer_ctx->current_audio_pts, real_time, renderer_ctx->current_video_pts);
 		LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d",
@@ -1514,9 +1513,9 @@ audio_thread(void *arg)
 			/* yield(); */
 		/* } */
 
-		if (renderer_ctx->current_audio_pts >= renderer_ctx->current_video_pts) {
+		if (renderer_ctx->video_ctx && (renderer_ctx->current_audio_pts >= renderer_ctx->current_video_pts)) {
 			VideoPicture videoPicture;
-			receive_pic(renderer_ctx, &videoPicture);
+			receive_picture(renderer_ctx, &videoPicture);
 			display_picture(renderer_ctx, &videoPicture);
 			if (videoPicture.frame) {
 				av_frame_unref(videoPicture.frame);
