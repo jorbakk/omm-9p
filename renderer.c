@@ -110,7 +110,9 @@ void printloginfo(void)
 #define THREAD_STACK_SIZE 1024 * 1024 * 10
 #define avctxBufferSize 8192 * 10
 
-#define FRAME_FMT_PRISTINE 0
+// FIXME saving frames with FRAME_FMT_PRISTINE = 1 results in random noise images,
+//       FRAME_FMT_PRISTINE = 0 crashes
+#define FRAME_FMT_PRISTINE 1
 #define FRAME_FMT_RGB 1
 #define FRAME_FMT_YUV 2
 
@@ -1386,11 +1388,10 @@ video_thread(void *arg)
 {
 	RendererCtx *renderer_ctx = arg;
 	VideoPicture videoPicture;
-	receive_pic(renderer_ctx, &videoPicture);
 	for (;;) {
+		receive_pic(renderer_ctx, &videoPicture);
 		if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
 			savePicture(renderer_ctx, &videoPicture, (int)videoPicture.pts);
-			receive_pic(renderer_ctx, &videoPicture);
 			if (videoPicture.rgbbuf) {
 				av_free(videoPicture.rgbbuf);
 			}
@@ -1399,16 +1400,15 @@ video_thread(void *arg)
 			LOG("picture with idx: %d, pts: %f, current audio pts: %f", videoPicture.idx, videoPicture.pts, renderer_ctx->current_audio_pts);
 			if (renderer_ctx->current_audio_pts >= videoPicture.pts) {
 				display_picture(renderer_ctx, &videoPicture);
-				if (videoPicture.frame) {
-					av_frame_unref(videoPicture.frame);
-					av_frame_free(&videoPicture.frame);
-				}
-				receive_pic(renderer_ctx, &videoPicture);
 			}
 			else {
 				LOG("yielding video_thread");
 				yield();
 			}
+		}
+		if (videoPicture.frame) {
+			av_frame_unref(videoPicture.frame);
+			av_frame_free(&videoPicture.frame);
 		}
 	}
 }
