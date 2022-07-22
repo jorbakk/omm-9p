@@ -152,7 +152,8 @@ typedef struct RendererCtx
 	double             audio_pts;
 	double             current_audio_pts;
 	double             current_video_pts;
-	double             previous_video_pts;
+	double             current_video_time;
+	double             previous_video_time;
 	int64_t            audio_start_rt;
 	// Video Stream.
 	int                videoStream;
@@ -1463,7 +1464,8 @@ audio_thread(void *arg)
 {
 	RendererCtx *renderer_ctx = arg;
 	renderer_ctx->current_video_pts = 0;
-	renderer_ctx->previous_video_pts = 0;
+	renderer_ctx->current_video_time = renderer_ctx->audio_start_rt;
+	renderer_ctx->previous_video_time = renderer_ctx->audio_start_rt;
 	renderer_ctx->audio_start_rt = av_gettime();
 	for (;;) {
 		LOG("receiving sample from audio queue ...");
@@ -1494,12 +1496,13 @@ audio_thread(void *arg)
 		int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_ctx->channels;
 		double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
 		int samples_queued = audioq_size / audioSample.size;
-		double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
+		/* double sample_duration = 1000.0 * audioSample.size / bytes_per_sec; */
 		/* renderer_ctx->current_audio_pts = audioSample.pts - queue_duration; */
 		renderer_ctx->current_audio_pts = audioSample.pts;
 		double real_time = (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0;
 		double time_diff = renderer_ctx->current_audio_pts - real_time;
-		LOG("audio clock: %f, real time: %f", renderer_ctx->current_audio_pts, real_time);
+		LOG("audio clock: %f, real time: %f, current video pts %f",
+		renderer_ctx->current_audio_pts, real_time, renderer_ctx->current_video_pts);
 		LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d",
 			audioq_size, queue_duration, samples_queued);
 		/* if (!rctx) { */
@@ -1511,12 +1514,9 @@ audio_thread(void *arg)
 			/* yield(); */
 		/* } */
 
-		LOG("current video pts %f", renderer_ctx->current_video_pts);
 		if (renderer_ctx->current_audio_pts >= renderer_ctx->current_video_pts) {
 			VideoPicture videoPicture;
 			receive_pic(renderer_ctx, &videoPicture);
-			renderer_ctx->previous_video_pts = renderer_ctx->current_video_pts;
-			renderer_ctx->current_video_pts = videoPicture.pts;
 			display_picture(renderer_ctx, &videoPicture);
 			if (videoPicture.frame) {
 				av_frame_unref(videoPicture.frame);
@@ -1541,8 +1541,11 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 		LOG("no picture to display");
 		return;
 	}
-	LOG("displaying picture %d, delta pts: %f ...",
-		videoPicture->idx, renderer_ctx->current_video_pts - renderer_ctx->previous_video_pts);
+	double real_time = (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0;
+	renderer_ctx->previous_video_time = renderer_ctx->current_video_time;
+	renderer_ctx->current_video_time = real_time;
+	LOG("displaying picture %d, delta time: %0.2fms ...",
+		videoPicture->idx, renderer_ctx->current_video_time - renderer_ctx->previous_video_time);
 	// set blit area x and y coordinates, width and height
 	// set video size here
 	/* SDL_Rect rect; */
