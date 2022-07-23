@@ -1154,15 +1154,15 @@ decoder_thread(void *arg)
 				renderer_ctx->frame_rate = av_q2d(renderer_ctx->video_ctx->framerate);
 				renderer_ctx->frame_duration = 1000.0 / renderer_ctx->frame_rate;
 				/* LOG("frame rate: %f, duration: %f", renderer_ctx->frame_rate, renderer_ctx->frame_duration); */
-				LOG("video frame duration: %fms, fps: %f",
+				LOG("video frame duration: %.2fms, fps: %.2f",
 					renderer_ctx->frame_duration, 1000.0 / renderer_ctx->frame_duration);
 				video_pts += renderer_ctx->frame_duration;
 				videoPicture.pts = video_pts;
 				if (!renderer_ctx->audio_only) {
-					LOG("==> sending picture with idx: %d, pts: %f to picture queue ...", videoPicture.idx, videoPicture.pts);
+					LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue ...", videoPicture.idx, videoPicture.pts);
 					int sendret = send(renderer_ctx->pictq, &videoPicture);
 					if (sendret == 1) {
-						LOG("==> sending picture with idx: %d, pts: %f to picture queue succeeded.", videoPicture.idx, videoPicture.pts);
+						LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue succeeded.", videoPicture.idx, videoPicture.pts);
 					}
 					else if (sendret == -1) {
 						LOG("==> sending picture to picture queue interrupted");
@@ -1197,7 +1197,7 @@ decoder_thread(void *arg)
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
 				/* double sample_duration = 0.5 * 1000.0 * audioSample.size / bytes_per_sec; */
 				/* double sample_duration = 2 * 1000.0 * audioSample.size / bytes_per_sec; */
-				LOG("audio sample rate: %d, channels: %d, duration: %fms",
+				LOG("audio sample rate: %d, channels: %d, duration: %.2fms",
 					codecCtx->sample_rate, codecCtx->channels, sample_duration);
 				/* renderer_ctx->audio_pts += sample_duration;  // audio sample length in ms */
 				audio_pts += sample_duration;  // audio sample length in ms
@@ -1207,7 +1207,7 @@ decoder_thread(void *arg)
 				memcpy(audioSample.sample, renderer_ctx->audio_buf, sizeof(renderer_ctx->audio_buf));
 				int sendret = send(renderer_ctx->audioq, &audioSample);
 				if (sendret == 1) {
-					LOG("==> sending audio sample with idx: %d, pts: %f to audio queue succeeded.", audioSample.idx, audioSample.pts);
+					LOG("==> sending audio sample with idx: %d, pts: %.2fms to audio queue succeeded.", audioSample.idx, audioSample.pts);
 					/* LOG("==> sending audio sample to audio queue succeeded."); */
 				}
 				else if (sendret == -1) {
@@ -1257,7 +1257,7 @@ receive_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	LOG("receiving picture from picture queue ...");
 	int recret = recv(renderer_ctx->pictq, videoPicture);
 	if (recret == 1) {
-		LOG("<== received picture with idx: %d, pts: %0.0fms", videoPicture->idx, videoPicture->pts);
+		LOG("<== received picture with idx: %d, pts: %0.2fms", videoPicture->idx, videoPicture->pts);
 	}
 	else if (recret == -1) {
 		LOG("<== reveiving picture from picture queue interrupted");
@@ -1288,7 +1288,7 @@ presenter_thread(void *arg)
 			LOG("<== error when receiving sample from audio queue");
 			continue;
 		}
-		LOG("<== received sample with idx: %d, pts: %f from audio queue.", audioSample.idx, audioSample.pts);
+		LOG("<== received sample with idx: %d, pts: %.2fms from audio queue.", audioSample.idx, audioSample.pts);
 		//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 		int ret = SDL_QueueAudio(renderer_ctx->audioDevId, audioSample.sample, audioSample.size);
 		if (ret < 0) {
@@ -1307,11 +1307,11 @@ presenter_thread(void *arg)
 		double real_time = (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0;
 		double time_diff = audioSample.pts - real_time;
 		LOG("audio sample idx: %d, size: %d", audioSample.idx, audioSample.size);
-		LOG("real time: %f, audio pts: %f, video pts %f",
+		LOG("real time: %.2fms, audio pts: %.2fms, video pts %.2fms",
 			real_time, audioSample.pts, videoPicture.pts);
-		LOG("sdl audio queue size in bytes: %d, msec: %f, samples: %d",
+		LOG("sdl audio queue size: %d bytes, %.2fms, %d samples",
 			audioq_size, queue_duration, samples_queued);
-		LOG("AV dist: %f, thresh: %f",
+		LOG("AV dist: %.2fms, thresh: %.2fms",
 			audioSample.pts - videoPicture.pts, 0.5 * audioSample.duration);
 
 		/* if (samples_queued < 5) { */
@@ -1332,7 +1332,7 @@ presenter_thread(void *arg)
 		}
 		if (time_diff > 0) {
 			yield();
-			LOG("sleeping %fms", time_diff);
+			LOG("sleeping %.2fms", time_diff);
 			sleep(time_diff);
 		}
 		free(audioSample.sample);
@@ -1350,7 +1350,7 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	double real_time = (av_gettime() - renderer_ctx->audio_start_rt) / 1000.0;
 	renderer_ctx->previous_video_time = renderer_ctx->current_video_time;
 	renderer_ctx->current_video_time = real_time;
-	LOG("displaying picture %d, delta time: %3.2fms ...",
+	LOG("displaying picture %d, delta time: %.2fms ...",
 		videoPicture->idx,
 		renderer_ctx->current_video_time - renderer_ctx->previous_video_time - renderer_ctx->frame_duration);
 	// set blit area x and y coordinates, width and height
