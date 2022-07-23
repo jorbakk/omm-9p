@@ -923,6 +923,29 @@ alloc_buffers(RendererCtx *renderer_ctx)
 }
 
 
+int
+read_frame(RendererCtx *renderer_ctx, AVPacket* packet)
+{
+	int demuxer_ret = av_read_frame(renderer_ctx->pFormatCtx, packet);
+	LOG("read av packet of size: %i", packet->size);
+	if (demuxer_ret < 0) {
+		LOG("failed to read av packet: %s", av_err2str(demuxer_ret));
+		if (demuxer_ret == AVERROR_EOF) {
+			LOG("EOF");
+		}
+		renderer_ctx->renderer_state = RSTATE_STOP;
+		reset_filectx(renderer_ctx);
+		blank_window(renderer_ctx);
+		return -1;
+	}
+	if (packet->size == 0) {
+		LOG("packet size is zero, exiting demuxer thread");
+		return -1;
+	}
+	return 0;
+}
+
+
 void
 decoder_thread(void *arg)
 {
@@ -974,24 +997,10 @@ start:
 		if (jmp == 1) {
 			goto quit;
 		}
-
-		int demuxer_ret = av_read_frame(renderer_ctx->pFormatCtx, packet);
-		LOG("read av packet of size: %i", packet->size);
-		if (demuxer_ret < 0) {
-			LOG("failed to read av packet: %s", av_err2str(demuxer_ret));
-			if (demuxer_ret == AVERROR_EOF) {
-				// media EOF reached
-				LOG("EOF");
-			}
-			renderer_ctx->renderer_state = RSTATE_STOP;
-			reset_filectx(renderer_ctx);
-			blank_window(renderer_ctx);
+		if (read_frame(renderer_ctx, packet) == -1) {
 			goto start;
 		}
-		if (packet->size == 0) {
-			LOG("packet size is zero, exiting demuxer thread");
-			break;
-		}
+
 		AVCodecContext *codecCtx = nil;
 		if (packet->stream_index == renderer_ctx->videoStream) {
 			LOG("sending video packet of size %d to decoder", packet->size);
