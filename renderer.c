@@ -1160,6 +1160,23 @@ send_picture_to_queue(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 
 
 void
+send_sample_to_queue(RendererCtx *renderer_ctx, AudioSample *audioSample)
+{
+	int sendret = send(renderer_ctx->audioq, audioSample);
+	if (sendret == 1) {
+		LOG("==> sending audio sample with idx: %d, pts: %.2fms to audio queue succeeded.", audioSample->idx, audioSample->pts);
+		/* LOG("==> sending audio sample to audio queue succeeded."); */
+	}
+	else if (sendret == -1) {
+		LOG("==> sending audio sample to audio queue interrupted");
+	}
+	else {
+		LOG("==> unforseen error when sending audio sample to audio queue");
+	}
+}
+
+
+void
 decoder_thread(void *arg)
 {
 	RendererCtx *renderer_ctx = (RendererCtx *)arg;
@@ -1269,24 +1286,12 @@ start:
 					.idx = renderer_ctx->audio_idx,
 					.sample = malloc(sizeof(renderer_ctx->audio_buf)),
 					};
-
 				if (create_sample_from_frame(renderer_ctx, pFrame, &audioSample) == 2) {
 					break;
 				}
 				audio_pts += audioSample.duration;
 				audioSample.pts = audio_pts;
-
-				int sendret = send(renderer_ctx->audioq, &audioSample);
-				if (sendret == 1) {
-					LOG("==> sending audio sample with idx: %d, pts: %.2fms to audio queue succeeded.", audioSample.idx, audioSample.pts);
-					/* LOG("==> sending audio sample to audio queue succeeded."); */
-				}
-				else if (sendret == -1) {
-					LOG("==> sending audio sample to audio queue interrupted");
-				}
-				else {
-					LOG("==> unforseen error when sending audio sample to audio queue");
-				}
+				send_sample_to_queue(renderer_ctx, &audioSample);
 			}
 			else {
 				LOG("non AV packet from demuxer, ignoring");
