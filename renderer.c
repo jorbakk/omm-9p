@@ -1207,12 +1207,20 @@ start:
 			}
 			// TODO it would be nicer to check for the frame type instead for the codec context
 			if (renderer_ctx->current_codec_ctx == renderer_ctx->video_ctx) {
+				renderer_ctx->video_idx++;
+				renderer_ctx->frame_rate = av_q2d(renderer_ctx->video_ctx->framerate);
+				renderer_ctx->frame_duration = 1000.0 / renderer_ctx->frame_rate;
+				LOG("video frame duration: %.2fms, fps: %.2f",
+					renderer_ctx->frame_duration, 1000.0 / renderer_ctx->frame_duration);
+				video_pts += renderer_ctx->frame_duration;
 				VideoPicture videoPicture = {
 					.frame = NULL,
 					.rgbbuf = NULL,
 					.planes = NULL,
 					.width = renderer_ctx->aw,
 					.height = renderer_ctx->ah,
+					.idx = renderer_ctx->video_idx,
+					.pts = video_pts,
 					};
 				if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 					if (create_pristine_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
@@ -1229,14 +1237,6 @@ start:
 						break;
 					}
 			    }
-				videoPicture.idx = renderer_ctx->video_idx;
-				renderer_ctx->video_idx++;
-				renderer_ctx->frame_rate = av_q2d(renderer_ctx->video_ctx->framerate);
-				renderer_ctx->frame_duration = 1000.0 / renderer_ctx->frame_rate;
-				LOG("video frame duration: %.2fms, fps: %.2f",
-					renderer_ctx->frame_duration, 1000.0 / renderer_ctx->frame_duration);
-				video_pts += renderer_ctx->frame_duration;
-				videoPicture.pts = video_pts;
 				if (!renderer_ctx->audio_only) {
 					send_picture_to_queue(renderer_ctx, &videoPicture);
 				}
