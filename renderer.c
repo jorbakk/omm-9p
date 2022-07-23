@@ -1013,7 +1013,7 @@ read_frame_from_decoder(RendererCtx *renderer_ctx, AVFrame *pFrame)
 
 
 int
-create_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
+create_pristine_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
 {
 	// FIXME sending pristine frames over the video picture channel doesn't work
 	videoPicture->pix_fmt = renderer_ctx->current_codec_ctx->pix_fmt;
@@ -1047,6 +1047,32 @@ create_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPictu
 		renderer_ctx->current_codec_ctx->height
 	);
 	/* av_frame_copy(); */
+	return 0;
+}
+
+
+int
+create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
+{
+	sws_scale(
+	    renderer_ctx->rgb_ctx,
+	    (uint8_t const * const *)pFrame->data,
+	    pFrame->linesize,
+	    0,
+	    renderer_ctx->current_codec_ctx->height,
+	    renderer_ctx->pFrameRGB->data,
+	    renderer_ctx->pFrameRGB->linesize
+	);
+	// av_frame_unref(pFrame);
+	videoPicture->linesize = renderer_ctx->pFrameRGB->linesize[0];
+	int numBytes = av_image_get_buffer_size(
+		AV_PIX_FMT_RGB24,
+		renderer_ctx->current_codec_ctx->width,
+		renderer_ctx->current_codec_ctx->height,
+		32
+		);
+	videoPicture->rgbbuf = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+	memcpy(videoPicture->rgbbuf, renderer_ctx->pFrameRGB->data[0], numBytes);
 	return 0;
 }
 
@@ -1130,31 +1156,14 @@ start:
 					/* .pts = renderer_ctx->current_codec_ctx->frame_number */
 					};
 				if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
-					if (create_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
+					if (create_pristine_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
 						break;
 					}
 				}
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
-
-		            sws_scale(
-		                renderer_ctx->rgb_ctx,
-		                (uint8_t const * const *)pFrame->data,
-		                pFrame->linesize,
-		                0,
-		                renderer_ctx->current_codec_ctx->height,
-		                renderer_ctx->pFrameRGB->data,
-		                renderer_ctx->pFrameRGB->linesize
-		            );
-					// av_frame_unref(pFrame);
-					videoPicture.linesize = renderer_ctx->pFrameRGB->linesize[0];
-				    int numBytes = av_image_get_buffer_size(
-						AV_PIX_FMT_RGB24,
-						renderer_ctx->current_codec_ctx->width,
-						renderer_ctx->current_codec_ctx->height,
-						32
-						);
-				    videoPicture.rgbbuf = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-				    memcpy(videoPicture.rgbbuf, renderer_ctx->pFrameRGB->data[0], numBytes);
+					if (create_rgb_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
+						break;
+					}
 			    }
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
 					/* LOG("setting scale context to target size %dx%d", w, h); */
