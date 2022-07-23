@@ -948,7 +948,7 @@ read_packet(RendererCtx *renderer_ctx, AVPacket* packet)
 
 
 int
-send_packet_to_decoder(RendererCtx *renderer_ctx, AVPacket* packet)
+write_packet_to_decoder(RendererCtx *renderer_ctx, AVPacket* packet)
 {
 	AVCodecContext *codecCtx = nil;
 	if (packet->stream_index == renderer_ctx->videoStream) {
@@ -981,6 +981,72 @@ send_packet_to_decoder(RendererCtx *renderer_ctx, AVPacket* packet)
 		return -1;
 	}
 	renderer_ctx->current_codec_ctx = codecCtx;
+	return 0;
+}
+
+
+int
+read_frame_from_decoder(RendererCtx *renderer_ctx, AVFrame *pFrame)
+{
+	LOG("reading decoded frame from decoder ...");
+	int ret = avcodec_receive_frame(renderer_ctx->current_codec_ctx, pFrame);
+	// check if entire frame was decoded
+	if (ret == AVERROR(EAGAIN)) {
+		LOG("cannot squeeze more decoded frames out of current stream");
+		return 2;
+	}
+	if (ret == AVERROR_EOF) {
+		LOG("end of file: AVERROR = EOF");
+		return -1;
+	}
+	if (ret == AVERROR(EINVAL)) {
+		LOG("decoding error: AVERROR = EINVAL");
+		return -1;
+	}
+	if (ret < 0) {
+		LOG("error reading decoded frame from decoder: %s", av_err2str(ret));
+		return -1;
+	}
+	LOG("received decoded frame");
+	return 0;
+}
+
+
+int
+create_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
+{
+	// FIXME sending pristine frames over the video picture channel doesn't work
+	videoPicture->pix_fmt = renderer_ctx->current_codec_ctx->pix_fmt;
+	LOG("AV_NUM_DATA_POINTERS: %d", AV_NUM_DATA_POINTERS);
+	/* memcpy(videoPicture->linesizes, pFrame->linesize, 4 * sizeof(uint8_t*) / 8); */
+	/* memcpy(videoPicture->linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS); */
+	/* memcpy(videoPicture->linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
+	/* memcpy(videoPicture->linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*) / 8); */
+	/* memcpy(videoPicture->planes, pFrame->data, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
+	/* memcpy(videoPicture->planes, pFrame->data, 4 * sizeof(uint8_t*) / 8); */
+	// FIXME avoid hardcoding parameter align to 32 ...
+	LOG("allocating video picture for queueing ...");
+	int frame_size = av_image_alloc(
+		videoPicture->planes,
+		pFrame->linesize,
+		renderer_ctx->current_codec_ctx->width,
+		renderer_ctx->current_codec_ctx->height,
+		renderer_ctx->current_codec_ctx->pix_fmt,
+		32
+	);
+	USED(frame_size);
+	LOG("copying video picture for queueing ...");
+	av_image_copy(
+		videoPicture->planes,
+		//videoPicture->linesizes,
+              pFrame->linesize,
+              (uint8_t const**)pFrame->data,
+              pFrame->linesize,
+		renderer_ctx->current_codec_ctx->pix_fmt,
+		renderer_ctx->current_codec_ctx->width,
+		renderer_ctx->current_codec_ctx->height
+	);
+	/* av_frame_copy(); */
 	return 0;
 }
 
@@ -1039,40 +1105,20 @@ start:
 		if (read_packet(renderer_ctx, packet) == -1) {
 			goto start;
 		}
-		if (send_packet_to_decoder(renderer_ctx, packet) == -1) {
+		if (write_packet_to_decoder(renderer_ctx, packet) == -1) {
 			goto start;
 		}
-
-
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
 		int decoder_ret = 0;
-		while (decoder_ret >= 0) {
-			/* int frameFinished = 0; */
-			// get decoded output data from decoder
-			LOG("reading decoded frame from decoder ...");
-			decoder_ret = avcodec_receive_frame(renderer_ctx->current_codec_ctx, pFrame);
-			/* LOG("receiving returns: %d", decoder_ret); */
-			// check if entire frame was decoded
-			if (decoder_ret == AVERROR(EAGAIN)) {
-				/* LOG("av frame not ready: AVERROR = EAGAIN"); */
-				LOG("cannot squeeze more decoded frames out of current stream");
+		while (decoder_ret == 0) {
+			decoder_ret = read_frame_from_decoder(renderer_ctx, pFrame);
+			if (decoder_ret == -1) {
+				goto start;
+			}
+			if (decoder_ret == 2) {
 				break;
 			}
-			if (decoder_ret == AVERROR_EOF) {
-				LOG("end of file: AVERROR = EOF");
-				return;
-			}
-			if (decoder_ret == AVERROR(EINVAL)) {
-				LOG("decoding error: AVERROR = EINVAL");
-				return;
-			}
-			if (decoder_ret < 0) {
-				LOG("error reading decoded frame from decoder: %s", av_err2str(decoder_ret));
-				return;
-			}
-			LOG("received decoded frame");
-			/* frameFinished = 1; */
 			// TODO it would be nicer to check for the frame type instead for the codec context
 			if (renderer_ctx->current_codec_ctx == renderer_ctx->video_ctx) {
 				VideoPicture videoPicture = {
@@ -1084,42 +1130,12 @@ start:
 					/* .pts = renderer_ctx->current_codec_ctx->frame_number */
 					};
 				if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
-					// FIXME sending pristine frames over the video picture channel doesn't work
-					videoPicture.pix_fmt = renderer_ctx->current_codec_ctx->pix_fmt;
-					LOG("AV_NUM_DATA_POINTERS: %d", AV_NUM_DATA_POINTERS);
-					/* memcpy(videoPicture.linesizes, pFrame->linesize, 4 * sizeof(uint8_t*) / 8); */
-					/* memcpy(videoPicture.linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS); */
-					/* memcpy(videoPicture.linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
-					/* memcpy(videoPicture.linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*) / 8); */
-					/* memcpy(videoPicture.planes, pFrame->data, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
-					/* memcpy(videoPicture.planes, pFrame->data, 4 * sizeof(uint8_t*) / 8); */
-
-					// FIXME avoid hardcoding parameter align to 32 ...
-					LOG("allocating video picture for queueing ...");
-					int frame_size = av_image_alloc(
-						videoPicture.planes,
-						pFrame->linesize,
-						renderer_ctx->current_codec_ctx->width,
-						renderer_ctx->current_codec_ctx->height,
-						renderer_ctx->current_codec_ctx->pix_fmt,
-						32
-					);
-					USED(frame_size);
-					LOG("copying video picture for queueing ...");
-					av_image_copy(
-						videoPicture.planes,
-						//videoPicture.linesizes,
-		                pFrame->linesize,
-		                (uint8_t const**)pFrame->data,
-		                pFrame->linesize,
-						renderer_ctx->current_codec_ctx->pix_fmt,
-						renderer_ctx->current_codec_ctx->width,
-						renderer_ctx->current_codec_ctx->height
-					);
-
-					/* av_frame_copy(); */
+					if (create_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
+						break;
+					}
 				}
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
+
 		            sws_scale(
 		                renderer_ctx->rgb_ctx,
 		                (uint8_t const * const *)pFrame->data,
@@ -1182,6 +1198,7 @@ start:
 				videoPicture.idx = renderer_ctx->video_idx;
 				videoPicture.width = renderer_ctx->aw;
 				videoPicture.height = renderer_ctx->ah;
+
 				renderer_ctx->frame_rate = av_q2d(renderer_ctx->video_ctx->framerate);
 				renderer_ctx->frame_duration = 1000.0 / renderer_ctx->frame_rate;
 				/* LOG("frame rate: %f, duration: %f", renderer_ctx->frame_rate, renderer_ctx->frame_duration); */
