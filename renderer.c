@@ -28,7 +28,6 @@
 // - fullscreen mode
 // 2. Seek
 // 3. AV sync
-// - fix 5.1 audio tracks playing faster
 // - decrease video picture display rate variation further
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
@@ -149,6 +148,7 @@ typedef struct RendererCtx
 	AVFrame            audio_frame;
 	AVPacket           audio_pkt;
 	int                audio_idx;
+	int                audio_out_channels;
 	/* double             audio_pts; */
 	/* double             current_audio_pts; */
 	/* double             current_video_pts; */
@@ -650,6 +650,7 @@ threadmain(int argc, char **argv)
 	renderer_ctx->frame_rate = 0.0;
 	renderer_ctx->frame_duration = 0.0;
 	renderer_ctx->audio_only = 0;
+	renderer_ctx->audio_out_channels = 2;
 	renderer_ctx->cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
@@ -1191,14 +1192,12 @@ decoder_thread(void *arg)
 				renderer_ctx->audio_idx++;
 				audioSample.idx = renderer_ctx->audio_idx;
 
-				/* int bytes_per_sec = 2 * codecCtx->sample_rate * codecCtx->channels; */
-				int bytes_per_sec = 2 * codecCtx->sample_rate * 2;
-
+				int bytes_per_sec = 2 * codecCtx->sample_rate * renderer_ctx->audio_out_channels;
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
 				/* double sample_duration = 0.5 * 1000.0 * audioSample.size / bytes_per_sec; */
 				/* double sample_duration = 2 * 1000.0 * audioSample.size / bytes_per_sec; */
 				LOG("audio sample rate: %d, channels: %d, duration: %.2fms",
-					codecCtx->sample_rate, codecCtx->channels, sample_duration);
+					codecCtx->sample_rate, renderer_ctx->audio_out_channels, sample_duration);
 				/* renderer_ctx->audio_pts += sample_duration;  // audio sample length in ms */
 				audio_pts += sample_duration;  // audio sample length in ms
 				audioSample.pts = audio_pts;
@@ -1299,8 +1298,7 @@ presenter_thread(void *arg)
 		LOG("queued audio sample to sdl device");
 
 		int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audioDevId);
-		//int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_ctx->channels;
-		int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * 2;
+		int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_out_channels;
 		double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
 		int samples_queued = audioq_size / audioSample.size;
 		// current_audio_pts = audioSample.pts - queue_duration;
@@ -1394,7 +1392,7 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 
 
 int
-open_stream_component(RendererCtx * renderer_ctx, int stream_index)
+open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 {
 	LOG("opening stream component");
 	AVFormatContext * pFormatCtx = renderer_ctx->pFormatCtx;
@@ -1417,25 +1415,15 @@ open_stream_component(RendererCtx * renderer_ctx, int stream_index)
 	}
 	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
 		LOG("setting up audio device with requested specs - sample_rate: %d, channels: %d ...",
-			codecCtx->sample_rate, codecCtx->channels);
+			codecCtx->sample_rate, renderer_ctx->audio_out_channels);
 		SDL_AudioSpec wanted_specs;
-		/* SDL_AudioSpec specs; */
-		/* codecCtx->channels = 2; */
 		wanted_specs.freq = codecCtx->sample_rate;
 		wanted_specs.format = AUDIO_S16SYS;
-		wanted_specs.channels = codecCtx->channels;
+		wanted_specs.channels = renderer_ctx->audio_out_channels;
 		wanted_specs.silence = 0;
 		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
-		/* // SDL threading when entering the audio_callback crashes ... */
-		/* wanted_specs.callback = audio_callback; */
 		wanted_specs.callback = NULL;
 		wanted_specs.userdata = renderer_ctx;
-		/* ret = SDL_OpenAudio(&wanted_specs, &specs); */
-		/* if (ret < 0) { */
-			/* printf("SDL_OpenAudio: %s.\n", SDL_GetError()); */
-			/* return -1; */
-		/* } */
-		/* renderer_ctx->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &specs, 0); */
 		renderer_ctx->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &renderer_ctx->specs, 0);
 		if (renderer_ctx->audioDevId == 0) {
 			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
