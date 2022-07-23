@@ -1121,6 +1121,23 @@ create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 
 
 void
+send_picture_to_queue(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
+{
+	LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue ...", videoPicture->idx, videoPicture->pts);
+	int sendret = send(renderer_ctx->pictq, videoPicture);
+	if (sendret == 1) {
+		LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue succeeded.", videoPicture->idx, videoPicture->pts);
+	}
+	else if (sendret == -1) {
+		LOG("==> sending picture to picture queue interrupted");
+	}
+	else {
+		LOG("==> unforseen error when sending picture to picture queue");
+	}
+}
+
+
+void
 decoder_thread(void *arg)
 {
 	RendererCtx *renderer_ctx = (RendererCtx *)arg;
@@ -1213,11 +1230,11 @@ start:
 						break;
 					}
 			    }
-				renderer_ctx->video_idx++;
+
 				videoPicture.idx = renderer_ctx->video_idx;
 				videoPicture.width = renderer_ctx->aw;
 				videoPicture.height = renderer_ctx->ah;
-
+				renderer_ctx->video_idx++;
 				renderer_ctx->frame_rate = av_q2d(renderer_ctx->video_ctx->framerate);
 				renderer_ctx->frame_duration = 1000.0 / renderer_ctx->frame_rate;
 				/* LOG("frame rate: %f, duration: %f", renderer_ctx->frame_rate, renderer_ctx->frame_duration); */
@@ -1225,18 +1242,9 @@ start:
 					renderer_ctx->frame_duration, 1000.0 / renderer_ctx->frame_duration);
 				video_pts += renderer_ctx->frame_duration;
 				videoPicture.pts = video_pts;
+
 				if (!renderer_ctx->audio_only) {
-					LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue ...", videoPicture.idx, videoPicture.pts);
-					int sendret = send(renderer_ctx->pictq, &videoPicture);
-					if (sendret == 1) {
-						LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue succeeded.", videoPicture.idx, videoPicture.pts);
-					}
-					else if (sendret == -1) {
-						LOG("==> sending picture to picture queue interrupted");
-					}
-					else {
-						LOG("==> unforseen error when sending picture to picture queue");
-					}
+					send_picture_to_queue(renderer_ctx, &videoPicture);
 				}
 			}
 			else if (renderer_ctx->current_codec_ctx == renderer_ctx->audio_ctx) {
