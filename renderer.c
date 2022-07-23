@@ -128,6 +128,7 @@ typedef struct RendererCtx
 	CFsys             *fileserver;
 	AVIOContext       *pIOCtx;
 	AVFormatContext   *pFormatCtx;
+	AVCodecContext    *current_codec_ctx;
 	int                renderer_state;
 	Channel           *cmdq;
 	int                screen_width;
@@ -924,7 +925,7 @@ alloc_buffers(RendererCtx *renderer_ctx)
 
 
 int
-read_frame(RendererCtx *renderer_ctx, AVPacket* packet)
+read_packet(RendererCtx *renderer_ctx, AVPacket* packet)
 {
 	int demuxer_ret = av_read_frame(renderer_ctx->pFormatCtx, packet);
 	LOG("read av packet of size: %i", packet->size);
@@ -942,6 +943,44 @@ read_frame(RendererCtx *renderer_ctx, AVPacket* packet)
 		LOG("packet size is zero, exiting demuxer thread");
 		return -1;
 	}
+	return 0;
+}
+
+
+int
+send_packet_to_decoder(RendererCtx *renderer_ctx, AVPacket* packet)
+{
+	AVCodecContext *codecCtx = nil;
+	if (packet->stream_index == renderer_ctx->videoStream) {
+		LOG("sending video packet of size %d to decoder", packet->size);
+		codecCtx = renderer_ctx->video_ctx;
+	}
+	else {
+		LOG("sending audio packet of size %d to decoder", packet->size);
+		codecCtx = renderer_ctx->audio_ctx;
+	}
+	int decsend_ret = avcodec_send_packet(codecCtx, packet);
+	LOG("sending packet of size %d to decoder returned: %d", packet->size, decsend_ret);
+	if (decsend_ret == AVERROR(EAGAIN)) {
+		LOG("AVERROR = EAGAIN: input not accepted, receive frame from decoder first");
+	}
+	if (decsend_ret == AVERROR(EINVAL)) {
+		LOG("AVERROR = EINVAL: codec not opened or requires flush");
+	}
+	if (decsend_ret == AVERROR(ENOMEM)) {
+		LOG("AVERROR = ENOMEM: failed to queue packet");
+	}
+	if (decsend_ret == AVERROR_EOF) {
+		LOG("AVERROR = EOF: decoder has been flushed");
+		renderer_ctx->renderer_state = RSTATE_STOP;
+		reset_filectx(renderer_ctx);
+		blank_window(renderer_ctx);
+	}
+	if (decsend_ret < 0) {
+		LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
+		return -1;
+	}
+	renderer_ctx->current_codec_ctx = codecCtx;
 	return 0;
 }
 
@@ -997,40 +1036,13 @@ start:
 		if (jmp == 1) {
 			goto quit;
 		}
-		if (read_frame(renderer_ctx, packet) == -1) {
+		if (read_packet(renderer_ctx, packet) == -1) {
+			goto start;
+		}
+		if (send_packet_to_decoder(renderer_ctx, packet) == -1) {
 			goto start;
 		}
 
-		AVCodecContext *codecCtx = nil;
-		if (packet->stream_index == renderer_ctx->videoStream) {
-			LOG("sending video packet of size %d to decoder", packet->size);
-			codecCtx = renderer_ctx->video_ctx;
-		}
-		else {
-			LOG("sending audio packet of size %d to decoder", packet->size);
-			codecCtx = renderer_ctx->audio_ctx;
-		}
-		int decsend_ret = avcodec_send_packet(codecCtx, packet);
-		LOG("sending packet of size %d to decoder returned: %d", packet->size, decsend_ret);
-		if (decsend_ret == AVERROR(EAGAIN)) {
-			LOG("AVERROR = EAGAIN: input not accepted, receive frame from decoder first");
-		}
-		if (decsend_ret == AVERROR(EINVAL)) {
-			LOG("AVERROR = EINVAL: codec not opened or requires flush");
-		}
-		if (decsend_ret == AVERROR(ENOMEM)) {
-			LOG("AVERROR = ENOMEM: failed to queue packet");
-		}
-		if (decsend_ret == AVERROR_EOF) {
-			LOG("AVERROR = EOF: decoder has been flushed");
-			renderer_ctx->renderer_state = RSTATE_STOP;
-			reset_filectx(renderer_ctx);
-			blank_window(renderer_ctx);
-		}
-		if (decsend_ret < 0) {
-			LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
-			return;
-		}
 
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
@@ -1039,7 +1051,7 @@ start:
 			/* int frameFinished = 0; */
 			// get decoded output data from decoder
 			LOG("reading decoded frame from decoder ...");
-			decoder_ret = avcodec_receive_frame(codecCtx, pFrame);
+			decoder_ret = avcodec_receive_frame(renderer_ctx->current_codec_ctx, pFrame);
 			/* LOG("receiving returns: %d", decoder_ret); */
 			// check if entire frame was decoded
 			if (decoder_ret == AVERROR(EAGAIN)) {
@@ -1062,18 +1074,18 @@ start:
 			LOG("received decoded frame");
 			/* frameFinished = 1; */
 			// TODO it would be nicer to check for the frame type instead for the codec context
-			if (codecCtx == renderer_ctx->video_ctx) {
+			if (renderer_ctx->current_codec_ctx == renderer_ctx->video_ctx) {
 				VideoPicture videoPicture = {
 					.frame = NULL,
 					.rgbbuf = NULL,
 					.planes = NULL,
-					.width = codecCtx->width,
-					.height = codecCtx->height
-					/* .pts = codecCtx->frame_number */
+					.width = renderer_ctx->current_codec_ctx->width,
+					.height = renderer_ctx->current_codec_ctx->height
+					/* .pts = renderer_ctx->current_codec_ctx->frame_number */
 					};
 				if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 					// FIXME sending pristine frames over the video picture channel doesn't work
-					videoPicture.pix_fmt = codecCtx->pix_fmt;
+					videoPicture.pix_fmt = renderer_ctx->current_codec_ctx->pix_fmt;
 					LOG("AV_NUM_DATA_POINTERS: %d", AV_NUM_DATA_POINTERS);
 					/* memcpy(videoPicture.linesizes, pFrame->linesize, 4 * sizeof(uint8_t*) / 8); */
 					/* memcpy(videoPicture.linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS); */
@@ -1087,9 +1099,9 @@ start:
 					int frame_size = av_image_alloc(
 						videoPicture.planes,
 						pFrame->linesize,
-						codecCtx->width,
-						codecCtx->height,
-						codecCtx->pix_fmt,
+						renderer_ctx->current_codec_ctx->width,
+						renderer_ctx->current_codec_ctx->height,
+						renderer_ctx->current_codec_ctx->pix_fmt,
 						32
 					);
 					USED(frame_size);
@@ -1100,9 +1112,9 @@ start:
 		                pFrame->linesize,
 		                (uint8_t const**)pFrame->data,
 		                pFrame->linesize,
-						codecCtx->pix_fmt,
-						codecCtx->width,
-						codecCtx->height
+						renderer_ctx->current_codec_ctx->pix_fmt,
+						renderer_ctx->current_codec_ctx->width,
+						renderer_ctx->current_codec_ctx->height
 					);
 
 					/* av_frame_copy(); */
@@ -1113,7 +1125,7 @@ start:
 		                (uint8_t const * const *)pFrame->data,
 		                pFrame->linesize,
 		                0,
-		                codecCtx->height,
+		                renderer_ctx->current_codec_ctx->height,
 		                renderer_ctx->pFrameRGB->data,
 		                renderer_ctx->pFrameRGB->linesize
 		            );
@@ -1121,8 +1133,8 @@ start:
 					videoPicture.linesize = renderer_ctx->pFrameRGB->linesize[0];
 				    int numBytes = av_image_get_buffer_size(
 						AV_PIX_FMT_RGB24,
-						codecCtx->width,
-						codecCtx->height,
+						renderer_ctx->current_codec_ctx->width,
+						renderer_ctx->current_codec_ctx->height,
 						32
 						);
 				    videoPicture.rgbbuf = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
@@ -1161,7 +1173,7 @@ start:
 		                pFrame->linesize,
 		                0,
 		                // set video height here to select the slice in the *SOURCE* picture to scale (usually the whole picture)
-		                codecCtx->height,
+		                renderer_ctx->current_codec_ctx->height,
 		                videoPicture.frame->data,
 		                videoPicture.frame->linesize
 		            );
@@ -1191,7 +1203,7 @@ start:
 					}
 				}
 			}
-			else if (codecCtx == renderer_ctx->audio_ctx) {
+			else if (renderer_ctx->current_codec_ctx == renderer_ctx->audio_ctx) {
 				if (renderer_ctx->maxFramesToDecode && renderer_ctx->audio_idx > renderer_ctx->maxFramesToDecode) {
 					LOG("max frames reached");
 					threadexitsall("max frames reached");
@@ -1210,12 +1222,12 @@ start:
 				renderer_ctx->audio_idx++;
 				audioSample.idx = renderer_ctx->audio_idx;
 
-				int bytes_per_sec = 2 * codecCtx->sample_rate * renderer_ctx->audio_out_channels;
+				int bytes_per_sec = 2 * renderer_ctx->current_codec_ctx->sample_rate * renderer_ctx->audio_out_channels;
 				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
 				/* double sample_duration = 0.5 * 1000.0 * audioSample.size / bytes_per_sec; */
 				/* double sample_duration = 2 * 1000.0 * audioSample.size / bytes_per_sec; */
 				LOG("audio sample rate: %d, channels: %d, duration: %.2fms",
-					codecCtx->sample_rate, renderer_ctx->audio_out_channels, sample_duration);
+					renderer_ctx->current_codec_ctx->sample_rate, renderer_ctx->audio_out_channels, sample_duration);
 				/* renderer_ctx->audio_pts += sample_duration;  // audio sample length in ms */
 				audio_pts += sample_duration;  // audio sample length in ms
 				audioSample.pts = audio_pts;
