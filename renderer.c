@@ -1211,9 +1211,8 @@ start:
 					.frame = NULL,
 					.rgbbuf = NULL,
 					.planes = NULL,
-					.width = renderer_ctx->current_codec_ctx->width,
-					.height = renderer_ctx->current_codec_ctx->height
-					/* .pts = renderer_ctx->current_codec_ctx->frame_number */
+					.width = renderer_ctx->aw,
+					.height = renderer_ctx->ah,
 					};
 				if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 					if (create_pristine_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
@@ -1230,19 +1229,14 @@ start:
 						break;
 					}
 			    }
-
 				videoPicture.idx = renderer_ctx->video_idx;
-				videoPicture.width = renderer_ctx->aw;
-				videoPicture.height = renderer_ctx->ah;
 				renderer_ctx->video_idx++;
 				renderer_ctx->frame_rate = av_q2d(renderer_ctx->video_ctx->framerate);
 				renderer_ctx->frame_duration = 1000.0 / renderer_ctx->frame_rate;
-				/* LOG("frame rate: %f, duration: %f", renderer_ctx->frame_rate, renderer_ctx->frame_duration); */
 				LOG("video frame duration: %.2fms, fps: %.2f",
 					renderer_ctx->frame_duration, 1000.0 / renderer_ctx->frame_duration);
 				video_pts += renderer_ctx->frame_duration;
 				videoPicture.pts = video_pts;
-
 				if (!renderer_ctx->audio_only) {
 					send_picture_to_queue(renderer_ctx, &videoPicture);
 				}
