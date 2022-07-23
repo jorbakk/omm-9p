@@ -724,10 +724,43 @@ threadmain(int argc, char **argv)
 }
 
 
+CFid*
+open_9pconnection(RendererCtx *renderer_ctx)
+{
+	// FIXME restructure server open/close code
+	LOG("opening 9P connection ...");
+	if (!renderer_ctx->fileserver) {
+		int ret;
+		if (renderer_ctx->isaddr) {
+			/* renderer_ctx->fileserver = clientdial(renderer_ctx->fileservername); */
+			ret = clientdial(renderer_ctx);
+		}
+		else {
+			/* renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername); */
+			ret = clientmount(renderer_ctx);
+		}
+		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
+		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
+		if (ret == -1) {
+			LOG("failed to open 9P connection");
+			return nil;
+		}
+	}
+	LOG("opening 9P file ...");
+	CFid *fid = fsopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
+	if (fid == nil) {
+		renderer_ctx->renderer_state = RSTATE_STOP;
+		blank_window(renderer_ctx);
+		return nil;
+	}
+	return fid;
+}
+
+
 void
 decoder_thread(void *arg)
 {
-	RendererCtx * renderer_ctx = (RendererCtx *)arg;
+	RendererCtx *renderer_ctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
 	start:
 	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
@@ -756,46 +789,23 @@ decoder_thread(void *arg)
 		}
 	}
 
-
-	// FIXME restructure server open/close code
-	LOG("opening 9P connection ...");
-	if (!renderer_ctx->fileserver) {
-		int ret;
-		if (renderer_ctx->isaddr) {
-			/* renderer_ctx->fileserver = clientdial(renderer_ctx->fileservername); */
-			ret = clientdial(renderer_ctx);
-		}
-		else {
-			/* renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername); */
-			ret = clientmount(renderer_ctx);
-		}
-		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
-		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
-		if (ret == -1) {
-			LOG("failed to open 9P connection");
-		}
-	}
-	LOG("opening 9P file ...");
-	CFid *fid = fsopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
+	CFid *fid = open_9pconnection(renderer_ctx);
 	if (fid == nil) {
-		renderer_ctx->renderer_state = RSTATE_STOP;
-		blank_window(renderer_ctx);
 		goto start;
 	}
 	renderer_ctx->fileserverfid = fid;
-
 
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
 	AVIOContext *pIOCtx = avio_alloc_context(
-		avctxBuffer,		 // buffer
-		avctxBufferSize,	 // buffer size
-		0,				     // buffer is only readable - set to 1 for read/write
-		fid,	             // user specified data
-		demuxerPacketRead,   // function for reading packets
-		NULL,				 // function for writing packets
-		demuxerPacketSeek	 // function for seeking to position in stream
+		avctxBuffer,                   // buffer
+		avctxBufferSize,               // buffer size
+		0,                             // buffer is only readable - set to 1 for read/write
+		renderer_ctx->fileserverfid,   // user specified data
+		demuxerPacketRead,             // function for reading packets
+		NULL,                          // function for writing packets
+		demuxerPacketSeek              // function for seeking to position in stream
 		);
 	if(!pIOCtx) {
 		sysfatal("failed to allocate memory for ffmpeg av io context");
