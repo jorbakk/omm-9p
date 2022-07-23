@@ -1077,6 +1077,49 @@ create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 }
 
 
+int
+create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
+{
+	/* LOG("setting scale context to target size %dx%d", w, h); */
+	LOG("setting scale context to target size %dx%d", renderer_ctx->aw, renderer_ctx->ah);
+	renderer_ctx->sws_ctx = sws_getContext(
+		renderer_ctx->video_ctx->width,
+		renderer_ctx->video_ctx->height,
+		renderer_ctx->video_ctx->pix_fmt,
+		// set video size here to actually scale the image
+		renderer_ctx->aw,
+		renderer_ctx->ah,
+		AV_PIX_FMT_YUV420P,
+		SWS_BILINEAR,
+		NULL,
+		NULL,
+		NULL
+	);
+    videoPicture->frame = av_frame_alloc();
+	av_image_fill_arrays(
+			videoPicture->frame->data,
+			videoPicture->frame->linesize,
+			renderer_ctx->yuvbuffer,
+			AV_PIX_FMT_YUV420P,
+               // set video size of picture to send to queue here
+			renderer_ctx->aw, 
+			renderer_ctx->ah,
+			32
+	);
+	sws_scale(
+	    renderer_ctx->sws_ctx,
+	    (uint8_t const * const *)pFrame->data,
+	    pFrame->linesize,
+	    0,
+	    // set video height here to select the slice in the *SOURCE* picture to scale (usually the whole picture)
+	    renderer_ctx->current_codec_ctx->height,
+	    videoPicture->frame->data,
+	    videoPicture->frame->linesize
+	);
+	return 0;
+}
+
+
 void
 decoder_thread(void *arg)
 {
@@ -1166,42 +1209,9 @@ start:
 					}
 			    }
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
-					/* LOG("setting scale context to target size %dx%d", w, h); */
-					LOG("setting scale context to target size %dx%d", renderer_ctx->aw, renderer_ctx->ah);
-					renderer_ctx->sws_ctx = sws_getContext(
-						renderer_ctx->video_ctx->width,
-						renderer_ctx->video_ctx->height,
-						renderer_ctx->video_ctx->pix_fmt,
-						// set video size here to actually scale the image
-						renderer_ctx->aw,
-						renderer_ctx->ah,
-						AV_PIX_FMT_YUV420P,
-						SWS_BILINEAR,
-						NULL,
-						NULL,
-						NULL
-					);
-				    videoPicture.frame = av_frame_alloc();
-					av_image_fill_arrays(
-							videoPicture.frame->data,
-							videoPicture.frame->linesize,
-							renderer_ctx->yuvbuffer,
-							AV_PIX_FMT_YUV420P,
-			                // set video size of picture to send to queue here
-							renderer_ctx->aw, 
-							renderer_ctx->ah,
-							32
-					);
-		            sws_scale(
-		                renderer_ctx->sws_ctx,
-		                (uint8_t const * const *)pFrame->data,
-		                pFrame->linesize,
-		                0,
-		                // set video height here to select the slice in the *SOURCE* picture to scale (usually the whole picture)
-		                renderer_ctx->current_codec_ctx->height,
-		                videoPicture.frame->data,
-		                videoPicture.frame->linesize
-		            );
+					if (create_yuv_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
+						break;
+					}
 			    }
 				renderer_ctx->video_idx++;
 				videoPicture.idx = renderer_ctx->video_idx;
