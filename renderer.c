@@ -125,6 +125,7 @@ typedef struct RendererCtx
 	int                fileserverfd;
 	CFid              *fileserverfid;
 	CFsys             *fileserver;
+	AVIOContext       *pIOCtx;
 	AVFormatContext   *pFormatCtx;
 	int                renderer_state;
 	Channel           *cmdq;
@@ -724,45 +725,9 @@ threadmain(int argc, char **argv)
 }
 
 
-CFid*
-open_9pconnection(RendererCtx *renderer_ctx)
+int
+read_cmd(RendererCtx *renderer_ctx)
 {
-	// FIXME restructure server open/close code
-	LOG("opening 9P connection ...");
-	if (!renderer_ctx->fileserver) {
-		int ret;
-		if (renderer_ctx->isaddr) {
-			/* renderer_ctx->fileserver = clientdial(renderer_ctx->fileservername); */
-			ret = clientdial(renderer_ctx);
-		}
-		else {
-			/* renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername); */
-			ret = clientmount(renderer_ctx);
-		}
-		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
-		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
-		if (ret == -1) {
-			LOG("failed to open 9P connection");
-			return nil;
-		}
-	}
-	LOG("opening 9P file ...");
-	CFid *fid = fsopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
-	if (fid == nil) {
-		renderer_ctx->renderer_state = RSTATE_STOP;
-		blank_window(renderer_ctx);
-		return nil;
-	}
-	return fid;
-}
-
-
-void
-decoder_thread(void *arg)
-{
-	RendererCtx *renderer_ctx = (RendererCtx *)arg;
-	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
-	start:
 	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
 		LOG("renderer stopped or no av stream file specified, waiting for command ...");
 		blank_window(renderer_ctx);
@@ -781,20 +746,54 @@ decoder_thread(void *arg)
 				renderer_ctx->renderer_state = RSTATE_PLAY;
 			}
 			else if (cmd.cmd == CMD_QUIT) {
-				goto quit;
+				return 1;
 			}
 		}
 		else {
 			LOG("failed to receive command");
 		}
 	}
+	return 0;
+}
 
-	CFid *fid = open_9pconnection(renderer_ctx);
-	if (fid == nil) {
-		goto start;
+
+int
+open_9pconnection(RendererCtx *renderer_ctx)
+{
+	// FIXME restructure server open/close code
+	LOG("opening 9P connection ...");
+	int ret;
+	if (!renderer_ctx->fileserver) {
+		if (renderer_ctx->isaddr) {
+			/* renderer_ctx->fileserver = clientdial(renderer_ctx->fileservername); */
+			ret = clientdial(renderer_ctx);
+		}
+		else {
+			/* renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername); */
+			ret = clientmount(renderer_ctx);
+		}
+		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
+		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
+		if (ret == -1) {
+			LOG("failed to open 9P connection");
+			return ret;
+		}
 	}
-	renderer_ctx->fileserverfid = fid;
+	LOG("opening 9P file ...");
+	CFid *fid = fsopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
+	if (fid == nil) {
+		renderer_ctx->renderer_state = RSTATE_STOP;
+		blank_window(renderer_ctx);
+		return -1;
+	}
+	renderer_ctx->fileserverfid = fid; 
+	return 0;
+}
 
+
+int
+setup_format_ctx(RendererCtx *renderer_ctx)
+{
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
@@ -808,23 +807,47 @@ decoder_thread(void *arg)
 		demuxerPacketSeek              // function for seeking to position in stream
 		);
 	if(!pIOCtx) {
-		sysfatal("failed to allocate memory for ffmpeg av io context");
+		LOG("failed to allocate memory for ffmpeg av io context");
+		return -1;
 	}
 	AVFormatContext *pFormatCtx = avformat_alloc_context();
 	if (!pFormatCtx) {
-	  sysfatal("failed to allocate av format context");
+	  LOG("failed to allocate av format context");
+	  return -1;
 	}
 	pFormatCtx->pb = pIOCtx;
+	renderer_ctx->pIOCtx = pIOCtx;
+	renderer_ctx->pFormatCtx = pFormatCtx;
+	return 0;
+}
+
+
+void
+decoder_thread(void *arg)
+{
+	RendererCtx *renderer_ctx = (RendererCtx *)arg;
+	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
+start:
+	if (read_cmd(renderer_ctx) == 1) {
+		goto quit;
+	}
+	if (open_9pconnection(renderer_ctx) == -1) {
+		goto start;
+	}
+	if (setup_format_ctx(renderer_ctx) == -1) {
+		goto start;
+	}
+
 	LOG("opening stream input ...");
-	int ret = avformat_open_input(&pFormatCtx, NULL, NULL, NULL);
+	int ret = avformat_open_input(&renderer_ctx->pFormatCtx, NULL, NULL, NULL);
 	if (ret < 0) {
 		LOG("Could not open file %s", renderer_ctx->filename);
-		if (pIOCtx) {
-			avio_context_free(&pIOCtx);
+		if (renderer_ctx->pIOCtx) {
+			avio_context_free(&renderer_ctx->pIOCtx);
 		}
-		avformat_close_input(&pFormatCtx);
-		if (pFormatCtx) {
-			avformat_free_context(pFormatCtx);
+		avformat_close_input(&renderer_ctx->pFormatCtx);
+		if (renderer_ctx->pFormatCtx) {
+			avformat_free_context(renderer_ctx->pFormatCtx);
 		}
 		goto start;
 	}
@@ -834,22 +857,22 @@ decoder_thread(void *arg)
 	renderer_ctx->audioStream = -1;
 	// set global RendererCtx reference
 	/* global_video_state = renderer_ctx; */
-	renderer_ctx->pFormatCtx = pFormatCtx;
-	ret = avformat_find_stream_info(pFormatCtx, NULL);
+
+	ret = avformat_find_stream_info(renderer_ctx->pFormatCtx, NULL);
 	if (ret < 0) {
 		LOG("Could not find stream information: %s.", renderer_ctx->filename);
 		return;
 	}
 	if (_DEBUG_)
-		av_dump_format(pFormatCtx, 0, renderer_ctx->filename, 0);
+		av_dump_format(renderer_ctx->pFormatCtx, 0, renderer_ctx->filename, 0);
 	int videoStream = -1;
 	int audioStream = -1;
-	for (int i = 0; i < pFormatCtx->nb_streams; i++)
+	for (int i = 0; i < renderer_ctx->pFormatCtx->nb_streams; i++)
 	{
-		if (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoStream < 0) {
+		if (renderer_ctx->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoStream < 0) {
 			videoStream = i;
 		}
-		if (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audioStream < 0) {
+		if (renderer_ctx->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audioStream < 0) {
 			audioStream = i;
 		}
 	}
@@ -1237,12 +1260,12 @@ decoder_thread(void *arg)
 	quit:
 	renderer_ctx->renderer_state = RSTATE_QUIT;
 	// Clean up the decoder thread
-	if (pIOCtx) {
-		avio_context_free(&pIOCtx);
+	if (renderer_ctx->pIOCtx) {
+		avio_context_free(&renderer_ctx->pIOCtx);
 	}
-	avformat_close_input(&pFormatCtx);
-	if (pFormatCtx) {
-		avformat_free_context(pFormatCtx);
+	avformat_close_input(&renderer_ctx->pFormatCtx);
+	if (renderer_ctx->pFormatCtx) {
+		avformat_free_context(renderer_ctx->pFormatCtx);
 	}
 	/* if (renderer_ctx->videoq) { */
 		/* chanfree(renderer_ctx->videoq); */
