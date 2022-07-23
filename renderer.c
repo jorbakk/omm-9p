@@ -575,6 +575,38 @@ read_cmd(RendererCtx *renderer_ctx)
 
 
 int
+poll_cmd(RendererCtx *renderer_ctx)
+{
+	if (renderer_ctx->renderer_state == RSTATE_PLAY) {
+		Command cmd;
+		int cmdret = nbrecv(renderer_ctx->cmdq, &cmd);
+		if (cmdret == 1) {
+			LOG("<== received command: %d", cmd.cmd);
+			if (cmd.cmd == CMD_PAUSE) {
+				renderer_ctx->renderer_state = RSTATE_PAUSE;
+				cmdret = recv(renderer_ctx->cmdq, &cmd);
+				while (cmdret != 1 || cmd.cmd != CMD_PAUSE) {
+					LOG("<== received command: %d", cmd.cmd);
+					cmdret = recv(renderer_ctx->cmdq, &cmd);
+				}
+				renderer_ctx->renderer_state = RSTATE_PLAY;
+			}
+			else if (cmd.cmd == CMD_STOP) {
+				renderer_ctx->renderer_state = RSTATE_STOP;
+				reset_filectx(renderer_ctx);
+				blank_window(renderer_ctx);
+				return -1;
+			}
+			else if (cmd.cmd == CMD_QUIT) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+
+int
 open_9pconnection(RendererCtx *renderer_ctx)
 {
 	// FIXME restructure server open/close code
@@ -896,6 +928,7 @@ decoder_thread(void *arg)
 {
 	RendererCtx *renderer_ctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", renderer_ctx->decoder_tid);
+
 start:
 	if (read_cmd(renderer_ctx) == 1) {
 		goto quit;
@@ -934,31 +967,14 @@ start:
 
 	// Main decoder loop
 	for (;;) {
-		if (renderer_ctx->renderer_state == RSTATE_PLAY) {
-			Command cmd;
-			int cmdret = nbrecv(renderer_ctx->cmdq, &cmd);
-			if (cmdret == 1) {
-				LOG("<== received command: %d", cmd.cmd);
-				if (cmd.cmd == CMD_PAUSE) {
-					renderer_ctx->renderer_state = RSTATE_PAUSE;
-					cmdret = recv(renderer_ctx->cmdq, &cmd);
-					while (cmdret != 1 || cmd.cmd != CMD_PAUSE) {
-						LOG("<== received command: %d", cmd.cmd);
-						cmdret = recv(renderer_ctx->cmdq, &cmd);
-					}
-					renderer_ctx->renderer_state = RSTATE_PLAY;
-				}
-				else if (cmd.cmd == CMD_STOP) {
-					renderer_ctx->renderer_state = RSTATE_STOP;
-					reset_filectx(renderer_ctx);
-					blank_window(renderer_ctx);
-					goto start;
-				}
-				else if (cmd.cmd == CMD_QUIT) {
-					goto quit;
-				}
-			}
+		int jmp = poll_cmd(renderer_ctx);
+		if (jmp == -1) {
+			goto start;
 		}
+		if (jmp == 1) {
+			goto quit;
+		}
+
 		int demuxer_ret = av_read_frame(renderer_ctx->pFormatCtx, packet);
 		LOG("read av packet of size: %i", packet->size);
 		if (demuxer_ret < 0) {
@@ -1006,7 +1022,6 @@ start:
 			LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
 			return;
 		}
-
 
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
@@ -1198,6 +1213,7 @@ start:
 				audioSample.duration = sample_duration;
 				audioSample.sample = malloc(sizeof(renderer_ctx->audio_buf));
 				memcpy(audioSample.sample, renderer_ctx->audio_buf, sizeof(renderer_ctx->audio_buf));
+
 				int sendret = send(renderer_ctx->audioq, &audioSample);
 				if (sendret == 1) {
 					LOG("==> sending audio sample with idx: %d, pts: %.2fms to audio queue succeeded.", audioSample.idx, audioSample.pts);
