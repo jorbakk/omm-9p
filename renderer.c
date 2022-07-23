@@ -70,6 +70,7 @@
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 static struct timespec curtime;
+static FILE *audio_out;
 
 void printloginfo(void)
 {
@@ -137,7 +138,6 @@ typedef struct RendererCtx
 	int                server_tid;
 	int                decoder_tid;
 	int                presenter_tid;
-	/* int                video_tid; */
 	// Audio Stream.
 	int                audioStream;
 	AVStream          *audio_st;
@@ -150,9 +150,6 @@ typedef struct RendererCtx
 	AVPacket           audio_pkt;
 	int                audio_idx;
 	int                audio_out_channels;
-	/* double             audio_pts; */
-	/* double             current_audio_pts; */
-	/* double             current_video_pts; */
 	double             current_video_time;
 	double             previous_video_time;
 	int64_t            audio_start_rt;
@@ -160,7 +157,7 @@ typedef struct RendererCtx
 	int                videoStream;
 	double             frame_rate;
 	double             frame_duration;
-	AVStream          *video_st;
+	/* AVStream          *video_st; */
 	AVCodecContext    *video_ctx;
 	SDL_Texture       *texture;
 	SDL_Renderer      *renderer;
@@ -169,7 +166,6 @@ typedef struct RendererCtx
 	struct SwsContext *rgb_ctx;
 	SDL_AudioSpec      specs;
 	int                video_idx;
-	/* double             video_pts; */
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
@@ -180,21 +176,6 @@ typedef struct RendererCtx
 	int                frame_fmt;
 	SDL_AudioDeviceID  audioDevId;
 	int                audio_only;
-	// AV Sync
-	/* double             audio_clock; */
-	/* int	              av_sync_type; */
-	/* double             external_clock; */
-	/* int64_t            external_clock_time; */
-	/* double             frame_timer; */
-	/* double             frame_last_pts; */
-	/* double             frame_last_delay; */
-	/* double             video_clock; */
-	/* double             video_current_pts; */
-	/* int64_t            video_current_pts_time; */
-	/* double             audio_diff_cum; */
-	/* double             audio_diff_avg_coef; */
-	/* double             audio_diff_threshold; */
-	/* int                audio_diff_avg_count; */
 } RendererCtx;
 
 typedef struct AudioResamplingState
@@ -557,174 +538,6 @@ blank_window(RendererCtx *renderer_ctx)
 }
 
 
-static FILE *audio_out;
-
-void
-threadmain(int argc, char **argv)
-{
-	if (_DEBUG_) {
-		chatty9pclient = 1;
-		/* chattyfuse = 1; */
-	}
-	RendererCtx *renderer_ctx = av_mallocz(sizeof(RendererCtx));
-	start_server(renderer_ctx);
-	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
-	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
-	if (ret != 0) {
-		printf("Could not initialize SDL - %s\n.", SDL_GetError());
-		return;
-	}
-
-	SDL_DisplayMode DM;
-	if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
-		LOG("failed to get sdl display mode");
-		return;
-	}
-	renderer_ctx->screen_width  = DM.w;
-	renderer_ctx->screen_height = DM.h;
-	int requested_window_width  = 800;
-	int requested_window_height = 600;
-	if (!sdl_window) {
-		// create a window with the specified position, dimensions, and flags.
-		sdl_window = SDL_CreateWindow(
-			"OMM Renderer",
-			SDL_WINDOWPOS_UNDEFINED,
-			SDL_WINDOWPOS_UNDEFINED,
-			requested_window_width,
-			requested_window_height,
-			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
-			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
-			);
-		SDL_GL_SetSwapInterval(1);
-	}
-	if (!sdl_window) {
-		printf("SDL: could not create window - exiting.\n");
-		return;
-	}
-	if (!renderer_ctx->renderer) {
-		// create a 2D rendering context for the SDL_Window
-		renderer_ctx->renderer = SDL_CreateRenderer(
-			sdl_window,
-			-1,
-			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
-	}
-	if (!renderer_ctx->texture) {
-		// create a texture for a rendering context
-		int w;
-		int h;
-		SDL_GetWindowSize(sdl_window, &w, &h);
-		renderer_ctx->texture = SDL_CreateTexture(
-			renderer_ctx->renderer,
-			SDL_PIXELFORMAT_YV12,
-			SDL_TEXTUREACCESS_STREAMING,
-			// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
-			renderer_ctx->screen_width,
-			renderer_ctx->screen_height
-			);
-	}
-
-	/* setstr(&renderer_ctx->fileservername, DEFAULT_SERVER_NAME, 0); */
-	renderer_ctx->fileservername = NULL;
-	renderer_ctx->filename = NULL;
-	if (argc >= 2) {
-		seturl(renderer_ctx, argv[1]);
-	}
-	renderer_ctx->fileserverfd = -1;
-	renderer_ctx->fileserverfid = nil;
-	renderer_ctx->fileserver = nil;
-	// parse max frames to decode input by the user
-	char * pEnd;
-	renderer_ctx->maxFramesToDecode = 0;
-	if (argc == 3) {
-		renderer_ctx->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
-	}
-	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
-	renderer_ctx->renderer_state = RSTATE_STOP;
-	blank_window(renderer_ctx);
-	renderer_ctx->fileserver = NULL;
-	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
-	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
-	renderer_ctx->video_ctx = NULL;
-	renderer_ctx->audio_ctx = NULL;
-	renderer_ctx->audio_idx = 0;
-	renderer_ctx->video_idx = 0;
-	renderer_ctx->frame_rate = 0.0;
-	renderer_ctx->frame_duration = 0.0;
-	renderer_ctx->audio_only = 0;
-	renderer_ctx->audio_out_channels = 2;
-	renderer_ctx->cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
-	audio_out = fopen("/tmp/out.pcm", "wb");
-	// start the decoding thread to read data from the AVFormatContext
-	renderer_ctx->decoder_tid = threadcreate(decoder_thread, renderer_ctx, THREAD_STACK_SIZE);
-	if (!renderer_ctx->decoder_tid) {
-		printf("could not start decoder thread: %s.\n", SDL_GetError());
-		av_free(renderer_ctx);
-		return;
-	}
-	/* av_init_packet(&flush_pkt); */
-	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
-	for (;;) {
-		yield();
-		if (renderer_ctx->renderer_state == RSTATE_STOP || renderer_ctx->renderer_state == RSTATE_PAUSE) {
-			p9sleep(100);
-		}
-		SDL_Event event;
-		ret = SDL_PollEvent(&event);
-		if (ret) {
-			LOG("received sdl event");
-			Command cmd;
-			cmd.cmd = CMD_NONE;
-			switch(event.type)
-			{
-				case SDL_KEYDOWN:
-				{
-					switch(event.key.keysym.sym)
-					{
-						case SDLK_q:
-						{
-							cmd.cmd = CMD_QUIT;
-						}
-						break;
-						case SDLK_SPACE:
-						{
-							cmd.cmd = CMD_PAUSE;
-						}
-						break;
-						case SDLK_s:
-						case SDLK_ESCAPE:
-						{
-							cmd.cmd = CMD_STOP;
-						}
-						break;
-						case SDLK_p:
-						case SDLK_RETURN:
-						{
-							cmd.cmd = CMD_PLAY;
-						}
-						break;
-					}
-					if (cmd.cmd != CMD_NONE) {
-						send(renderer_ctx->cmdq, &cmd);
-					}
-
-				}
-				break;
-				case SDL_QUIT:
-				{
-					cmd.cmd = CMD_QUIT;
-					send(renderer_ctx->cmdq, &cmd);
-				}
-				break;
-			}
-		}
-	}
-	// FIXME never reached ... need to shut down the renderer properly
-	LOG("freeing video state");
-	av_free(renderer_ctx);
-	return;
-}
-
-
 int
 read_cmd(RendererCtx *renderer_ctx)
 {
@@ -843,6 +656,174 @@ open_input_stream(RendererCtx *renderer_ctx)
 }
 
 
+int
+open_stream_component(RendererCtx *renderer_ctx, int stream_index)
+{
+	LOG("opening stream component");
+	AVFormatContext *pFormatCtx = renderer_ctx->pFormatCtx;
+	if (stream_index < 0 || stream_index >= pFormatCtx->nb_streams) {
+		printf("Invalid stream index.");
+		return -1;
+	}
+	AVCodec *codec = avcodec_find_decoder(pFormatCtx->streams[stream_index]->codecpar->codec_id);
+	if (codec == NULL) {
+		printf("Unsupported codec.\n");
+		return -1;
+	}
+	AVCodecContext *codecCtx = avcodec_alloc_context3(codec);
+	int ret = avcodec_parameters_to_context(codecCtx, pFormatCtx->streams[stream_index]->codecpar);
+	if (ret != 0) {
+		printf("Could not copy codec context.\n");
+		return -1;
+	}
+	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
+		LOG("setting up audio device with requested specs - sample_rate: %d, channels: %d ...",
+			codecCtx->sample_rate, renderer_ctx->audio_out_channels);
+		SDL_AudioSpec wanted_specs;
+		wanted_specs.freq = codecCtx->sample_rate;
+		wanted_specs.format = AUDIO_S16SYS;
+		wanted_specs.channels = renderer_ctx->audio_out_channels;
+		wanted_specs.silence = 0;
+		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
+		wanted_specs.callback = NULL;
+		wanted_specs.userdata = renderer_ctx;
+		renderer_ctx->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &renderer_ctx->specs, 0);
+		if (renderer_ctx->audioDevId == 0) {
+			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
+			return -1;
+		}
+		LOG("audio device with id: %d opened successfully", renderer_ctx->audioDevId);
+		LOG("audio specs are freq: %d, channels: %d", renderer_ctx->specs.freq, renderer_ctx->specs.channels);
+	}
+	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
+		printf("Unsupported codec.\n");
+		return -1;
+	}
+	switch (codecCtx->codec_type) {
+		case AVMEDIA_TYPE_AUDIO:
+		{
+			renderer_ctx->audioStream = stream_index;
+			renderer_ctx->audio_st = pFormatCtx->streams[stream_index];
+			renderer_ctx->audio_ctx = codecCtx;
+			renderer_ctx->audio_buf_size = 0;
+			renderer_ctx->audio_buf_index = 0;
+			memset(&renderer_ctx->audio_pkt, 0, sizeof(renderer_ctx->audio_pkt));
+			/* renderer_ctx->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
+			renderer_ctx->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
+			renderer_ctx->presenter_tid = threadcreate(presenter_thread, renderer_ctx, THREAD_STACK_SIZE);
+			LOG("presenter thread created with id: %i", renderer_ctx->presenter_tid);
+			LOG("calling sdl_pauseaudio(0) ...");
+			/* SDL_PauseAudio(0); */
+			SDL_PauseAudioDevice(renderer_ctx->audioDevId, 0);
+			LOG("sdl_pauseaudio(0) called.");
+		}
+			break;
+		case AVMEDIA_TYPE_VIDEO:
+		{
+			renderer_ctx->videoStream = stream_index;
+			/* renderer_ctx->video_st = pFormatCtx->streams[stream_index]; */
+			renderer_ctx->video_ctx = codecCtx;
+			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
+			/* if (!renderer_ctx->audio_only) { */
+				/* renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE); */
+				/* LOG("Video thread created with id: %i", renderer_ctx->video_tid); */
+			/* } */
+
+			/* int w; */
+			/* int h; */
+			/* SDL_GetWindowSize(sdl_window, &w, &h); */
+			/* float ar = (float)renderer_ctx->video_ctx->width / renderer_ctx->video_ctx->height; */
+			/* float ah = w / ar; */
+			/* LOG("setting scale context to target size %dx%d", w, h); */
+			/* renderer_ctx->sws_ctx = sws_getContext( */
+				/* renderer_ctx->video_ctx->width, */
+				/* renderer_ctx->video_ctx->height, */
+				/* renderer_ctx->video_ctx->pix_fmt, */
+				/* // set video size here to actually scale the image */
+				/* w, ah, */
+				/* AV_PIX_FMT_YUV420P, */
+				/* SWS_BILINEAR, */
+				/* NULL, */
+				/* NULL, */
+				/* NULL */
+			/* ); */
+			renderer_ctx->rgb_ctx = sws_getContext(
+				renderer_ctx->video_ctx->width,
+				renderer_ctx->video_ctx->height,
+				renderer_ctx->video_ctx->pix_fmt,
+				renderer_ctx->video_ctx->width,
+				renderer_ctx->video_ctx->height,
+				AV_PIX_FMT_RGB24,
+				SWS_BILINEAR,
+				NULL,
+				NULL,
+				NULL
+			);
+		}
+			break;
+		default:
+		{
+			// nothing to do
+		}
+			break;
+	}
+	return 0;
+}
+
+
+int
+open_stream_components(RendererCtx *renderer_ctx)
+{
+	int ret = avformat_find_stream_info(renderer_ctx->pFormatCtx, NULL);
+	if (ret < 0) {
+		LOG("Could not find stream information: %s.", renderer_ctx->filename);
+		return -1;
+	}
+	if (_DEBUG_) {
+		av_dump_format(renderer_ctx->pFormatCtx, 0, renderer_ctx->filename, 0);
+	}
+	int videoStream = -1;
+	int audioStream = -1;
+	for (int i = 0; i < renderer_ctx->pFormatCtx->nb_streams; i++)
+	{
+		if (renderer_ctx->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoStream < 0) {
+			videoStream = i;
+		}
+		if (renderer_ctx->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audioStream < 0) {
+			audioStream = i;
+		}
+	}
+	if (videoStream == -1) {
+		LOG("Could not find video stream.");
+	}
+	else {
+		ret = open_stream_component(renderer_ctx, videoStream);
+		if (ret < 0) {
+			printf("Could not open video codec.\n");
+			return -1;
+		}
+		LOG("video stream component opened successfully.");
+	}
+	if (audioStream == -1) {
+		LOG("Could not find audio stream.");
+	}
+	else {
+		ret = open_stream_component(renderer_ctx, audioStream);
+		// check audio codec was opened correctly
+		if (ret < 0) {
+			LOG("Could not open audio codec.");
+			return -1;
+		}
+		LOG("audio stream component opened successfully.");
+	}
+	if (renderer_ctx->videoStream < 0 && renderer_ctx->audioStream < 0) {
+		LOG("both video and audio stream missing");
+		return -1;
+	}
+	return 0;
+}
+
+
 void
 decoder_thread(void *arg)
 {
@@ -861,65 +842,14 @@ start:
 	if (open_input_stream(renderer_ctx) == -1) {
 		goto start;
 	}
-
-	// reset stream indexes
-	renderer_ctx->videoStream = -1;
-	renderer_ctx->audioStream = -1;
-	// set global RendererCtx reference
-	/* global_video_state = renderer_ctx; */
-	int ret = avformat_find_stream_info(renderer_ctx->pFormatCtx, NULL);
-	if (ret < 0) {
-		LOG("Could not find stream information: %s.", renderer_ctx->filename);
-		return;
-	}
-	if (_DEBUG_) {
-		av_dump_format(renderer_ctx->pFormatCtx, 0, renderer_ctx->filename, 0);
-	}
-	int videoStream = -1;
-	int audioStream = -1;
-	for (int i = 0; i < renderer_ctx->pFormatCtx->nb_streams; i++)
-	{
-		if (renderer_ctx->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoStream < 0) {
-			videoStream = i;
-		}
-		if (renderer_ctx->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audioStream < 0) {
-			audioStream = i;
-		}
-	}
-	if (videoStream == -1) {
-		LOG("Could not find video stream.");
-		/* goto quit; */
-	}
-	else {
-		ret = open_stream_component(renderer_ctx, videoStream);
-		if (ret < 0) {
-			printf("Could not open video codec.\n");
-			goto quit;
-		}
-		LOG("video stream component opened successfully.");
-	}
-	if (audioStream == -1) {
-		LOG("Could not find audio stream.");
-		/* goto quit; */
-	}
-	else {
-		ret = open_stream_component(renderer_ctx, audioStream);
-		// check audio codec was opened correctly
-		if (ret < 0) {
-			LOG("Could not open audio codec.");
-			goto quit;
-		}
-		LOG("audio stream component opened successfully.");
-	}
-	if (renderer_ctx->videoStream < 0 && renderer_ctx->audioStream < 0) {
-		LOG("both video and audio stream missing");
-		goto quit;
+	if (open_stream_components(renderer_ctx) == -1) {
+		goto start;
 	}
 
 	AVPacket *packet = av_packet_alloc();
 	if (packet == NULL) {
 		LOG("Could not allocate AVPacket.");
-		goto quit;
+		goto start;
 	}
 	static AVFrame *pFrame = NULL;
 	pFrame = av_frame_alloc();
@@ -1028,7 +958,7 @@ start:
 			LOG("packet size is zero, exiting demuxer thread");
 			break;
 		}
-		AVCodecContext *codecCtx = NULL;
+		AVCodecContext *codecCtx = nil;
 		if (packet->stream_index == renderer_ctx->videoStream) {
 			LOG("sending video packet of size %d to decoder", packet->size);
 			codecCtx = renderer_ctx->video_ctx;
@@ -1268,7 +1198,7 @@ start:
 		av_frame_unref(pFrame);
 	}
 
-	quit:
+quit:
 	renderer_ctx->renderer_state = RSTATE_QUIT;
 	// Clean up the decoder thread
 	if (renderer_ctx->pIOCtx) {
@@ -1432,132 +1362,6 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	// update the screen with any rendering performed since the previous call
 	/* LOG("displaying picture %d", videoPicture->idx); */
 	SDL_RenderPresent(renderer_ctx->renderer);
-}
-
-
-int
-open_stream_component(RendererCtx *renderer_ctx, int stream_index)
-{
-	LOG("opening stream component");
-	AVFormatContext * pFormatCtx = renderer_ctx->pFormatCtx;
-	if (stream_index < 0 || stream_index >= pFormatCtx->nb_streams) {
-		printf("Invalid stream index.");
-		return -1;
-	}
-	AVCodec * codec = NULL;
-	codec = avcodec_find_decoder(pFormatCtx->streams[stream_index]->codecpar->codec_id);
-	if (codec == NULL) {
-		printf("Unsupported codec.\n");
-		return -1;
-	}
-	AVCodecContext * codecCtx = NULL;
-	codecCtx = avcodec_alloc_context3(codec);
-	int ret = avcodec_parameters_to_context(codecCtx, pFormatCtx->streams[stream_index]->codecpar);
-	if (ret != 0) {
-		printf("Could not copy codec context.\n");
-		return -1;
-	}
-	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
-		LOG("setting up audio device with requested specs - sample_rate: %d, channels: %d ...",
-			codecCtx->sample_rate, renderer_ctx->audio_out_channels);
-		SDL_AudioSpec wanted_specs;
-		wanted_specs.freq = codecCtx->sample_rate;
-		wanted_specs.format = AUDIO_S16SYS;
-		wanted_specs.channels = renderer_ctx->audio_out_channels;
-		wanted_specs.silence = 0;
-		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
-		wanted_specs.callback = NULL;
-		wanted_specs.userdata = renderer_ctx;
-		renderer_ctx->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &renderer_ctx->specs, 0);
-		if (renderer_ctx->audioDevId == 0) {
-			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
-			return -1;
-		}
-		LOG("audio device with id: %d opened successfully", renderer_ctx->audioDevId);
-		LOG("audio specs are freq: %d, channels: %d", renderer_ctx->specs.freq, renderer_ctx->specs.channels);
-	}
-	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
-		printf("Unsupported codec.\n");
-		return -1;
-	}
-	switch (codecCtx->codec_type) {
-		case AVMEDIA_TYPE_AUDIO:
-		{
-			renderer_ctx->audioStream = stream_index;
-			renderer_ctx->audio_st = pFormatCtx->streams[stream_index];
-			renderer_ctx->audio_ctx = codecCtx;
-			renderer_ctx->audio_buf_size = 0;
-			renderer_ctx->audio_buf_index = 0;
-			memset(&renderer_ctx->audio_pkt, 0, sizeof(renderer_ctx->audio_pkt));
-			/* renderer_ctx->audioq = chancreate(sizeof(AVPacket*), MAX_AUDIOQ_SIZE); */
-			renderer_ctx->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
-			renderer_ctx->presenter_tid = threadcreate(presenter_thread, renderer_ctx, THREAD_STACK_SIZE);
-			LOG("presenter thread created with id: %i", renderer_ctx->presenter_tid);
-			LOG("calling sdl_pauseaudio(0) ...");
-			/* SDL_PauseAudio(0); */
-			SDL_PauseAudioDevice(renderer_ctx->audioDevId, 0);
-			LOG("sdl_pauseaudio(0) called.");
-		}
-			break;
-		case AVMEDIA_TYPE_VIDEO:
-		{
-			renderer_ctx->videoStream = stream_index;
-			renderer_ctx->video_st = pFormatCtx->streams[stream_index];
-			renderer_ctx->video_ctx = codecCtx;
-			// Initialize the frame timer and the initial
-			// previous frame delay: 1ms = 1e-6s
-			/* renderer_ctx->frame_timer = (double)av_gettime() / 1000000.0; */
-			/* renderer_ctx->frame_last_delay = 40e-3; */
-			/* renderer_ctx->video_current_pts_time = av_gettime(); */
-			/* renderer_ctx->videoq = chancreate(sizeof(AVPacket*), MAX_VIDEOQ_SIZE); */
-			/* renderer_ctx->pictq = chancreate(sizeof(VideoPicture*), VIDEO_PICTURE_QUEUE_SIZE); */
-			/* renderer_ctx->videoq = chancreate(sizeof(AVPacket), MAX_VIDEOQ_SIZE); */
-			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-
-			/* if (!renderer_ctx->audio_only) { */
-				/* renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE); */
-				/* LOG("Video thread created with id: %i", renderer_ctx->video_tid); */
-			/* } */
-
-			/* int w; */
-			/* int h; */
-			/* SDL_GetWindowSize(sdl_window, &w, &h); */
-			/* float ar = (float)renderer_ctx->video_ctx->width / renderer_ctx->video_ctx->height; */
-			/* float ah = w / ar; */
-			/* LOG("setting scale context to target size %dx%d", w, h); */
-			/* renderer_ctx->sws_ctx = sws_getContext( */
-				/* renderer_ctx->video_ctx->width, */
-				/* renderer_ctx->video_ctx->height, */
-				/* renderer_ctx->video_ctx->pix_fmt, */
-				/* // set video size here to actually scale the image */
-				/* w, ah, */
-				/* AV_PIX_FMT_YUV420P, */
-				/* SWS_BILINEAR, */
-				/* NULL, */
-				/* NULL, */
-				/* NULL */
-			/* ); */
-			renderer_ctx->rgb_ctx = sws_getContext(
-				renderer_ctx->video_ctx->width,
-				renderer_ctx->video_ctx->height,
-				renderer_ctx->video_ctx->pix_fmt,
-				renderer_ctx->video_ctx->width,
-				renderer_ctx->video_ctx->height,
-				AV_PIX_FMT_RGB24,
-				SWS_BILINEAR,
-				NULL,
-				NULL,
-				NULL
-			);
-		}
-			break;
-		default:
-		{
-			// nothing to do
-		}
-			break;
-	}
-	return 0;
 }
 
 
@@ -1844,6 +1648,174 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 	    av_free(buffer);
     }
 	LOG("saved video picture.");
+}
+
+
+void
+threadmain(int argc, char **argv)
+{
+	if (_DEBUG_) {
+		chatty9pclient = 1;
+		/* chattyfuse = 1; */
+	}
+	RendererCtx *renderer_ctx = av_mallocz(sizeof(RendererCtx));
+	start_server(renderer_ctx);
+	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
+	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+	if (ret != 0) {
+		printf("Could not initialize SDL - %s\n.", SDL_GetError());
+		return;
+	}
+
+	SDL_DisplayMode DM;
+	if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
+		LOG("failed to get sdl display mode");
+		return;
+	}
+	renderer_ctx->screen_width  = DM.w;
+	renderer_ctx->screen_height = DM.h;
+	int requested_window_width  = 800;
+	int requested_window_height = 600;
+	if (!sdl_window) {
+		// create a window with the specified position, dimensions, and flags.
+		sdl_window = SDL_CreateWindow(
+			"OMM Renderer",
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			requested_window_width,
+			requested_window_height,
+			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
+			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
+			);
+		SDL_GL_SetSwapInterval(1);
+	}
+	if (!sdl_window) {
+		printf("SDL: could not create window - exiting.\n");
+		return;
+	}
+	if (!renderer_ctx->renderer) {
+		// create a 2D rendering context for the SDL_Window
+		renderer_ctx->renderer = SDL_CreateRenderer(
+			sdl_window,
+			-1,
+			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+	}
+	if (!renderer_ctx->texture) {
+		// create a texture for a rendering context
+		int w;
+		int h;
+		SDL_GetWindowSize(sdl_window, &w, &h);
+		renderer_ctx->texture = SDL_CreateTexture(
+			renderer_ctx->renderer,
+			SDL_PIXELFORMAT_YV12,
+			SDL_TEXTUREACCESS_STREAMING,
+			// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
+			renderer_ctx->screen_width,
+			renderer_ctx->screen_height
+			);
+	}
+
+	/* setstr(&renderer_ctx->fileservername, DEFAULT_SERVER_NAME, 0); */
+	renderer_ctx->fileservername = NULL;
+	renderer_ctx->filename = NULL;
+	if (argc >= 2) {
+		seturl(renderer_ctx, argv[1]);
+	}
+	renderer_ctx->fileserverfd = -1;
+	renderer_ctx->fileserverfid = nil;
+	renderer_ctx->fileserver = nil;
+	// parse max frames to decode input by the user
+	char * pEnd;
+	renderer_ctx->maxFramesToDecode = 0;
+	if (argc == 3) {
+		renderer_ctx->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
+	}
+	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
+	renderer_ctx->renderer_state = RSTATE_STOP;
+	blank_window(renderer_ctx);
+	renderer_ctx->fileserver = NULL;
+	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
+	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
+	renderer_ctx->video_ctx = NULL;
+	renderer_ctx->audio_ctx = NULL;
+	renderer_ctx->audioStream = -1;
+	renderer_ctx->videoStream = -1;
+	renderer_ctx->audio_idx = 0;
+	renderer_ctx->video_idx = 0;
+	renderer_ctx->frame_rate = 0.0;
+	renderer_ctx->frame_duration = 0.0;
+	renderer_ctx->audio_only = 0;
+	renderer_ctx->audio_out_channels = 2;
+	renderer_ctx->cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
+	audio_out = fopen("/tmp/out.pcm", "wb");
+	// start the decoding thread to read data from the AVFormatContext
+	renderer_ctx->decoder_tid = threadcreate(decoder_thread, renderer_ctx, THREAD_STACK_SIZE);
+	if (!renderer_ctx->decoder_tid) {
+		printf("could not start decoder thread: %s.\n", SDL_GetError());
+		av_free(renderer_ctx);
+		return;
+	}
+	/* av_init_packet(&flush_pkt); */
+	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
+	for (;;) {
+		yield();
+		if (renderer_ctx->renderer_state == RSTATE_STOP || renderer_ctx->renderer_state == RSTATE_PAUSE) {
+			p9sleep(100);
+		}
+		SDL_Event event;
+		ret = SDL_PollEvent(&event);
+		if (ret) {
+			LOG("received sdl event");
+			Command cmd;
+			cmd.cmd = CMD_NONE;
+			switch(event.type)
+			{
+				case SDL_KEYDOWN:
+				{
+					switch(event.key.keysym.sym)
+					{
+						case SDLK_q:
+						{
+							cmd.cmd = CMD_QUIT;
+						}
+						break;
+						case SDLK_SPACE:
+						{
+							cmd.cmd = CMD_PAUSE;
+						}
+						break;
+						case SDLK_s:
+						case SDLK_ESCAPE:
+						{
+							cmd.cmd = CMD_STOP;
+						}
+						break;
+						case SDLK_p:
+						case SDLK_RETURN:
+						{
+							cmd.cmd = CMD_PLAY;
+						}
+						break;
+					}
+					if (cmd.cmd != CMD_NONE) {
+						send(renderer_ctx->cmdq, &cmd);
+					}
+
+				}
+				break;
+				case SDL_QUIT:
+				{
+					cmd.cmd = CMD_QUIT;
+					send(renderer_ctx->cmdq, &cmd);
+				}
+				break;
+			}
+		}
+	}
+	// FIXME never reached ... need to shut down the renderer properly
+	LOG("freeing video state");
+	av_free(renderer_ctx);
+	return;
 }
 
 
