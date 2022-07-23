@@ -822,6 +822,27 @@ setup_format_ctx(RendererCtx *renderer_ctx)
 }
 
 
+int
+open_input_stream(RendererCtx *renderer_ctx)
+{
+	LOG("opening input stream ...");
+	int ret = avformat_open_input(&renderer_ctx->pFormatCtx, NULL, NULL, NULL);
+	if (ret < 0) {
+		LOG("Could not open file %s", renderer_ctx->filename);
+		if (renderer_ctx->pIOCtx) {
+			avio_context_free(&renderer_ctx->pIOCtx);
+		}
+		avformat_close_input(&renderer_ctx->pFormatCtx);
+		if (renderer_ctx->pFormatCtx) {
+			avformat_free_context(renderer_ctx->pFormatCtx);
+		}
+		return -1;
+	}
+	LOG("opened input stream");
+	return 0;
+}
+
+
 void
 decoder_thread(void *arg)
 {
@@ -837,34 +858,23 @@ start:
 	if (setup_format_ctx(renderer_ctx) == -1) {
 		goto start;
 	}
-
-	LOG("opening stream input ...");
-	int ret = avformat_open_input(&renderer_ctx->pFormatCtx, NULL, NULL, NULL);
-	if (ret < 0) {
-		LOG("Could not open file %s", renderer_ctx->filename);
-		if (renderer_ctx->pIOCtx) {
-			avio_context_free(&renderer_ctx->pIOCtx);
-		}
-		avformat_close_input(&renderer_ctx->pFormatCtx);
-		if (renderer_ctx->pFormatCtx) {
-			avformat_free_context(renderer_ctx->pFormatCtx);
-		}
+	if (open_input_stream(renderer_ctx) == -1) {
 		goto start;
 	}
-	LOG("opened stream input");
+
 	// reset stream indexes
 	renderer_ctx->videoStream = -1;
 	renderer_ctx->audioStream = -1;
 	// set global RendererCtx reference
 	/* global_video_state = renderer_ctx; */
-
-	ret = avformat_find_stream_info(renderer_ctx->pFormatCtx, NULL);
+	int ret = avformat_find_stream_info(renderer_ctx->pFormatCtx, NULL);
 	if (ret < 0) {
 		LOG("Could not find stream information: %s.", renderer_ctx->filename);
 		return;
 	}
-	if (_DEBUG_)
+	if (_DEBUG_) {
 		av_dump_format(renderer_ctx->pFormatCtx, 0, renderer_ctx->filename, 0);
+	}
 	int videoStream = -1;
 	int audioStream = -1;
 	for (int i = 0; i < renderer_ctx->pFormatCtx->nb_streams; i++)
@@ -905,6 +915,7 @@ start:
 		LOG("both video and audio stream missing");
 		goto quit;
 	}
+
 	AVPacket *packet = av_packet_alloc();
 	if (packet == NULL) {
 		LOG("Could not allocate AVPacket.");
