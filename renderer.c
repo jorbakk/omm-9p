@@ -176,7 +176,6 @@ typedef struct RendererCtx
 	int	               seek_flags;
 	int64_t            seek_pos;
 	// Maximum number of frames to be decoded
-	long               maxFramesToDecode;
 	int	               currentFrameIndex;
 	int                frame_fmt;
 	SDL_AudioDeviceID  audioDevId;
@@ -1242,10 +1241,6 @@ start:
 				}
 			}
 			else if (renderer_ctx->current_codec_ctx == renderer_ctx->audio_ctx) {
-				if (renderer_ctx->maxFramesToDecode && renderer_ctx->audio_idx > renderer_ctx->maxFramesToDecode) {
-					LOG("max frames reached");
-					threadexitsall("max frames reached");
-				}
 				int data_size = resample_audio(
 						renderer_ctx,
 						pFrame,
@@ -1819,12 +1814,6 @@ threadmain(int argc, char **argv)
 	renderer_ctx->fileserverfd = -1;
 	renderer_ctx->fileserverfid = nil;
 	renderer_ctx->fileserver = nil;
-	// parse max frames to decode input by the user
-	char * pEnd;
-	renderer_ctx->maxFramesToDecode = 0;
-	if (argc == 3) {
-		renderer_ctx->maxFramesToDecode = strtol(argv[2], &pEnd, 10);
-	}
 	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
 	renderer_ctx->renderer_state = RSTATE_STOP;
 	blank_window(renderer_ctx);
