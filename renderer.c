@@ -1119,6 +1119,29 @@ create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 }
 
 
+int
+create_sample_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, AudioSample *audioSample)
+{
+	int bytes_per_sec = 2 * renderer_ctx->current_codec_ctx->sample_rate * renderer_ctx->audio_out_channels;
+	int data_size = resample_audio(
+			renderer_ctx,
+			pFrame,
+			AV_SAMPLE_FMT_S16,
+			renderer_ctx->audio_buf);
+	double sample_duration = 1000.0 * data_size / bytes_per_sec;
+	audioSample->size = data_size;
+	audioSample->duration = sample_duration;
+	LOG("resampled audio bytes: %d", data_size);
+	memcpy(audioSample->sample, renderer_ctx->audio_buf, sizeof(renderer_ctx->audio_buf));
+	/* double sample_duration = 0.5 * 1000.0 * audioSample->size / bytes_per_sec; */
+	/* double sample_duration = 2 * 1000.0 * audioSample->size / bytes_per_sec; */
+	LOG("audio sample rate: %d, channels: %d, duration: %.2fms",
+		renderer_ctx->current_codec_ctx->sample_rate, renderer_ctx->audio_out_channels, audioSample->duration);
+	/* renderer_ctx->audio_pts += sample_duration;  // audio sample length in ms */
+	return 0;
+}
+
+
 void
 send_picture_to_queue(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 {
@@ -1241,32 +1264,17 @@ start:
 				}
 			}
 			else if (renderer_ctx->current_codec_ctx == renderer_ctx->audio_ctx) {
-				int data_size = resample_audio(
-						renderer_ctx,
-						pFrame,
-						AV_SAMPLE_FMT_S16,
-						renderer_ctx->audio_buf);
-				av_frame_unref(pFrame);
-				LOG("resampled audio bytes: %d", data_size);
-				AudioSample audioSample = {
-					/* .sample = renderer_ctx->audio_buf, */
-					.size = data_size
-					};
 				renderer_ctx->audio_idx++;
-				audioSample.idx = renderer_ctx->audio_idx;
+				AudioSample audioSample = {
+					.idx = renderer_ctx->audio_idx,
+					.sample = malloc(sizeof(renderer_ctx->audio_buf)),
+					};
 
-				int bytes_per_sec = 2 * renderer_ctx->current_codec_ctx->sample_rate * renderer_ctx->audio_out_channels;
-				double sample_duration = 1000.0 * audioSample.size / bytes_per_sec;
-				/* double sample_duration = 0.5 * 1000.0 * audioSample.size / bytes_per_sec; */
-				/* double sample_duration = 2 * 1000.0 * audioSample.size / bytes_per_sec; */
-				LOG("audio sample rate: %d, channels: %d, duration: %.2fms",
-					renderer_ctx->current_codec_ctx->sample_rate, renderer_ctx->audio_out_channels, sample_duration);
-				/* renderer_ctx->audio_pts += sample_duration;  // audio sample length in ms */
-				audio_pts += sample_duration;  // audio sample length in ms
+				if (create_sample_from_frame(renderer_ctx, pFrame, &audioSample) == 2) {
+					break;
+				}
+				audio_pts += audioSample.duration;
 				audioSample.pts = audio_pts;
-				audioSample.duration = sample_duration;
-				audioSample.sample = malloc(sizeof(renderer_ctx->audio_buf));
-				memcpy(audioSample.sample, renderer_ctx->audio_buf, sizeof(renderer_ctx->audio_buf));
 
 				int sendret = send(renderer_ctx->audioq, &audioSample);
 				if (sendret == 1) {
