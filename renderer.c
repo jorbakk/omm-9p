@@ -166,6 +166,10 @@ typedef struct RendererCtx
 	struct SwsContext *rgb_ctx;
 	SDL_AudioSpec      specs;
 	int                video_idx;
+    AVFrame           *pFrameRGB;
+    uint8_t           *rgbbuffer;
+    uint8_t           *yuvbuffer;
+    int                w, h, aw, ah;
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
@@ -824,6 +828,69 @@ open_stream_components(RendererCtx *renderer_ctx)
 }
 
 
+int
+calc_videoscale(RendererCtx *renderer_ctx)
+{
+	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
+	// and creating a copy to be send through the video picture channel
+	int w, h, aw, ah;
+	float war, far;
+	if (renderer_ctx->video_ctx) {
+		SDL_GetWindowSize(sdl_window, &w, &h);
+		war = (float)h / w;
+		far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
+		aw = h / far;
+		ah = h;
+		if (war > far) {
+			aw = w;
+			ah = w * far;
+		}
+		LOG("window size when allocating scaled picture buffer: %dx%d, aspect ratio win: %f, frame: %f, aspected size: %dx%d", w, h, war, far, aw, ah);
+		renderer_ctx->w  = w;
+		renderer_ctx->h  = h;
+		renderer_ctx->aw = aw;
+		renderer_ctx->ah = ah;
+	}
+	return 0;
+}
+
+
+int
+alloc_buffers(RendererCtx *renderer_ctx)
+{
+	if (renderer_ctx->video_ctx) {
+	    renderer_ctx->pFrameRGB = av_frame_alloc();
+	    int numBytes;
+	    numBytes = av_image_get_buffer_size(
+			AV_PIX_FMT_RGB24,
+			renderer_ctx->video_ctx->width,
+			renderer_ctx->video_ctx->height,
+			32
+			);
+	    renderer_ctx->rgbbuffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+	    av_image_fill_arrays(
+			renderer_ctx->pFrameRGB->data,
+			renderer_ctx->pFrameRGB->linesize,
+			renderer_ctx->rgbbuffer,
+			AV_PIX_FMT_RGB24,
+			renderer_ctx->video_ctx->width,
+			renderer_ctx->video_ctx->height,
+			32
+	    );
+	    int yuvNumBytes = av_image_get_buffer_size(
+			AV_PIX_FMT_YUV420P,
+			/* renderer_ctx->video_ctx->width, */
+			/* renderer_ctx->video_ctx->height, */
+			renderer_ctx->w,
+			renderer_ctx->h,
+			32
+			);
+		renderer_ctx->yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t));
+	}
+	return 0;
+}
+
+
 void
 decoder_thread(void *arg)
 {
@@ -845,72 +912,23 @@ start:
 	if (open_stream_components(renderer_ctx) == -1) {
 		goto start;
 	}
+	if (calc_videoscale(renderer_ctx) == -1) {
+		goto start;
+	}
+	if (alloc_buffers(renderer_ctx) == -1) {
+		goto start;
+	}
 
 	AVPacket *packet = av_packet_alloc();
 	if (packet == NULL) {
 		LOG("Could not allocate AVPacket.");
 		goto start;
 	}
-	static AVFrame *pFrame = NULL;
-	pFrame = av_frame_alloc();
-	if (!pFrame) {
+	AVFrame *pFrame = av_frame_alloc();
+	if (pFrame == NULL) {
 		printf("Could not allocate AVFrame.\n");
-		return;
+		goto start;
 	}
-
-	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
-	// and creating a copy to be send through the video picture channel
-    static AVFrame *pFrameRGB = NULL;
-    uint8_t * buffer = NULL;
-    uint8_t * yuvbuffer = NULL;
-    int yuvNumBytes = 0;
-	int w;
-	int h;
-	SDL_GetWindowSize(sdl_window, &w, &h);
-	float war = (float)h / w;
-	float far = 1.0;
-	if (renderer_ctx->video_ctx) {
-		far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
-	}
-	int aw = h / far;
-	int ah = h;
-	if (war > far) {
-		aw = w;
-		ah = w * far;
-	}
-	LOG("window size when allocating scaled picture buffer: %dx%d, aspect ratio win: %f, frame: %f, aspected size: %dx%d", w, h, war, far, aw, ah);
-
-	if (renderer_ctx->video_ctx) {
-	    pFrameRGB = av_frame_alloc();
-	    int numBytes;
-	    numBytes = av_image_get_buffer_size(
-			AV_PIX_FMT_RGB24,
-			renderer_ctx->video_ctx->width,
-			renderer_ctx->video_ctx->height,
-			32
-			);
-	    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-	    av_image_fill_arrays(
-			pFrameRGB->data,
-			pFrameRGB->linesize,
-			buffer,
-			AV_PIX_FMT_RGB24,
-			renderer_ctx->video_ctx->width,
-			renderer_ctx->video_ctx->height,
-			32
-	    );
-
-	    yuvNumBytes = av_image_get_buffer_size(
-			AV_PIX_FMT_YUV420P,
-			/* renderer_ctx->video_ctx->width, */
-			/* renderer_ctx->video_ctx->height, */
-			w,
-			h,
-			32
-			);
-		yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t));
-	}
-
 	double audio_pts = 0.0;
 	double video_pts = 0.0;
 
@@ -1072,11 +1090,11 @@ start:
 		                pFrame->linesize,
 		                0,
 		                codecCtx->height,
-		                pFrameRGB->data,
-		                pFrameRGB->linesize
+		                renderer_ctx->pFrameRGB->data,
+		                renderer_ctx->pFrameRGB->linesize
 		            );
 					// av_frame_unref(pFrame);
-					videoPicture.linesize = pFrameRGB->linesize[0];
+					videoPicture.linesize = renderer_ctx->pFrameRGB->linesize[0];
 				    int numBytes = av_image_get_buffer_size(
 						AV_PIX_FMT_RGB24,
 						codecCtx->width,
@@ -1084,17 +1102,18 @@ start:
 						32
 						);
 				    videoPicture.rgbbuf = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-				    memcpy(videoPicture.rgbbuf, pFrameRGB->data[0], numBytes);
+				    memcpy(videoPicture.rgbbuf, renderer_ctx->pFrameRGB->data[0], numBytes);
 			    }
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
 					/* LOG("setting scale context to target size %dx%d", w, h); */
-					LOG("setting scale context to target size %dx%d", aw, ah);
+					LOG("setting scale context to target size %dx%d", renderer_ctx->aw, renderer_ctx->ah);
 					renderer_ctx->sws_ctx = sws_getContext(
 						renderer_ctx->video_ctx->width,
 						renderer_ctx->video_ctx->height,
 						renderer_ctx->video_ctx->pix_fmt,
 						// set video size here to actually scale the image
-						aw, ah,
+						renderer_ctx->aw,
+						renderer_ctx->ah,
 						AV_PIX_FMT_YUV420P,
 						SWS_BILINEAR,
 						NULL,
@@ -1105,10 +1124,11 @@ start:
 					av_image_fill_arrays(
 							videoPicture.frame->data,
 							videoPicture.frame->linesize,
-							yuvbuffer,
+							renderer_ctx->yuvbuffer,
 							AV_PIX_FMT_YUV420P,
 			                // set video size of picture to send to queue here
-							aw, ah,
+							renderer_ctx->aw, 
+							renderer_ctx->ah,
 							32
 					);
 		            sws_scale(
@@ -1124,8 +1144,8 @@ start:
 			    }
 				renderer_ctx->video_idx++;
 				videoPicture.idx = renderer_ctx->video_idx;
-				videoPicture.width = aw;
-				videoPicture.height = ah;
+				videoPicture.width = renderer_ctx->aw;
+				videoPicture.height = renderer_ctx->ah;
 				renderer_ctx->frame_rate = av_q2d(renderer_ctx->video_ctx->framerate);
 				renderer_ctx->frame_duration = 1000.0 / renderer_ctx->frame_rate;
 				/* LOG("frame rate: %f, duration: %f", renderer_ctx->frame_rate, renderer_ctx->frame_duration); */
