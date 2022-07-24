@@ -676,8 +676,6 @@ get_sdl_window_size(RendererCtx *renderer_ctx)
 int
 calc_videoscale(RendererCtx *renderer_ctx)
 {
-	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
-	// and creating a copy to be send through the video picture channel
 	if (renderer_ctx->video_ctx == nil) {
 		return -1;
 	}
@@ -691,29 +689,23 @@ calc_videoscale(RendererCtx *renderer_ctx)
 		aw = w;
 		ah = w * far;
 	}
-	LOG("window size when allocating scaled picture buffer: %dx%d, aspect ratio win: %f, frame: %f, aspected size: %dx%d", w, h, war, far, aw, ah);
 	renderer_ctx->aw = aw;
 	renderer_ctx->ah = ah;
+	LOG("scaling frame: %dx%d to win size: %dx%d, aspect ratio win: %f, aspect ratio frame: %f, final picture size: %dx%d", renderer_ctx->video_ctx->width, renderer_ctx->video_ctx->height, w, h, war, far, aw, ah);
 	return 0;
 }
 
 
 int
-on_sdl_window_resize(RendererCtx *renderer_ctx)
+resize_video(RendererCtx *renderer_ctx)
 {
+	if (renderer_ctx->video_ctx == nil) {
+		LOG("cannot resize video picture, no video context");
+		return -1;
+	}
 	get_sdl_window_size(renderer_ctx);
 	calc_videoscale(renderer_ctx);
-	if (renderer_ctx->sdl_texture != nil) {
-		SDL_DestroyTexture(renderer_ctx->sdl_texture);
-	}
-	renderer_ctx->sdl_texture = SDL_CreateTexture(
-		renderer_ctx->sdl_renderer,
-		SDL_PIXELFORMAT_YV12,
-		SDL_TEXTUREACCESS_STREAMING,
-		// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
-		renderer_ctx->screen_width,
-		renderer_ctx->screen_height
-		);
+	LOG("setting scaling context and texture for video frame to size: %dx%d", renderer_ctx->aw, renderer_ctx->ah);
 	if (renderer_ctx->yuv_ctx != nil) {
 		av_free(renderer_ctx->yuv_ctx);
 	}
@@ -721,7 +713,7 @@ on_sdl_window_resize(RendererCtx *renderer_ctx)
 		renderer_ctx->video_ctx->width,
 		renderer_ctx->video_ctx->height,
 		renderer_ctx->video_ctx->pix_fmt,
-		// set video size here to actually scale the image
+		// set displayed video picture size here to actually scale the image
 		renderer_ctx->aw,
 		renderer_ctx->ah,
 		AV_PIX_FMT_YUV420P,
@@ -730,6 +722,17 @@ on_sdl_window_resize(RendererCtx *renderer_ctx)
 		nil,
 		nil
 	);
+	if (renderer_ctx->sdl_texture != nil) {
+		SDL_DestroyTexture(renderer_ctx->sdl_texture);
+	}
+	renderer_ctx->sdl_texture = SDL_CreateTexture(
+		renderer_ctx->sdl_renderer,
+		SDL_PIXELFORMAT_YV12,
+		SDL_TEXTUREACCESS_STREAMING,
+		// set texture size to displayed video picture size here
+		renderer_ctx->aw,
+		renderer_ctx->ah
+		);
 	if (renderer_ctx->rgb_ctx != nil) {
 		av_free(renderer_ctx->rgb_ctx);
 	}
@@ -878,7 +881,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 			renderer_ctx->video_stream = stream_index;
 			renderer_ctx->video_ctx = codecCtx;
 			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-			on_sdl_window_resize(renderer_ctx);
+			resize_video(renderer_ctx);
 		}
 			break;
 		default:
@@ -949,14 +952,14 @@ alloc_buffers(RendererCtx *renderer_ctx)
 {
 	if (renderer_ctx->video_ctx) {
 	    renderer_ctx->frame_rgb = av_frame_alloc();
-	    int numBytes;
-	    numBytes = av_image_get_buffer_size(
+	    int rgb_num_bytes;
+	    rgb_num_bytes = av_image_get_buffer_size(
 			AV_PIX_FMT_RGB24,
 			renderer_ctx->video_ctx->width,
 			renderer_ctx->video_ctx->height,
 			32
 			);
-	    renderer_ctx->rgbbuffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+	    renderer_ctx->rgbbuffer = (uint8_t *) av_malloc(rgb_num_bytes * sizeof(uint8_t));
 	    av_image_fill_arrays(
 			renderer_ctx->frame_rgb->data,
 			renderer_ctx->frame_rgb->linesize,
@@ -966,7 +969,7 @@ alloc_buffers(RendererCtx *renderer_ctx)
 			renderer_ctx->video_ctx->height,
 			32
 	    );
-	    int yuvNumBytes = av_image_get_buffer_size(
+	    int yuv_num_bytes = av_image_get_buffer_size(
 			AV_PIX_FMT_YUV420P,
 			/* renderer_ctx->video_ctx->width, */
 			/* renderer_ctx->video_ctx->height, */
@@ -974,7 +977,7 @@ alloc_buffers(RendererCtx *renderer_ctx)
 			renderer_ctx->h,
 			32
 			);
-		renderer_ctx->yuvbuffer = (uint8_t *) av_malloc(yuvNumBytes * sizeof(uint8_t));
+		renderer_ctx->yuvbuffer = (uint8_t *) av_malloc(yuv_num_bytes * sizeof(uint8_t));
 	}
 	return 0;
 }
@@ -1121,14 +1124,14 @@ create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 	);
 	// av_frame_unref(pFrame);
 	videoPicture->linesize = renderer_ctx->frame_rgb->linesize[0];
-	int numBytes = av_image_get_buffer_size(
+	int rgb_num_bytes = av_image_get_buffer_size(
 		AV_PIX_FMT_RGB24,
 		renderer_ctx->current_codec_ctx->width,
 		renderer_ctx->current_codec_ctx->height,
 		32
 		);
-	videoPicture->rgbbuf = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-	memcpy(videoPicture->rgbbuf, renderer_ctx->frame_rgb->data[0], numBytes);
+	videoPicture->rgbbuf = (uint8_t *) av_malloc(rgb_num_bytes * sizeof(uint8_t));
+	memcpy(videoPicture->rgbbuf, renderer_ctx->frame_rgb->data[0], rgb_num_bytes);
 	return 0;
 }
 
@@ -1136,10 +1139,9 @@ create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 int
 create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
 {
-	/* LOG("setting scale context to target size %dx%d", w, h); */
-	LOG("setting scale context to target size %dx%d", renderer_ctx->aw, renderer_ctx->ah);
+	LOG("scaling video picture (height %d) to target size %dx%d before queueing",
+		renderer_ctx->current_codec_ctx->height, renderer_ctx->aw, renderer_ctx->ah);
     videoPicture->frame = av_frame_alloc();
-    LOG("setting video picture parameters");
 	av_image_fill_arrays(
 			videoPicture->frame->data,
 			videoPicture->frame->linesize,
@@ -1150,7 +1152,6 @@ create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 			renderer_ctx->ah,
 			32
 	);
-    LOG("scaling video picture with context: %p", renderer_ctx->yuv_ctx);
 	sws_scale(
 	    renderer_ctx->yuv_ctx,
 	    (uint8_t const * const *)pFrame->data,
@@ -1729,15 +1730,15 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 	if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 		// Convert the video picture to the target format for saving to disk
 	    frame_rgb = av_frame_alloc();
-	    int numBytes;
+	    int rgb_num_bytes;
 	    const int align = 32;
-	    numBytes = av_image_get_buffer_size(
+	    rgb_num_bytes = av_image_get_buffer_size(
 			AV_PIX_FMT_RGB24,
 			videoPicture->width,
 			videoPicture->height,
 			align
 			);
-	    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+	    buffer = (uint8_t *) av_malloc(rgb_num_bytes * sizeof(uint8_t));
 	    av_image_fill_arrays(
 			frame_rgb->data,
 			frame_rgb->linesize,
