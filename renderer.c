@@ -1485,16 +1485,16 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	text_update_rect.x = 0;
 	text_update_rect.y = 0;
 	text_update_rect.w = renderer_ctx->aw;
-	text_update_rect.w = renderer_ctx->ah;
+	text_update_rect.h = renderer_ctx->ah;
 	// update the texture with the video picture data
-	int tw, th;
-	SDL_QueryTexture(renderer_ctx->sdl_texture, nil, nil, &tw, &th);
-	LOG("updating texture of size: %dx%d", tw, th);
+	/* int tw, th; */
+	/* SDL_QueryTexture(renderer_ctx->sdl_texture, nil, nil, &tw, &th); */
+	/* LOG("updating texture of size: %dx%d", tw, th); */
 	int textupd = SDL_UpdateYUVTexture(
 			renderer_ctx->sdl_texture,
 			// set video size when updating sdl texture
-			/* &text_update_rect, */
-			nil,
+			&text_update_rect,
+			/* nil, */
 			videoPicture->frame->data[0],
 			videoPicture->frame->linesize[0],
 			videoPicture->frame->data[1],
@@ -1509,15 +1509,14 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	SDL_SetRenderDrawColor(renderer_ctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
 	SDL_RenderClear(renderer_ctx->sdl_renderer);
 	// copy a portion of the texture to the current rendering target
-	// set video size when copying sdl texture to sdl renderer
 	SDL_Rect blit_update_rect;
 	blit_update_rect.x = 0;
 	blit_update_rect.y = 0;
 	blit_update_rect.w = renderer_ctx->aw;
-	blit_update_rect.w = renderer_ctx->ah;
-	// NOTE texture will be stretched to blit_update_rect
-	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, nil, nil);
-	/* SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, &text_update_rect, &blit_update_rect); */
+	blit_update_rect.h = renderer_ctx->ah;
+	/* SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, nil, nil); */
+	// set video size when copying sdl texture to sdl renderer. Texture will be stretched to blit_update_rect!
+	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, &text_update_rect, &blit_update_rect);
 	// update the screen with any rendering performed since the previous call
 	SDL_RenderPresent(renderer_ctx->sdl_renderer);
 }
