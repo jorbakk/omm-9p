@@ -163,7 +163,7 @@ typedef struct RendererCtx
 	SDL_Texture       *texture;
 	SDL_Renderer      *renderer;
 	Channel           *pictq;
-	struct SwsContext *sws_ctx;
+	struct SwsContext *yuv_ctx;
 	struct SwsContext *rgb_ctx;
 	SDL_AudioSpec      specs;
 	int                video_idx;
@@ -693,23 +693,50 @@ open_input_stream(RendererCtx *renderer_ctx)
 
 
 int
+calc_videoscale(RendererCtx *renderer_ctx)
+{
+	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
+	// and creating a copy to be send through the video picture channel
+	int w, h, aw, ah;
+	float war, far;
+	if (renderer_ctx->video_ctx) {
+		SDL_GetWindowSize(sdl_window, &w, &h);
+		war = (float)h / w;
+		far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
+		aw = h / far;
+		ah = h;
+		if (war > far) {
+			aw = w;
+			ah = w * far;
+		}
+		LOG("window size when allocating scaled picture buffer: %dx%d, aspect ratio win: %f, frame: %f, aspected size: %dx%d", w, h, war, far, aw, ah);
+		renderer_ctx->w  = w;
+		renderer_ctx->h  = h;
+		renderer_ctx->aw = aw;
+		renderer_ctx->ah = ah;
+	}
+	return 0;
+}
+
+
+int
 open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 {
-	LOG("opening stream component");
+	LOG("opening stream component ...");
 	AVFormatContext *pFormatCtx = renderer_ctx->pFormatCtx;
 	if (stream_index < 0 || stream_index >= pFormatCtx->nb_streams) {
-		printf("Invalid stream index.");
+		LOG("Invalid stream index");
 		return -1;
 	}
 	AVCodec *codec = avcodec_find_decoder(pFormatCtx->streams[stream_index]->codecpar->codec_id);
 	if (codec == NULL) {
-		printf("Unsupported codec.\n");
+		LOG("Unsupported codec");
 		return -1;
 	}
 	AVCodecContext *codecCtx = avcodec_alloc_context3(codec);
 	int ret = avcodec_parameters_to_context(codecCtx, pFormatCtx->streams[stream_index]->codecpar);
 	if (ret != 0) {
-		printf("Could not copy codec context.\n");
+		LOG("Could not copy codec context");
 		return -1;
 	}
 	if (codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
@@ -732,12 +759,13 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		LOG("audio specs are freq: %d, channels: %d", renderer_ctx->specs.freq, renderer_ctx->specs.channels);
 	}
 	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
-		printf("Unsupported codec.\n");
+		LOG("Unsupported codec");
 		return -1;
 	}
 	switch (codecCtx->codec_type) {
 		case AVMEDIA_TYPE_AUDIO:
 		{
+			LOG("setting up audio stream context ...");
 			renderer_ctx->audioStream = stream_index;
 			renderer_ctx->audio_st = pFormatCtx->streams[stream_index];
 			renderer_ctx->audio_ctx = codecCtx;
@@ -756,10 +784,14 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 			break;
 		case AVMEDIA_TYPE_VIDEO:
 		{
+			LOG("setting up video stream context ...");
 			renderer_ctx->videoStream = stream_index;
 			/* renderer_ctx->video_st = pFormatCtx->streams[stream_index]; */
 			renderer_ctx->video_ctx = codecCtx;
 			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
+
+			calc_videoscale(renderer_ctx);
+
 			/* if (!renderer_ctx->audio_only) { */
 				/* renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE); */
 				/* LOG("Video thread created with id: %i", renderer_ctx->video_tid); */
@@ -771,7 +803,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 			/* float ar = (float)renderer_ctx->video_ctx->width / renderer_ctx->video_ctx->height; */
 			/* float ah = w / ar; */
 			/* LOG("setting scale context to target size %dx%d", w, h); */
-			/* renderer_ctx->sws_ctx = sws_getContext( */
+			/* renderer_ctx->yuv_ctx = sws_getContext( */
 				/* renderer_ctx->video_ctx->width, */
 				/* renderer_ctx->video_ctx->height, */
 				/* renderer_ctx->video_ctx->pix_fmt, */
@@ -783,6 +815,19 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 				/* NULL, */
 				/* NULL */
 			/* ); */
+			renderer_ctx->yuv_ctx = sws_getContext(
+				renderer_ctx->video_ctx->width,
+				renderer_ctx->video_ctx->height,
+				renderer_ctx->video_ctx->pix_fmt,
+				// set video size here to actually scale the image
+				renderer_ctx->aw,
+				renderer_ctx->ah,
+				AV_PIX_FMT_YUV420P,
+				SWS_BILINEAR,
+				NULL,
+				NULL,
+				NULL
+			);
 			renderer_ctx->rgb_ctx = sws_getContext(
 				renderer_ctx->video_ctx->width,
 				renderer_ctx->video_ctx->height,
@@ -855,33 +900,6 @@ open_stream_components(RendererCtx *renderer_ctx)
 	if (renderer_ctx->videoStream < 0 && renderer_ctx->audioStream < 0) {
 		LOG("both video and audio stream missing");
 		return -1;
-	}
-	return 0;
-}
-
-
-int
-calc_videoscale(RendererCtx *renderer_ctx)
-{
-	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
-	// and creating a copy to be send through the video picture channel
-	int w, h, aw, ah;
-	float war, far;
-	if (renderer_ctx->video_ctx) {
-		SDL_GetWindowSize(sdl_window, &w, &h);
-		war = (float)h / w;
-		far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
-		aw = h / far;
-		ah = h;
-		if (war > far) {
-			aw = w;
-			ah = w * far;
-		}
-		LOG("window size when allocating scaled picture buffer: %dx%d, aspect ratio win: %f, frame: %f, aspected size: %dx%d", w, h, war, far, aw, ah);
-		renderer_ctx->w  = w;
-		renderer_ctx->h  = h;
-		renderer_ctx->aw = aw;
-		renderer_ctx->ah = ah;
 	}
 	return 0;
 }
@@ -1081,32 +1099,21 @@ create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 {
 	/* LOG("setting scale context to target size %dx%d", w, h); */
 	LOG("setting scale context to target size %dx%d", renderer_ctx->aw, renderer_ctx->ah);
-	renderer_ctx->sws_ctx = sws_getContext(
-		renderer_ctx->video_ctx->width,
-		renderer_ctx->video_ctx->height,
-		renderer_ctx->video_ctx->pix_fmt,
-		// set video size here to actually scale the image
-		renderer_ctx->aw,
-		renderer_ctx->ah,
-		AV_PIX_FMT_YUV420P,
-		SWS_BILINEAR,
-		NULL,
-		NULL,
-		NULL
-	);
     videoPicture->frame = av_frame_alloc();
+    LOG("setting video picture parameters");
 	av_image_fill_arrays(
 			videoPicture->frame->data,
 			videoPicture->frame->linesize,
 			renderer_ctx->yuvbuffer,
 			AV_PIX_FMT_YUV420P,
-               // set video size of picture to send to queue here
+			// set video size of picture to send to queue here
 			renderer_ctx->aw, 
 			renderer_ctx->ah,
 			32
 	);
+    LOG("scaling video picture with context: %p", renderer_ctx->yuv_ctx);
 	sws_scale(
-	    renderer_ctx->sws_ctx,
+	    renderer_ctx->yuv_ctx,
 	    (uint8_t const * const *)pFrame->data,
 	    pFrame->linesize,
 	    0,
@@ -1115,6 +1122,7 @@ create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 	    videoPicture->frame->data,
 	    videoPicture->frame->linesize
 	);
+	LOG("video picture created.");
 	return 0;
 }
 
@@ -1198,9 +1206,9 @@ start:
 	if (open_stream_components(renderer_ctx) == -1) {
 		goto start;
 	}
-	if (calc_videoscale(renderer_ctx) == -1) {
-		goto start;
-	}
+	/* if (calc_videoscale(renderer_ctx) == -1) { */
+		/* goto start; */
+	/* } */
 	if (alloc_buffers(renderer_ctx) == -1) {
 		goto start;
 	}
@@ -1403,6 +1411,7 @@ presenter_thread(void *arg)
 			if (videoPicture.frame) {
 				av_frame_unref(videoPicture.frame);
 				av_frame_free(&videoPicture.frame);
+				videoPicture.frame = NULL;
 			}
 		}
 		if (time_diff > 0) {
