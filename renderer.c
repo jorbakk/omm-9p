@@ -662,17 +662,89 @@ create_sdl_window(RendererCtx *renderer_ctx)
 			-1,
 			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
 	}
-	if (renderer_ctx->sdl_texture == nil) {
-		// create a texture for a rendering context
-		renderer_ctx->sdl_texture = SDL_CreateTexture(
-			renderer_ctx->sdl_renderer,
-			SDL_PIXELFORMAT_YV12,
-			SDL_TEXTUREACCESS_STREAMING,
-			// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
-			renderer_ctx->screen_width,
-			renderer_ctx->screen_height
-			);
+	return 0;
+}
+
+
+void
+get_sdl_window_size(RendererCtx *renderer_ctx)
+{
+	SDL_GetWindowSize(renderer_ctx->sdl_window, &renderer_ctx->w, &renderer_ctx->h);
+}
+
+
+int
+calc_videoscale(RendererCtx *renderer_ctx)
+{
+	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
+	// and creating a copy to be send through the video picture channel
+	if (renderer_ctx->video_ctx == nil) {
+		return -1;
 	}
+	int w = renderer_ctx->w;
+	int h = renderer_ctx->h;
+	float war = (float)h / w;
+	float far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
+	int aw = h / far;
+	int ah = h;
+	if (war > far) {
+		aw = w;
+		ah = w * far;
+	}
+	LOG("window size when allocating scaled picture buffer: %dx%d, aspect ratio win: %f, frame: %f, aspected size: %dx%d", w, h, war, far, aw, ah);
+	renderer_ctx->aw = aw;
+	renderer_ctx->ah = ah;
+	return 0;
+}
+
+
+int
+on_sdl_window_resize(RendererCtx *renderer_ctx)
+{
+	get_sdl_window_size(renderer_ctx);
+	calc_videoscale(renderer_ctx);
+	if (renderer_ctx->sdl_texture != nil) {
+		SDL_DestroyTexture(renderer_ctx->sdl_texture);
+	}
+	renderer_ctx->sdl_texture = SDL_CreateTexture(
+		renderer_ctx->sdl_renderer,
+		SDL_PIXELFORMAT_YV12,
+		SDL_TEXTUREACCESS_STREAMING,
+		// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
+		renderer_ctx->screen_width,
+		renderer_ctx->screen_height
+		);
+	if (renderer_ctx->yuv_ctx != nil) {
+		av_free(renderer_ctx->yuv_ctx);
+	}
+	renderer_ctx->yuv_ctx = sws_getContext(
+		renderer_ctx->video_ctx->width,
+		renderer_ctx->video_ctx->height,
+		renderer_ctx->video_ctx->pix_fmt,
+		// set video size here to actually scale the image
+		renderer_ctx->aw,
+		renderer_ctx->ah,
+		AV_PIX_FMT_YUV420P,
+		SWS_BILINEAR,
+		nil,
+		nil,
+		nil
+	);
+	if (renderer_ctx->rgb_ctx != nil) {
+		av_free(renderer_ctx->rgb_ctx);
+	}
+	renderer_ctx->rgb_ctx = sws_getContext(
+		renderer_ctx->video_ctx->width,
+		renderer_ctx->video_ctx->height,
+		renderer_ctx->video_ctx->pix_fmt,
+		renderer_ctx->video_ctx->width,
+		renderer_ctx->video_ctx->height,
+		AV_PIX_FMT_RGB24,
+		SWS_BILINEAR,
+		nil,
+		nil,
+		nil
+	);
 	return 0;
 }
 
@@ -734,33 +806,6 @@ open_input_stream(RendererCtx *renderer_ctx)
 		return -1;
 	}
 	LOG("opened input stream");
-	return 0;
-}
-
-
-int
-calc_videoscale(RendererCtx *renderer_ctx)
-{
-	// Allocate frames and buffers for converting/scaling decoded frames to RGB and YUV
-	// and creating a copy to be send through the video picture channel
-	int w, h, aw, ah;
-	float war, far;
-	if (renderer_ctx->video_ctx) {
-		SDL_GetWindowSize(renderer_ctx->sdl_window, &w, &h);
-		war = (float)h / w;
-		far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
-		aw = h / far;
-		ah = h;
-		if (war > far) {
-			aw = w;
-			ah = w * far;
-		}
-		LOG("window size when allocating scaled picture buffer: %dx%d, aspect ratio win: %f, frame: %f, aspected size: %dx%d", w, h, war, far, aw, ah);
-		renderer_ctx->w  = w;
-		renderer_ctx->h  = h;
-		renderer_ctx->aw = aw;
-		renderer_ctx->ah = ah;
-	}
 	return 0;
 }
 
@@ -831,60 +876,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		{
 			LOG("setting up video stream context ...");
 			renderer_ctx->videoStream = stream_index;
-			/* renderer_ctx->video_st = format_ctx->streams[stream_index]; */
 			renderer_ctx->video_ctx = codecCtx;
 			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-
-			calc_videoscale(renderer_ctx);
-
-			/* if (!renderer_ctx->audio_only) { */
-				/* renderer_ctx->video_tid = threadcreate(video_thread, renderer_ctx, THREAD_STACK_SIZE); */
-				/* LOG("Video thread created with id: %i", renderer_ctx->video_tid); */
-			/* } */
-
-			/* int w; */
-			/* int h; */
-			/* SDL_GetWindowSize(renderer_ctx->sdl_window, &w, &h); */
-			/* float ar = (float)renderer_ctx->video_ctx->width / renderer_ctx->video_ctx->height; */
-			/* float ah = w / ar; */
-			/* LOG("setting scale context to target size %dx%d", w, h); */
-			/* renderer_ctx->yuv_ctx = sws_getContext( */
-				/* renderer_ctx->video_ctx->width, */
-				/* renderer_ctx->video_ctx->height, */
-				/* renderer_ctx->video_ctx->pix_fmt, */
-				/* // set video size here to actually scale the image */
-				/* w, ah, */
-				/* AV_PIX_FMT_YUV420P, */
-				/* SWS_BILINEAR, */
-				/* nil, */
-				/* nil, */
-				/* nil */
-			/* ); */
-			renderer_ctx->yuv_ctx = sws_getContext(
-				renderer_ctx->video_ctx->width,
-				renderer_ctx->video_ctx->height,
-				renderer_ctx->video_ctx->pix_fmt,
-				// set video size here to actually scale the image
-				renderer_ctx->aw,
-				renderer_ctx->ah,
-				AV_PIX_FMT_YUV420P,
-				SWS_BILINEAR,
-				nil,
-				nil,
-				nil
-			);
-			renderer_ctx->rgb_ctx = sws_getContext(
-				renderer_ctx->video_ctx->width,
-				renderer_ctx->video_ctx->height,
-				renderer_ctx->video_ctx->pix_fmt,
-				renderer_ctx->video_ctx->width,
-				renderer_ctx->video_ctx->height,
-				AV_PIX_FMT_RGB24,
-				SWS_BILINEAR,
-				nil,
-				nil,
-				nil
-			);
+			on_sdl_window_resize(renderer_ctx);
 		}
 			break;
 		default:
@@ -1251,9 +1245,6 @@ start:
 	if (open_stream_components(renderer_ctx) == -1) {
 		goto start;
 	}
-	/* if (calc_videoscale(renderer_ctx) == -1) { */
-		/* goto start; */
-	/* } */
 	if (alloc_buffers(renderer_ctx) == -1) {
 		goto start;
 	}
