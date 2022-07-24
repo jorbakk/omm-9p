@@ -170,6 +170,7 @@ typedef struct RendererCtx
 	uint8_t           *rgbbuffer;
 	uint8_t           *yuvbuffer;
 	int                w, h, aw, ah;
+	SDL_Rect           blit_copy_rect;
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
@@ -705,6 +706,10 @@ resize_video(RendererCtx *renderer_ctx)
 	}
 	get_sdl_window_size(renderer_ctx);
 	calc_videoscale(renderer_ctx);
+	renderer_ctx->blit_copy_rect.x = 0.5 * (renderer_ctx->w - renderer_ctx->aw);
+	renderer_ctx->blit_copy_rect.y = 0.5 * (renderer_ctx->h - renderer_ctx->ah);
+	renderer_ctx->blit_copy_rect.w = renderer_ctx->aw;
+	renderer_ctx->blit_copy_rect.h = renderer_ctx->ah;
 	LOG("setting scaling context and texture for video frame to size: %dx%d", renderer_ctx->aw, renderer_ctx->ah);
 	if (renderer_ctx->yuv_ctx != nil) {
 		av_free(renderer_ctx->yuv_ctx);
@@ -1480,21 +1485,9 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	LOG("displaying picture %d, delta time: %.2fms ...",
 		videoPicture->idx,
 		renderer_ctx->current_video_time - renderer_ctx->previous_video_time - renderer_ctx->frame_duration);
-	// set blit area x and y coordinates, width and height
-	SDL_Rect text_update_rect;
-	text_update_rect.x = 0;
-	text_update_rect.y = 0;
-	text_update_rect.w = renderer_ctx->aw;
-	text_update_rect.h = renderer_ctx->ah;
-	// update the texture with the video picture data
-	/* int tw, th; */
-	/* SDL_QueryTexture(renderer_ctx->sdl_texture, nil, nil, &tw, &th); */
-	/* LOG("updating texture of size: %dx%d", tw, th); */
 	int textupd = SDL_UpdateYUVTexture(
 			renderer_ctx->sdl_texture,
-			// set video size when updating sdl texture
-			&text_update_rect,
-			/* nil, */
+			nil,
 			videoPicture->frame->data[0],
 			videoPicture->frame->linesize[0],
 			videoPicture->frame->data[1],
@@ -1508,15 +1501,9 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	// clear the current rendering target with the drawing color
 	SDL_SetRenderDrawColor(renderer_ctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
 	SDL_RenderClear(renderer_ctx->sdl_renderer);
-	// copy a portion of the texture to the current rendering target
-	SDL_Rect blit_update_rect;
-	blit_update_rect.x = 0;
-	blit_update_rect.y = 0;
-	blit_update_rect.w = renderer_ctx->aw;
-	blit_update_rect.h = renderer_ctx->ah;
-	/* SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, nil, nil); */
-	// set video size when copying sdl texture to sdl renderer. Texture will be stretched to blit_update_rect!
-	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, &text_update_rect, &blit_update_rect);
+	// copy and place a portion of the texture to the current rendering target
+	// set video size when copying sdl texture to sdl renderer. Texture will be stretched to blit_copy_rect!
+	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, nil, &renderer_ctx->blit_copy_rect);
 	// update the screen with any rendering performed since the previous call
 	SDL_RenderPresent(renderer_ctx->sdl_renderer);
 }
