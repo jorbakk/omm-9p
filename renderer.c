@@ -141,7 +141,6 @@ typedef struct RendererCtx
 	int                presenter_tid;
 	// Audio Stream.
 	int                audioStream;
-	AVStream          *audio_st;
 	AVCodecContext    *audio_ctx;
 	Channel           *audioq;
 	uint8_t            audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
@@ -814,7 +813,6 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		{
 			LOG("setting up audio stream context ...");
 			renderer_ctx->audioStream = stream_index;
-			renderer_ctx->audio_st = pFormatCtx->streams[stream_index];
 			renderer_ctx->audio_ctx = codecCtx;
 			renderer_ctx->audio_buf_size = 0;
 			renderer_ctx->audio_buf_index = 0;
@@ -1056,7 +1054,7 @@ read_frame_from_decoder(RendererCtx *renderer_ctx, AVFrame *pFrame)
 	int ret = avcodec_receive_frame(renderer_ctx->current_codec_ctx, pFrame);
 	// check if entire frame was decoded
 	if (ret == AVERROR(EAGAIN)) {
-		LOG("cannot squeeze more decoded frames out of current stream");
+		LOG("no more decoded frames to squeeze out of current av packet");
 		return 2;
 	}
 	if (ret == AVERROR_EOF) {
@@ -1811,6 +1809,70 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 
 
 void
+reset_renderer_ctx(RendererCtx *renderer_ctx)
+{
+	renderer_ctx->url = nil;
+	renderer_ctx->fileservername = nil;
+	renderer_ctx->filename = nil;
+	renderer_ctx->isaddr = 0;
+	renderer_ctx->fileserverfd = -1;
+	renderer_ctx->fileserverfid = nil;
+	renderer_ctx->fileserver = nil;
+	renderer_ctx->pIOCtx = nil;
+	renderer_ctx->pFormatCtx = nil;
+	renderer_ctx->current_codec_ctx = nil;
+	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
+	renderer_ctx->renderer_state = RSTATE_STOP;
+	renderer_ctx->cmdq = nil;
+	renderer_ctx->screen_width = 0;
+	renderer_ctx->screen_height = 0;
+	renderer_ctx->window_width = 0;
+	renderer_ctx->window_height = 0;
+	renderer_ctx->server_tid = 0;
+	renderer_ctx->decoder_tid = 0;
+	renderer_ctx->presenter_tid = 0;
+	renderer_ctx->audioStream = -1;
+	renderer_ctx->audio_ctx = nil;
+	renderer_ctx->audioq = nil;
+	renderer_ctx->audio_buf_size = 0;
+	renderer_ctx->audio_buf_index = 0;
+	renderer_ctx->audio_idx = 0;
+	renderer_ctx->audio_out_channels = 2;
+	renderer_ctx->current_video_time = 0.0;
+	renderer_ctx->previous_video_time = 0.0;
+	renderer_ctx->audio_start_rt = 0;
+	// Video Stream.
+	renderer_ctx->sdl_window = nil;
+	renderer_ctx->sdl_texture = nil;
+	renderer_ctx->sdl_renderer = nil;
+	renderer_ctx->videoStream = -1;
+	renderer_ctx->frame_rate = 0.0;
+	renderer_ctx->frame_duration = 0.0;
+	renderer_ctx->video_ctx = nil;
+	renderer_ctx->pictq = nil;
+	renderer_ctx->yuv_ctx = nil;
+	renderer_ctx->rgb_ctx = nil;
+	renderer_ctx->video_idx = 0;
+    renderer_ctx->pFrameRGB = nil;
+    renderer_ctx->rgbbuffer = nil;
+    renderer_ctx->yuvbuffer = nil;
+    renderer_ctx->w = 0;
+    renderer_ctx->h = 0;
+    renderer_ctx->aw = 0;
+    renderer_ctx->ah = 0;
+	// Seeking
+	renderer_ctx->seek_req = 0;
+	renderer_ctx->seek_flags = 0;
+	renderer_ctx->seek_pos = 0;
+	renderer_ctx->currentFrameIndex = 0;
+	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
+	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
+	renderer_ctx->audioDevId = -1;
+	renderer_ctx->audio_only = 0;
+}
+
+
+void
 threadmain(int argc, char **argv)
 {
 	if (_DEBUG_) {
@@ -1818,6 +1880,7 @@ threadmain(int argc, char **argv)
 		/* chattyfuse = 1; */
 	}
 	RendererCtx *renderer_ctx = av_mallocz(sizeof(RendererCtx));
+	reset_renderer_ctx(renderer_ctx);
 	start_server(renderer_ctx);
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
@@ -1825,37 +1888,15 @@ threadmain(int argc, char **argv)
 		LOG("Could not initialize SDL - %s", SDL_GetError());
 		return;
 	}
-
 	if (create_sdl_window(renderer_ctx) == -1) {
 		return;
 	}
-
 	/* setstr(&renderer_ctx->fileservername, DEFAULT_SERVER_NAME, 0); */
-	renderer_ctx->fileservername = NULL;
-	renderer_ctx->filename = NULL;
+	blank_window(renderer_ctx);
+	renderer_ctx->cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
 	if (argc >= 2) {
 		seturl(renderer_ctx, argv[1]);
 	}
-	renderer_ctx->fileserverfd = -1;
-	renderer_ctx->fileserverfid = nil;
-	renderer_ctx->fileserver = nil;
-	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
-	renderer_ctx->renderer_state = RSTATE_STOP;
-	blank_window(renderer_ctx);
-	renderer_ctx->fileserver = NULL;
-	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
-	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
-	renderer_ctx->video_ctx = NULL;
-	renderer_ctx->audio_ctx = NULL;
-	renderer_ctx->audioStream = -1;
-	renderer_ctx->videoStream = -1;
-	renderer_ctx->audio_idx = 0;
-	renderer_ctx->video_idx = 0;
-	renderer_ctx->frame_rate = 0.0;
-	renderer_ctx->frame_duration = 0.0;
-	renderer_ctx->audio_only = 0;
-	renderer_ctx->audio_out_channels = 2;
-	renderer_ctx->cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
 	renderer_ctx->decoder_tid = threadcreate(decoder_thread, renderer_ctx, THREAD_STACK_SIZE);
