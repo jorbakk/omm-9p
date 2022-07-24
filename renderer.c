@@ -23,8 +23,7 @@
 
 // TODO:
 // 1. SDL video window
-// - redraw, resize sdl window
-// - fullscreen mode
+// - redraw
 // 2. Seek
 // 3. AV sync
 // - decrease video picture display rate variation further
@@ -1938,6 +1937,24 @@ threadmain(int argc, char **argv)
 						send(renderer_ctx->cmdq, &cmd);
 					}
 
+				}
+				break;
+				case SDL_WINDOWEVENT:
+				{
+					switch(event.window.event)
+					{
+						case SDL_WINDOWEVENT_SHOWN:
+						case SDL_WINDOWEVENT_HIDDEN:
+						case SDL_WINDOWEVENT_RESIZED:
+						case SDL_WINDOWEVENT_SIZE_CHANGED:
+						case SDL_WINDOWEVENT_MAXIMIZED:
+						case SDL_WINDOWEVENT_RESTORED:
+						{
+							LOG("window resized");
+							resize_video(renderer_ctx);
+						}
+						break;
+					}
 				}
 				break;
 				case SDL_QUIT:
