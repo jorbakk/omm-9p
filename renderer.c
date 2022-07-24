@@ -353,8 +353,8 @@ seturl(RendererCtx *renderer_ctx, char *url)
 	int ret = parseurl(renderer_ctx->url, &s, &f, &renderer_ctx->isaddr);
 	if (ret == -1) {
 		LOG("failed to parse url %s", url);
-		renderer_ctx->fileservername = NULL;
-		renderer_ctx->filename = NULL;
+		renderer_ctx->fileservername = nil;
+		renderer_ctx->filename = nil;
 		return;
 	}
 	setstr(&renderer_ctx->fileservername, s, 0);
@@ -393,7 +393,7 @@ reset_filectx(RendererCtx *renderer_ctx)
 	LOG("deleting fileserver name ...");
 	if (renderer_ctx->filename) {
 		free(renderer_ctx->filename);
-		renderer_ctx->filename = NULL;
+		renderer_ctx->filename = nil;
 	}
 	LOG("unmounting fileserver ...");
 	if (renderer_ctx->fileserver) {
@@ -442,7 +442,7 @@ srvwrite(Req *r)
 	int cmdlen = r->ifcall.count;
 	int arglen = 0;
 	char* argstr = strchr(cmdstr, ' ');
-	if (argstr != NULL) {
+	if (argstr != nil) {
 		cmdlen = argstr - cmdstr;
 		arglen = r->ifcall.count - cmdlen + 1;
 		*argstr = '\0';
@@ -524,7 +524,7 @@ open_9pconnection(RendererCtx *renderer_ctx)
 int
 read_cmd(RendererCtx *renderer_ctx)
 {
-	while (renderer_ctx->filename == NULL || renderer_ctx->renderer_state == RSTATE_STOP) {
+	while (renderer_ctx->filename == nil || renderer_ctx->renderer_state == RSTATE_STOP) {
 		LOG("renderer stopped or no av stream file specified, waiting for command ...");
 		blank_window(renderer_ctx);
 		Command cmd;
@@ -536,7 +536,7 @@ read_cmd(RendererCtx *renderer_ctx)
 				setstr(&renderer_ctx->url, cmd.arg, cmd.narg);
 				seturl(renderer_ctx, renderer_ctx->url);
 				free(cmd.arg);
-				cmd.arg = NULL;
+				cmd.arg = nil;
 			}
 			else if (cmd.cmd == CMD_PLAY) {
 				renderer_ctx->renderer_state = RSTATE_PLAY;
@@ -698,7 +698,7 @@ setup_format_ctx(RendererCtx *renderer_ctx)
 		0,                             // buffer is only readable - set to 1 for read/write
 		renderer_ctx->fileserverfid,   // user specified data
 		demuxerPacketRead,             // function for reading packets
-		NULL,                          // function for writing packets
+		nil,                          // function for writing packets
 		demuxerPacketSeek              // function for seeking to position in stream
 		);
 	if(!pIOCtx) {
@@ -721,7 +721,7 @@ int
 open_input_stream(RendererCtx *renderer_ctx)
 {
 	LOG("opening input stream ...");
-	int ret = avformat_open_input(&renderer_ctx->pFormatCtx, NULL, NULL, NULL);
+	int ret = avformat_open_input(&renderer_ctx->pFormatCtx, nil, nil, nil);
 	if (ret < 0) {
 		LOG("Could not open file %s", renderer_ctx->filename);
 		if (renderer_ctx->pIOCtx) {
@@ -775,7 +775,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		return -1;
 	}
 	AVCodec *codec = avcodec_find_decoder(pFormatCtx->streams[stream_index]->codecpar->codec_id);
-	if (codec == NULL) {
+	if (codec == nil) {
 		LOG("Unsupported codec");
 		return -1;
 	}
@@ -794,9 +794,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		wanted_specs.channels = renderer_ctx->audio_out_channels;
 		wanted_specs.silence = 0;
 		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
-		wanted_specs.callback = NULL;
+		wanted_specs.callback = nil;
 		wanted_specs.userdata = renderer_ctx;
-		renderer_ctx->audioDevId = SDL_OpenAudioDevice(NULL, 0, &wanted_specs, &renderer_ctx->specs, 0);
+		renderer_ctx->audioDevId = SDL_OpenAudioDevice(nil, 0, &wanted_specs, &renderer_ctx->specs, 0);
 		if (renderer_ctx->audioDevId == 0) {
 			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
 			return -1;
@@ -804,7 +804,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		LOG("audio device with id: %d opened successfully", renderer_ctx->audioDevId);
 		LOG("audio specs are freq: %d, channels: %d", renderer_ctx->specs.freq, renderer_ctx->specs.channels);
 	}
-	if (avcodec_open2(codecCtx, codec, NULL) < 0) {
+	if (avcodec_open2(codecCtx, codec, nil) < 0) {
 		LOG("Unsupported codec");
 		return -1;
 	}
@@ -856,9 +856,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 				/* w, ah, */
 				/* AV_PIX_FMT_YUV420P, */
 				/* SWS_BILINEAR, */
-				/* NULL, */
-				/* NULL, */
-				/* NULL */
+				/* nil, */
+				/* nil, */
+				/* nil */
 			/* ); */
 			renderer_ctx->yuv_ctx = sws_getContext(
 				renderer_ctx->video_ctx->width,
@@ -869,9 +869,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 				renderer_ctx->ah,
 				AV_PIX_FMT_YUV420P,
 				SWS_BILINEAR,
-				NULL,
-				NULL,
-				NULL
+				nil,
+				nil,
+				nil
 			);
 			renderer_ctx->rgb_ctx = sws_getContext(
 				renderer_ctx->video_ctx->width,
@@ -881,9 +881,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 				renderer_ctx->video_ctx->height,
 				AV_PIX_FMT_RGB24,
 				SWS_BILINEAR,
-				NULL,
-				NULL,
-				NULL
+				nil,
+				nil,
+				nil
 			);
 		}
 			break;
@@ -900,7 +900,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 int
 open_stream_components(RendererCtx *renderer_ctx)
 {
-	int ret = avformat_find_stream_info(renderer_ctx->pFormatCtx, NULL);
+	int ret = avformat_find_stream_info(renderer_ctx->pFormatCtx, nil);
 	if (ret < 0) {
 		LOG("Could not find stream information: %s.", renderer_ctx->filename);
 		return -1;
@@ -1259,12 +1259,12 @@ start:
 	}
 
 	AVPacket *packet = av_packet_alloc();
-	if (packet == NULL) {
+	if (packet == nil) {
 		LOG("Could not allocate AVPacket.");
 		goto start;
 	}
 	AVFrame *pFrame = av_frame_alloc();
-	if (pFrame == NULL) {
+	if (pFrame == nil) {
 		printf("Could not allocate AVFrame.\n");
 		goto start;
 	}
@@ -1306,9 +1306,9 @@ start:
 					renderer_ctx->frame_duration, 1000.0 / renderer_ctx->frame_duration);
 				video_pts += renderer_ctx->frame_duration;
 				VideoPicture videoPicture = {
-					.frame = NULL,
-					.rgbbuf = NULL,
-					.planes = NULL,
+					.frame = nil,
+					.rgbbuf = nil,
+					.planes = nil,
 					.width = renderer_ctx->aw,
 					.height = renderer_ctx->ah,
 					.idx = renderer_ctx->video_idx,
@@ -1456,7 +1456,7 @@ presenter_thread(void *arg)
 			if (videoPicture.frame) {
 				av_frame_unref(videoPicture.frame);
 				av_frame_free(&videoPicture.frame);
-				videoPicture.frame = NULL;
+				videoPicture.frame = nil;
 			}
 		}
 		if (time_diff > 0) {
@@ -1500,7 +1500,7 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	int textupd = SDL_UpdateYUVTexture(
 			renderer_ctx->sdl_texture,
 			/* &rect, */
-			NULL,
+			nil,
 			videoPicture->frame->data[0],
 			videoPicture->frame->linesize[0],
 			videoPicture->frame->data[1],
@@ -1515,7 +1515,7 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	SDL_SetRenderDrawColor(renderer_ctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
 	SDL_RenderClear(renderer_ctx->sdl_renderer);
 	// copy a portion of the texture to the current rendering target
-	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, NULL, NULL);
+	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, nil, nil);
 	// update the screen with any rendering performed since the previous call
 	/* LOG("displaying picture %d", videoPicture->idx); */
 	SDL_RenderPresent(renderer_ctx->sdl_renderer);
@@ -1646,7 +1646,7 @@ resample_audio(RendererCtx *renderer_ctx, AVFrame *decoded_audio_frame, enum AVS
 		return -1;
 	}
 	if (arState->out_nb_samples > arState->max_out_nb_samples) {
-		// free memory block and set pointer to NULL
+		// free memory block and set pointer to nil
 		av_free(arState->resampled_data[0]);
 		// Allocate a samples buffer for out_nb_samples samples
 		ret = av_samples_alloc(
@@ -1699,13 +1699,13 @@ resample_audio(RendererCtx *renderer_ctx, AVFrame *decoded_audio_frame, enum AVS
 	// copy the resampled data to the output buffer
 	memcpy(out_buf, arState->resampled_data[0], arState->resampled_data_size);
 	if (arState->resampled_data) {
-		// free memory block and set pointer to NULL
+		// free memory block and set pointer to nil
 		av_freep(&arState->resampled_data[0]);
 	}
 	av_freep(&arState->resampled_data);
-	arState->resampled_data = NULL;
+	arState->resampled_data = nil;
 	if (arState->swr_ctx) {
-		// free the allocated SwrContext and set the pointer to NULL
+		// free the allocated SwrContext and set the pointer to nil
 		swr_free(&arState->swr_ctx);
 	}
 	return arState->resampled_data_size;
@@ -1724,7 +1724,7 @@ getAudioResampling(uint64_t channel_layout)
 	audioResampling->in_nb_samples = 0;
 	audioResampling->out_nb_samples = 0;
 	audioResampling->max_out_nb_samples = 0;
-	audioResampling->resampled_data = NULL;
+	audioResampling->resampled_data = nil;
 	audioResampling->resampled_data_size = 0;
 	return audioResampling;
 }
@@ -1733,8 +1733,8 @@ getAudioResampling(uint64_t channel_layout)
 void
 savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameIndex)
 {
-    AVFrame *pFrameRGB = NULL;
-    uint8_t *buffer = NULL;
+    AVFrame *pFrameRGB = nil;
+    uint8_t *buffer = nil;
 	if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 		// Convert the video picture to the target format for saving to disk
 	    pFrameRGB = av_frame_alloc();
@@ -1764,9 +1764,9 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 											videoPicture->height,
 											AV_PIX_FMT_RGB24,
 											SWS_BILINEAR,
-											NULL,
-											NULL,
-											NULL
+											nil,
+											nil,
+											nil
 											);
 	    sws_scale(
 	        rgb_ctx,
@@ -1785,7 +1785,7 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
     // Open file
     sprintf(szFilename, "/tmp/%06d.ppm", frameIndex);
     pFile = fopen(szFilename, "wb");
-    if (pFile == NULL) {
+    if (pFile == nil) {
         return;
     }
     fprintf(pFile, "P6\n%d %d\n255\n", videoPicture->width, videoPicture->height);
