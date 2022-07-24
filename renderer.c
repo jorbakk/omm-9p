@@ -155,13 +155,13 @@ typedef struct RendererCtx
 	double             previous_video_time;
 	int64_t            audio_start_rt;
 	// Video Stream.
+	SDL_Window        *sdl_window;
+	SDL_Texture       *sdl_texture;
+	SDL_Renderer      *sdl_renderer;
 	int                videoStream;
 	double             frame_rate;
 	double             frame_duration;
-	/* AVStream          *video_st; */
 	AVCodecContext    *video_ctx;
-	SDL_Texture       *texture;
-	SDL_Renderer      *renderer;
 	Channel           *pictq;
 	struct SwsContext *yuv_ctx;
 	struct SwsContext *rgb_ctx;
@@ -260,7 +260,6 @@ enum
 	AV_SYNC_EXTERNAL_MASTER,
 };
 
-SDL_Window *sdl_window;
 /* AVPacket flush_pkt; */
 /* char *addr = "tcp!localhost!5640"; */
 /* char *aname = NULL; */
@@ -536,9 +535,9 @@ start_server(RendererCtx *renderer_ctx)
 void
 blank_window(RendererCtx *renderer_ctx)
 {
-	SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-	SDL_RenderClear(renderer_ctx->renderer);
-	SDL_RenderPresent(renderer_ctx->renderer);
+	SDL_SetRenderDrawColor(renderer_ctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+	SDL_RenderClear(renderer_ctx->sdl_renderer);
+	SDL_RenderPresent(renderer_ctx->sdl_renderer);
 }
 
 
@@ -700,7 +699,7 @@ calc_videoscale(RendererCtx *renderer_ctx)
 	int w, h, aw, ah;
 	float war, far;
 	if (renderer_ctx->video_ctx) {
-		SDL_GetWindowSize(sdl_window, &w, &h);
+		SDL_GetWindowSize(renderer_ctx->sdl_window, &w, &h);
 		war = (float)h / w;
 		far = (float)renderer_ctx->video_ctx->height / renderer_ctx->video_ctx->width;
 		aw = h / far;
@@ -799,7 +798,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 
 			/* int w; */
 			/* int h; */
-			/* SDL_GetWindowSize(sdl_window, &w, &h); */
+			/* SDL_GetWindowSize(renderer_ctx->sdl_window, &w, &h); */
 			/* float ar = (float)renderer_ctx->video_ctx->width / renderer_ctx->video_ctx->height; */
 			/* float ah = w / ar; */
 			/* LOG("setting scale context to target size %dx%d", w, h); */
@@ -1453,7 +1452,7 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	/* rect.h = window_height - 100; */
 	// update the texture with the new pixel data
 	int textupd = SDL_UpdateYUVTexture(
-			renderer_ctx->texture,
+			renderer_ctx->sdl_texture,
 			/* &rect, */
 			NULL,
 			videoPicture->frame->data[0],
@@ -1467,13 +1466,13 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 		LOG("failed to update sdl texture: %s", SDL_GetError());
 	}
 	// clear the current rendering target with the drawing color
-	SDL_SetRenderDrawColor(renderer_ctx->renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
-	SDL_RenderClear(renderer_ctx->renderer);
+	SDL_SetRenderDrawColor(renderer_ctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
+	SDL_RenderClear(renderer_ctx->sdl_renderer);
 	// copy a portion of the texture to the current rendering target
-	SDL_RenderCopy(renderer_ctx->renderer, renderer_ctx->texture, NULL, NULL);
+	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, NULL, NULL);
 	// update the screen with any rendering performed since the previous call
 	/* LOG("displaying picture %d", videoPicture->idx); */
-	SDL_RenderPresent(renderer_ctx->renderer);
+	SDL_RenderPresent(renderer_ctx->sdl_renderer);
 }
 
 
@@ -1763,6 +1762,57 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 }
 
 
+int
+create_sdl_window(RendererCtx *renderer_ctx)
+{
+	SDL_DisplayMode DM;
+	if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
+		LOG("failed to get sdl display mode");
+		return -1;
+	}
+	renderer_ctx->screen_width  = DM.w;
+	renderer_ctx->screen_height = DM.h;
+	int requested_window_width  = 800;
+	int requested_window_height = 600;
+	if (renderer_ctx->sdl_window == nil) {
+		// create a window with the specified position, dimensions, and flags.
+		renderer_ctx->sdl_window = SDL_CreateWindow(
+			"OMM Renderer",
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			requested_window_width,
+			requested_window_height,
+			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
+			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
+			);
+		SDL_GL_SetSwapInterval(1);
+	}
+	if (renderer_ctx->sdl_window == nil) {
+		LOG("SDL: could not create window");
+		return -1;
+	}
+	if (renderer_ctx->sdl_renderer == nil) {
+		// create a 2D rendering context for the SDL_Window
+		renderer_ctx->sdl_renderer = SDL_CreateRenderer(
+			renderer_ctx->sdl_window,
+			-1,
+			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+	}
+	if (renderer_ctx->sdl_texture == nil) {
+		// create a texture for a rendering context
+		renderer_ctx->sdl_texture = SDL_CreateTexture(
+			renderer_ctx->sdl_renderer,
+			SDL_PIXELFORMAT_YV12,
+			SDL_TEXTUREACCESS_STREAMING,
+			// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
+			renderer_ctx->screen_width,
+			renderer_ctx->screen_height
+			);
+	}
+	return 0;
+}
+
+
 void
 threadmain(int argc, char **argv)
 {
@@ -1775,56 +1825,12 @@ threadmain(int argc, char **argv)
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (ret != 0) {
-		printf("Could not initialize SDL - %s\n.", SDL_GetError());
+		LOG("Could not initialize SDL - %s", SDL_GetError());
 		return;
 	}
 
-	SDL_DisplayMode DM;
-	if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
-		LOG("failed to get sdl display mode");
+	if (create_sdl_window(renderer_ctx) == -1) {
 		return;
-	}
-	renderer_ctx->screen_width  = DM.w;
-	renderer_ctx->screen_height = DM.h;
-	int requested_window_width  = 800;
-	int requested_window_height = 600;
-	if (!sdl_window) {
-		// create a window with the specified position, dimensions, and flags.
-		sdl_window = SDL_CreateWindow(
-			"OMM Renderer",
-			SDL_WINDOWPOS_UNDEFINED,
-			SDL_WINDOWPOS_UNDEFINED,
-			requested_window_width,
-			requested_window_height,
-			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
-			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
-			);
-		SDL_GL_SetSwapInterval(1);
-	}
-	if (!sdl_window) {
-		printf("SDL: could not create window - exiting.\n");
-		return;
-	}
-	if (!renderer_ctx->renderer) {
-		// create a 2D rendering context for the SDL_Window
-		renderer_ctx->renderer = SDL_CreateRenderer(
-			sdl_window,
-			-1,
-			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
-	}
-	if (!renderer_ctx->texture) {
-		// create a texture for a rendering context
-		int w;
-		int h;
-		SDL_GetWindowSize(sdl_window, &w, &h);
-		renderer_ctx->texture = SDL_CreateTexture(
-			renderer_ctx->renderer,
-			SDL_PIXELFORMAT_YV12,
-			SDL_TEXTUREACCESS_STREAMING,
-			// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
-			renderer_ctx->screen_width,
-			renderer_ctx->screen_height
-			);
 	}
 
 	/* setstr(&renderer_ctx->fileservername, DEFAULT_SERVER_NAME, 0); */
