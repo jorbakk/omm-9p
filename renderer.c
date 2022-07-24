@@ -261,8 +261,6 @@ enum
 };
 
 /* AVPacket flush_pkt; */
-/* char *addr = "tcp!localhost!5640"; */
-/* char *aname = NULL; */
 
 void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
 void display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
@@ -270,8 +268,7 @@ void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
 int open_stream_component(RendererCtx * renderer_ctx, int stream_index);
 void decoder_thread(void *arg);
 void presenter_thread(void *arg);
-/* void video_thread(void *arg); */
-/* void audio_thread(void *arg); */
+void blank_window(RendererCtx *renderer_ctx);
 
 static int resample_audio(
 		RendererCtx *renderer_ctx,
@@ -491,53 +488,37 @@ srvwrite(Req *r)
 }
 
 
-Srv server = {
-	.open  = srvopen,
-	.read  = srvread,
-	.write = srvwrite,
-};
-
-
 int
-threadmaybackground(void)
+open_9pconnection(RendererCtx *renderer_ctx)
 {
-	return 1;
-}
-
-
-void
-start_server(RendererCtx *renderer_ctx)
-{
-	LOG("starting 9P server ...");
-	char *srvname = "ommrenderer";
-	/* char *mtpt = "/srv"; */
-	char *mtpt = nil;
-	server.tree = alloctree(nil, nil, DMDIR|0777, nil);
-	// Workaround for the first directory entry not beeing visible (it exists and is readable/writable)
-	// This might be a bug in plan9port 9Pfile + fuse
-	/* createfile(server.tree->root, "dummy", nil, 0777, nil); */
-	/* File *f = createfile(server.tree->root, "ctl", nil, 0777, nil); */
-	createfile(server.tree->root, "ctl", nil, 0777, renderer_ctx);
-	/* f->aux = renderer_ctx; */
-	/* srv(&server); */
-	/* postfd(srvname, server.srvfd); */
-	// Workaround for fuse not unmounting the service ... ? 
-	// ... the first access will fail but unmount it.
-	/* if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0) */
-		/* sysfatal("mountpoint %s does not exist", mtpt); */
-	/* server.foreground = 1; */
-	threadpostmountsrv(&server, srvname, mtpt, MREPL|MCREATE);
-	/* threadexits(0); */
-	LOG("9P server started.");
-}
-
-
-void
-blank_window(RendererCtx *renderer_ctx)
-{
-	SDL_SetRenderDrawColor(renderer_ctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-	SDL_RenderClear(renderer_ctx->sdl_renderer);
-	SDL_RenderPresent(renderer_ctx->sdl_renderer);
+	// FIXME restructure server open/close code
+	LOG("opening 9P connection ...");
+	int ret;
+	if (!renderer_ctx->fileserver) {
+		if (renderer_ctx->isaddr) {
+			/* renderer_ctx->fileserver = clientdial(renderer_ctx->fileservername); */
+			ret = clientdial(renderer_ctx);
+		}
+		else {
+			/* renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername); */
+			ret = clientmount(renderer_ctx);
+		}
+		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
+		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
+		if (ret == -1) {
+			LOG("failed to open 9P connection");
+			return ret;
+		}
+	}
+	LOG("opening 9P file ...");
+	CFid *fid = fsopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
+	if (fid == nil) {
+		renderer_ctx->renderer_state = RSTATE_STOP;
+		blank_window(renderer_ctx);
+		return -1;
+	}
+	renderer_ctx->fileserverfid = fid; 
+	return 0;
 }
 
 
@@ -605,37 +586,104 @@ poll_cmd(RendererCtx *renderer_ctx)
 }
 
 
+Srv server = {
+	.open  = srvopen,
+	.read  = srvread,
+	.write = srvwrite,
+};
+
+
 int
-open_9pconnection(RendererCtx *renderer_ctx)
+threadmaybackground(void)
 {
-	// FIXME restructure server open/close code
-	LOG("opening 9P connection ...");
-	int ret;
-	if (!renderer_ctx->fileserver) {
-		if (renderer_ctx->isaddr) {
-			/* renderer_ctx->fileserver = clientdial(renderer_ctx->fileservername); */
-			ret = clientdial(renderer_ctx);
-		}
-		else {
-			/* renderer_ctx->fileserver = clientmount(renderer_ctx->fileservername); */
-			ret = clientmount(renderer_ctx);
-		}
-		/* renderer_ctx->fileserver = clientdial("tcp!localhost!5640"); */
-		/* renderer_ctx->fileserver = clientdial("tcp!192.168.1.85!5640"); */
-		if (ret == -1) {
-			LOG("failed to open 9P connection");
-			return ret;
-		}
-	}
-	LOG("opening 9P file ...");
-	CFid *fid = fsopen(renderer_ctx->fileserver, renderer_ctx->filename, OREAD);
-	if (fid == nil) {
-		renderer_ctx->renderer_state = RSTATE_STOP;
-		blank_window(renderer_ctx);
+	return 1;
+}
+
+
+void
+start_server(RendererCtx *renderer_ctx)
+{
+	LOG("starting 9P server ...");
+	char *srvname = "ommrenderer";
+	/* char *mtpt = "/srv"; */
+	char *mtpt = nil;
+	server.tree = alloctree(nil, nil, DMDIR|0777, nil);
+	// Workaround for the first directory entry not beeing visible (it exists and is readable/writable)
+	// This might be a bug in plan9port 9Pfile + fuse
+	/* createfile(server.tree->root, "dummy", nil, 0777, nil); */
+	/* File *f = createfile(server.tree->root, "ctl", nil, 0777, nil); */
+	createfile(server.tree->root, "ctl", nil, 0777, renderer_ctx);
+	/* f->aux = renderer_ctx; */
+	/* srv(&server); */
+	/* postfd(srvname, server.srvfd); */
+	// Workaround for fuse not unmounting the service ... ? 
+	// ... the first access will fail but unmount it.
+	/* if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0) */
+		/* sysfatal("mountpoint %s does not exist", mtpt); */
+	/* server.foreground = 1; */
+	threadpostmountsrv(&server, srvname, mtpt, MREPL|MCREATE);
+	/* threadexits(0); */
+	LOG("9P server started.");
+}
+
+
+int
+create_sdl_window(RendererCtx *renderer_ctx)
+{
+	SDL_DisplayMode DM;
+	if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
+		LOG("failed to get sdl display mode");
 		return -1;
 	}
-	renderer_ctx->fileserverfid = fid; 
+	renderer_ctx->screen_width  = DM.w;
+	renderer_ctx->screen_height = DM.h;
+	int requested_window_width  = 800;
+	int requested_window_height = 600;
+	if (renderer_ctx->sdl_window == nil) {
+		// create a window with the specified position, dimensions, and flags.
+		renderer_ctx->sdl_window = SDL_CreateWindow(
+			"OMM Renderer",
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			requested_window_width,
+			requested_window_height,
+			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
+			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
+			);
+		SDL_GL_SetSwapInterval(1);
+	}
+	if (renderer_ctx->sdl_window == nil) {
+		LOG("SDL: could not create window");
+		return -1;
+	}
+	if (renderer_ctx->sdl_renderer == nil) {
+		// create a 2D rendering context for the SDL_Window
+		renderer_ctx->sdl_renderer = SDL_CreateRenderer(
+			renderer_ctx->sdl_window,
+			-1,
+			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+	}
+	if (renderer_ctx->sdl_texture == nil) {
+		// create a texture for a rendering context
+		renderer_ctx->sdl_texture = SDL_CreateTexture(
+			renderer_ctx->sdl_renderer,
+			SDL_PIXELFORMAT_YV12,
+			SDL_TEXTUREACCESS_STREAMING,
+			// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
+			renderer_ctx->screen_width,
+			renderer_ctx->screen_height
+			);
+	}
 	return 0;
+}
+
+
+void
+blank_window(RendererCtx *renderer_ctx)
+{
+	SDL_SetRenderDrawColor(renderer_ctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+	SDL_RenderClear(renderer_ctx->sdl_renderer);
+	SDL_RenderPresent(renderer_ctx->sdl_renderer);
 }
 
 
@@ -1759,57 +1807,6 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 	    av_free(buffer);
     }
 	LOG("saved video picture.");
-}
-
-
-int
-create_sdl_window(RendererCtx *renderer_ctx)
-{
-	SDL_DisplayMode DM;
-	if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
-		LOG("failed to get sdl display mode");
-		return -1;
-	}
-	renderer_ctx->screen_width  = DM.w;
-	renderer_ctx->screen_height = DM.h;
-	int requested_window_width  = 800;
-	int requested_window_height = 600;
-	if (renderer_ctx->sdl_window == nil) {
-		// create a window with the specified position, dimensions, and flags.
-		renderer_ctx->sdl_window = SDL_CreateWindow(
-			"OMM Renderer",
-			SDL_WINDOWPOS_UNDEFINED,
-			SDL_WINDOWPOS_UNDEFINED,
-			requested_window_width,
-			requested_window_height,
-			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
-			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
-			);
-		SDL_GL_SetSwapInterval(1);
-	}
-	if (renderer_ctx->sdl_window == nil) {
-		LOG("SDL: could not create window");
-		return -1;
-	}
-	if (renderer_ctx->sdl_renderer == nil) {
-		// create a 2D rendering context for the SDL_Window
-		renderer_ctx->sdl_renderer = SDL_CreateRenderer(
-			renderer_ctx->sdl_window,
-			-1,
-			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
-	}
-	if (renderer_ctx->sdl_texture == nil) {
-		// create a texture for a rendering context
-		renderer_ctx->sdl_texture = SDL_CreateTexture(
-			renderer_ctx->sdl_renderer,
-			SDL_PIXELFORMAT_YV12,
-			SDL_TEXTUREACCESS_STREAMING,
-			// set video size here (texture can also be larger, that doesn't matter, so we take the screen size)
-			renderer_ctx->screen_width,
-			renderer_ctx->screen_height
-			);
-	}
-	return 0;
 }
 
 
