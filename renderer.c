@@ -22,22 +22,20 @@
 
 
 // TODO:
-// 1. SDL video window
-// - redraw
-// 2. Seek
-// 3. AV sync
+// 1. Seek
+// 2. AV sync
 // - decrease video picture display rate variation further
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
-// 4. Query renderer info (current position, state, audio volume) from 9P server
-// 5. Display single still images
-// 6. Fixes / refactoring / testing
+// 3. Query renderer info (current position, state, audio volume) from 9P server
+// 4. Display single still images
+// 5. Fixes / refactoring / testing
 // - fix memory leaks
 // - allow video scaling not only in decoder thread but also in presenter thread
 // - blanking screen on stop / eof doesn't work allways
 // - test keyboard / server input combinations (fuzz testing ...)
-// 7. Experiment with serving video and audio output channels via the 9P server
-// 8. Build renderer into drawterm-av
+// 6. Experiment with serving video and audio output channels via the 9P server
+// 7. Build renderer into drawterm-av
 
 // Thread layout:
 //   main_thread (event loop)
@@ -1943,17 +1941,20 @@ threadmain(int argc, char **argv)
 				{
 					switch(event.window.event)
 					{
-						case SDL_WINDOWEVENT_SHOWN:
-						case SDL_WINDOWEVENT_HIDDEN:
 						case SDL_WINDOWEVENT_RESIZED:
 						case SDL_WINDOWEVENT_SIZE_CHANGED:
 						case SDL_WINDOWEVENT_MAXIMIZED:
-						case SDL_WINDOWEVENT_RESTORED:
 						{
 							LOG("window resized");
 							resize_video(renderer_ctx);
 						}
 						break;
+						case SDL_WINDOWEVENT_SHOWN:
+						case SDL_WINDOWEVENT_RESTORED:
+						{
+							LOG("window restored");
+							blank_window(renderer_ctx);
+						}
 					}
 				}
 				break;
