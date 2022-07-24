@@ -126,8 +126,8 @@ typedef struct RendererCtx
 	int                fileserverfd;
 	CFid              *fileserverfid;
 	CFsys             *fileserver;
-	AVIOContext       *pIOCtx;
-	AVFormatContext   *pFormatCtx;
+	AVIOContext       *io_ctx;
+	AVFormatContext   *format_ctx;
 	AVCodecContext    *current_codec_ctx;
 	int                renderer_state;
 	Channel           *cmdq;
@@ -166,7 +166,7 @@ typedef struct RendererCtx
 	struct SwsContext *rgb_ctx;
 	SDL_AudioSpec      specs;
 	int                video_idx;
-    AVFrame           *pFrameRGB;
+    AVFrame           *frame_rgb;
     uint8_t           *rgbbuffer;
     uint8_t           *yuvbuffer;
     int                w, h, aw, ah;
@@ -177,7 +177,7 @@ typedef struct RendererCtx
 	// Maximum number of frames to be decoded
 	int	               currentFrameIndex;
 	int                frame_fmt;
-	SDL_AudioDeviceID  audioDevId;
+	SDL_AudioDeviceID  audio_devid;
 	int                audio_only;
 } RendererCtx;
 
@@ -692,7 +692,7 @@ setup_format_ctx(RendererCtx *renderer_ctx)
 	LOG("setting up IO context ...");
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
-	AVIOContext *pIOCtx = avio_alloc_context(
+	AVIOContext *io_ctx = avio_alloc_context(
 		avctxBuffer,                   // buffer
 		avctxBufferSize,               // buffer size
 		0,                             // buffer is only readable - set to 1 for read/write
@@ -701,18 +701,18 @@ setup_format_ctx(RendererCtx *renderer_ctx)
 		nil,                          // function for writing packets
 		demuxerPacketSeek              // function for seeking to position in stream
 		);
-	if(!pIOCtx) {
+	if(io_ctx == nil) {
 		LOG("failed to allocate memory for ffmpeg av io context");
 		return -1;
 	}
-	AVFormatContext *pFormatCtx = avformat_alloc_context();
-	if (!pFormatCtx) {
+	AVFormatContext *format_ctx = avformat_alloc_context();
+	if (format_ctx == nil) {
 	  LOG("failed to allocate av format context");
 	  return -1;
 	}
-	pFormatCtx->pb = pIOCtx;
-	renderer_ctx->pIOCtx = pIOCtx;
-	renderer_ctx->pFormatCtx = pFormatCtx;
+	format_ctx->pb = io_ctx;
+	renderer_ctx->io_ctx = io_ctx;
+	renderer_ctx->format_ctx = format_ctx;
 	return 0;
 }
 
@@ -721,15 +721,15 @@ int
 open_input_stream(RendererCtx *renderer_ctx)
 {
 	LOG("opening input stream ...");
-	int ret = avformat_open_input(&renderer_ctx->pFormatCtx, nil, nil, nil);
+	int ret = avformat_open_input(&renderer_ctx->format_ctx, nil, nil, nil);
 	if (ret < 0) {
 		LOG("Could not open file %s", renderer_ctx->filename);
-		if (renderer_ctx->pIOCtx) {
-			avio_context_free(&renderer_ctx->pIOCtx);
+		if (renderer_ctx->io_ctx) {
+			avio_context_free(&renderer_ctx->io_ctx);
 		}
-		avformat_close_input(&renderer_ctx->pFormatCtx);
-		if (renderer_ctx->pFormatCtx) {
-			avformat_free_context(renderer_ctx->pFormatCtx);
+		avformat_close_input(&renderer_ctx->format_ctx);
+		if (renderer_ctx->format_ctx) {
+			avformat_free_context(renderer_ctx->format_ctx);
 		}
 		return -1;
 	}
@@ -769,18 +769,18 @@ int
 open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 {
 	LOG("opening stream component ...");
-	AVFormatContext *pFormatCtx = renderer_ctx->pFormatCtx;
-	if (stream_index < 0 || stream_index >= pFormatCtx->nb_streams) {
+	AVFormatContext *format_ctx = renderer_ctx->format_ctx;
+	if (stream_index < 0 || stream_index >= format_ctx->nb_streams) {
 		LOG("Invalid stream index");
 		return -1;
 	}
-	AVCodec *codec = avcodec_find_decoder(pFormatCtx->streams[stream_index]->codecpar->codec_id);
+	AVCodec *codec = avcodec_find_decoder(format_ctx->streams[stream_index]->codecpar->codec_id);
 	if (codec == nil) {
 		LOG("Unsupported codec");
 		return -1;
 	}
 	AVCodecContext *codecCtx = avcodec_alloc_context3(codec);
-	int ret = avcodec_parameters_to_context(codecCtx, pFormatCtx->streams[stream_index]->codecpar);
+	int ret = avcodec_parameters_to_context(codecCtx, format_ctx->streams[stream_index]->codecpar);
 	if (ret != 0) {
 		LOG("Could not copy codec context");
 		return -1;
@@ -796,12 +796,12 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		wanted_specs.samples = SDL_AUDIO_BUFFER_SIZE;
 		wanted_specs.callback = nil;
 		wanted_specs.userdata = renderer_ctx;
-		renderer_ctx->audioDevId = SDL_OpenAudioDevice(nil, 0, &wanted_specs, &renderer_ctx->specs, 0);
-		if (renderer_ctx->audioDevId == 0) {
+		renderer_ctx->audio_devid = SDL_OpenAudioDevice(nil, 0, &wanted_specs, &renderer_ctx->specs, 0);
+		if (renderer_ctx->audio_devid == 0) {
 			printf("SDL_OpenAudio: %s.\n", SDL_GetError());
 			return -1;
 		}
-		LOG("audio device with id: %d opened successfully", renderer_ctx->audioDevId);
+		LOG("audio device with id: %d opened successfully", renderer_ctx->audio_devid);
 		LOG("audio specs are freq: %d, channels: %d", renderer_ctx->specs.freq, renderer_ctx->specs.channels);
 	}
 	if (avcodec_open2(codecCtx, codec, nil) < 0) {
@@ -823,7 +823,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 			LOG("presenter thread created with id: %i", renderer_ctx->presenter_tid);
 			LOG("calling sdl_pauseaudio(0) ...");
 			/* SDL_PauseAudio(0); */
-			SDL_PauseAudioDevice(renderer_ctx->audioDevId, 0);
+			SDL_PauseAudioDevice(renderer_ctx->audio_devid, 0);
 			LOG("sdl_pauseaudio(0) called.");
 		}
 			break;
@@ -831,7 +831,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		{
 			LOG("setting up video stream context ...");
 			renderer_ctx->videoStream = stream_index;
-			/* renderer_ctx->video_st = pFormatCtx->streams[stream_index]; */
+			/* renderer_ctx->video_st = format_ctx->streams[stream_index]; */
 			renderer_ctx->video_ctx = codecCtx;
 			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
 
@@ -900,22 +900,22 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 int
 open_stream_components(RendererCtx *renderer_ctx)
 {
-	int ret = avformat_find_stream_info(renderer_ctx->pFormatCtx, nil);
+	int ret = avformat_find_stream_info(renderer_ctx->format_ctx, nil);
 	if (ret < 0) {
 		LOG("Could not find stream information: %s.", renderer_ctx->filename);
 		return -1;
 	}
 	if (_DEBUG_) {
-		av_dump_format(renderer_ctx->pFormatCtx, 0, renderer_ctx->filename, 0);
+		av_dump_format(renderer_ctx->format_ctx, 0, renderer_ctx->filename, 0);
 	}
 	int videoStream = -1;
 	int audioStream = -1;
-	for (int i = 0; i < renderer_ctx->pFormatCtx->nb_streams; i++)
+	for (int i = 0; i < renderer_ctx->format_ctx->nb_streams; i++)
 	{
-		if (renderer_ctx->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoStream < 0) {
+		if (renderer_ctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoStream < 0) {
 			videoStream = i;
 		}
-		if (renderer_ctx->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audioStream < 0) {
+		if (renderer_ctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audioStream < 0) {
 			audioStream = i;
 		}
 	}
@@ -954,7 +954,7 @@ int
 alloc_buffers(RendererCtx *renderer_ctx)
 {
 	if (renderer_ctx->video_ctx) {
-	    renderer_ctx->pFrameRGB = av_frame_alloc();
+	    renderer_ctx->frame_rgb = av_frame_alloc();
 	    int numBytes;
 	    numBytes = av_image_get_buffer_size(
 			AV_PIX_FMT_RGB24,
@@ -964,8 +964,8 @@ alloc_buffers(RendererCtx *renderer_ctx)
 			);
 	    renderer_ctx->rgbbuffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
 	    av_image_fill_arrays(
-			renderer_ctx->pFrameRGB->data,
-			renderer_ctx->pFrameRGB->linesize,
+			renderer_ctx->frame_rgb->data,
+			renderer_ctx->frame_rgb->linesize,
 			renderer_ctx->rgbbuffer,
 			AV_PIX_FMT_RGB24,
 			renderer_ctx->video_ctx->width,
@@ -989,7 +989,7 @@ alloc_buffers(RendererCtx *renderer_ctx)
 int
 read_packet(RendererCtx *renderer_ctx, AVPacket* packet)
 {
-	int demuxer_ret = av_read_frame(renderer_ctx->pFormatCtx, packet);
+	int demuxer_ret = av_read_frame(renderer_ctx->format_ctx, packet);
 	LOG("read av packet of size: %i", packet->size);
 	if (demuxer_ret < 0) {
 		LOG("failed to read av packet: %s", av_err2str(demuxer_ret));
@@ -1122,11 +1122,11 @@ create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 	    pFrame->linesize,
 	    0,
 	    renderer_ctx->current_codec_ctx->height,
-	    renderer_ctx->pFrameRGB->data,
-	    renderer_ctx->pFrameRGB->linesize
+	    renderer_ctx->frame_rgb->data,
+	    renderer_ctx->frame_rgb->linesize
 	);
 	// av_frame_unref(pFrame);
-	videoPicture->linesize = renderer_ctx->pFrameRGB->linesize[0];
+	videoPicture->linesize = renderer_ctx->frame_rgb->linesize[0];
 	int numBytes = av_image_get_buffer_size(
 		AV_PIX_FMT_RGB24,
 		renderer_ctx->current_codec_ctx->width,
@@ -1134,7 +1134,7 @@ create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 		32
 		);
 	videoPicture->rgbbuf = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-	memcpy(videoPicture->rgbbuf, renderer_ctx->pFrameRGB->data[0], numBytes);
+	memcpy(videoPicture->rgbbuf, renderer_ctx->frame_rgb->data[0], numBytes);
 	return 0;
 }
 
@@ -1357,12 +1357,12 @@ start:
 quit:
 	renderer_ctx->renderer_state = RSTATE_QUIT;
 	// Clean up the decoder thread
-	if (renderer_ctx->pIOCtx) {
-		avio_context_free(&renderer_ctx->pIOCtx);
+	if (renderer_ctx->io_ctx) {
+		avio_context_free(&renderer_ctx->io_ctx);
 	}
-	avformat_close_input(&renderer_ctx->pFormatCtx);
-	if (renderer_ctx->pFormatCtx) {
-		avformat_free_context(renderer_ctx->pFormatCtx);
+	avformat_close_input(&renderer_ctx->format_ctx);
+	if (renderer_ctx->format_ctx) {
+		avformat_free_context(renderer_ctx->format_ctx);
 	}
 	/* if (renderer_ctx->videoq) { */
 		/* chanfree(renderer_ctx->videoq); */
@@ -1419,7 +1419,7 @@ presenter_thread(void *arg)
 		}
 		LOG("<== received sample with idx: %d, pts: %.2fms from audio queue.", audioSample.idx, audioSample.pts);
 		//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
-		int ret = SDL_QueueAudio(renderer_ctx->audioDevId, audioSample.sample, audioSample.size);
+		int ret = SDL_QueueAudio(renderer_ctx->audio_devid, audioSample.sample, audioSample.size);
 		if (ret < 0) {
 			LOG("failed to write audio sample: %s", SDL_GetError());
 			free(audioSample.sample);
@@ -1427,7 +1427,7 @@ presenter_thread(void *arg)
 		}
 		LOG("queued audio sample to sdl device");
 
-		int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audioDevId);
+		int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audio_devid);
 		int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_out_channels;
 		double queue_duration = 1000.0 * audioq_size / bytes_per_sec;
 		int samples_queued = audioq_size / audioSample.size;
@@ -1733,11 +1733,11 @@ getAudioResampling(uint64_t channel_layout)
 void
 savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameIndex)
 {
-    AVFrame *pFrameRGB = nil;
+    AVFrame *frame_rgb = nil;
     uint8_t *buffer = nil;
 	if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 		// Convert the video picture to the target format for saving to disk
-	    pFrameRGB = av_frame_alloc();
+	    frame_rgb = av_frame_alloc();
 	    int numBytes;
 	    const int align = 32;
 	    numBytes = av_image_get_buffer_size(
@@ -1748,8 +1748,8 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 			);
 	    buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
 	    av_image_fill_arrays(
-			pFrameRGB->data,
-			pFrameRGB->linesize,
+			frame_rgb->data,
+			frame_rgb->linesize,
 			buffer,
 			AV_PIX_FMT_RGB24,
 			videoPicture->width,
@@ -1774,8 +1774,8 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 	        videoPicture->linesizes,
 	        0,
 	        videoPicture->height,
-	        pFrameRGB->data,
-	        pFrameRGB->linesize
+	        frame_rgb->data,
+	        frame_rgb->linesize
 	    );
     }
 	LOG("saving video picture to file ...");
@@ -1790,8 +1790,8 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
     }
     fprintf(pFile, "P6\n%d %d\n255\n", videoPicture->width, videoPicture->height);
 	if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
-	    for (y = 0; y < pFrameRGB->height; y++) {
-	        fwrite(pFrameRGB->data[0] + y * pFrameRGB->linesize[0], 1, videoPicture->width * 3, pFile);
+	    for (y = 0; y < frame_rgb->height; y++) {
+	        fwrite(frame_rgb->data[0] + y * frame_rgb->linesize[0], 1, videoPicture->width * 3, pFile);
 	    }
     }
     else if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
@@ -1800,7 +1800,7 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 	    }
     }
     fclose(pFile);
-    /* av_free_frame(pFrameRGB); */
+    /* av_free_frame(frame_rgb); */
 	if (buffer) {
 	    av_free(buffer);
     }
@@ -1818,8 +1818,8 @@ reset_renderer_ctx(RendererCtx *renderer_ctx)
 	renderer_ctx->fileserverfd = -1;
 	renderer_ctx->fileserverfid = nil;
 	renderer_ctx->fileserver = nil;
-	renderer_ctx->pIOCtx = nil;
-	renderer_ctx->pFormatCtx = nil;
+	renderer_ctx->io_ctx = nil;
+	renderer_ctx->format_ctx = nil;
 	renderer_ctx->current_codec_ctx = nil;
 	/* renderer_ctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
 	renderer_ctx->renderer_state = RSTATE_STOP;
@@ -1853,7 +1853,7 @@ reset_renderer_ctx(RendererCtx *renderer_ctx)
 	renderer_ctx->yuv_ctx = nil;
 	renderer_ctx->rgb_ctx = nil;
 	renderer_ctx->video_idx = 0;
-    renderer_ctx->pFrameRGB = nil;
+    renderer_ctx->frame_rgb = nil;
     renderer_ctx->rgbbuffer = nil;
     renderer_ctx->yuvbuffer = nil;
     renderer_ctx->w = 0;
@@ -1867,7 +1867,7 @@ reset_renderer_ctx(RendererCtx *renderer_ctx)
 	renderer_ctx->currentFrameIndex = 0;
 	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
 	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
-	renderer_ctx->audioDevId = -1;
+	renderer_ctx->audio_devid = -1;
 	renderer_ctx->audio_only = 0;
 }
 
@@ -2071,13 +2071,13 @@ threadmain(int argc, char **argv)
 		/* //} */
 
 		/* //fwrite(audioSample.sample, 1, audioSample.size, audio_out); */
-		/* int ret = SDL_QueueAudio(renderer_ctx->audioDevId, audioSample.sample, audioSample.size); */
+		/* int ret = SDL_QueueAudio(renderer_ctx->audio_devid, audioSample.sample, audioSample.size); */
 		/* if (ret < 0) { */
 			/* LOG("failed to write audio sample: %s", SDL_GetError()); */
 			/* free(audioSample.sample); */
 			/* continue; */
 		/* } */
-		/* int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audioDevId); */
+		/* int audioq_size = SDL_GetQueuedAudioSize(renderer_ctx->audio_devid); */
 
 		/* //int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * renderer_ctx->audio_ctx->channels; */
 		/* int bytes_per_sec = 2 * renderer_ctx->audio_ctx->sample_rate * 2; */
