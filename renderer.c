@@ -23,7 +23,6 @@
 
 // TODO:
 // 1. SDL video window
-// - center and crop video in sdl window
 // - redraw, resize sdl window
 // - fullscreen mode
 // 2. Seek
@@ -34,7 +33,8 @@
 // 4. Query renderer info (current position, state, audio volume) from 9P server
 // 5. Display single still images
 // 6. Fixes / refactoring / testing
-// - allow video scaling in decoder thread and in video thread
+// - fix memory leaks
+// - allow video scaling not only in decoder thread but also in presenter thread
 // - blanking screen on stop / eof doesn't work allways
 // - test keyboard / server input combinations (fuzz testing ...)
 // 7. Experiment with serving video and audio output channels via the 9P server
