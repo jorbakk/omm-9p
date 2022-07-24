@@ -74,19 +74,19 @@ static FILE *audio_out;
 
 void printloginfo(void)
 {
-    long            ms; // Milliseconds
-    time_t          s;  // Seconds
+	long            ms; // Milliseconds
+	time_t          s;  // Seconds
 	pid_t tid;
 	/* tid = syscall(SYS_gettid); */
 	tid = threadid();
 	timespec_get(&curtime, TIME_UTC);
-    /* clock_gettime(CLOCK_REALTIME, &curtime); */
-    s  = curtime.tv_sec;
-    ms = round(curtime.tv_nsec / 1.0e6); // Convert nanoseconds to milliseconds
-    if (ms > 999) {
-        s++;
-        ms = 0;
-    }
+	/* clock_gettime(CLOCK_REALTIME, &curtime); */
+	s  = curtime.tv_sec;
+	ms = round(curtime.tv_nsec / 1.0e6); // Convert nanoseconds to milliseconds
+	if (ms > 999) {
+	    s++;
+	    ms = 0;
+	}
 	fprintf(stderr, "%"PRIdMAX".%03ld %d│ ", (intmax_t)s, ms, tid);
 }
 
@@ -166,10 +166,10 @@ typedef struct RendererCtx
 	struct SwsContext *rgb_ctx;
 	SDL_AudioSpec      specs;
 	int                video_idx;
-    AVFrame           *frame_rgb;
-    uint8_t           *rgbbuffer;
-    uint8_t           *yuvbuffer;
-    int                w, h, aw, ah;
+	AVFrame           *frame_rgb;
+	uint8_t           *rgbbuffer;
+	uint8_t           *yuvbuffer;
+	int                w, h, aw, ah;
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
@@ -951,6 +951,7 @@ int
 alloc_buffers(RendererCtx *renderer_ctx)
 {
 	if (renderer_ctx->video_ctx) {
+		// rgb buffer for saving to disc
 	    renderer_ctx->frame_rgb = av_frame_alloc();
 	    int rgb_num_bytes;
 	    rgb_num_bytes = av_image_get_buffer_size(
@@ -969,12 +970,15 @@ alloc_buffers(RendererCtx *renderer_ctx)
 			renderer_ctx->video_ctx->height,
 			32
 	    );
+		// yuv buffer for displaying to screen
 	    int yuv_num_bytes = av_image_get_buffer_size(
 			AV_PIX_FMT_YUV420P,
-			/* renderer_ctx->video_ctx->width, */
-			/* renderer_ctx->video_ctx->height, */
-			renderer_ctx->w,
-			renderer_ctx->h,
+			renderer_ctx->video_ctx->width,
+			renderer_ctx->video_ctx->height,
+			/* renderer_ctx->w, */
+			/* renderer_ctx->h, */
+			/* renderer_ctx->aw, */
+			/* renderer_ctx->ah, */
 			32
 			);
 		renderer_ctx->yuvbuffer = (uint8_t *) av_malloc(yuv_num_bytes * sizeof(uint8_t));
@@ -1098,9 +1102,9 @@ create_pristine_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, V
 	av_image_copy(
 		videoPicture->planes,
 		//videoPicture->linesizes,
-              pFrame->linesize,
-              (uint8_t const**)pFrame->data,
-              pFrame->linesize,
+	          pFrame->linesize,
+	          (uint8_t const**)pFrame->data,
+	          pFrame->linesize,
 		renderer_ctx->current_codec_ctx->pix_fmt,
 		renderer_ctx->current_codec_ctx->width,
 		renderer_ctx->current_codec_ctx->height
@@ -1141,7 +1145,7 @@ create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 {
 	LOG("scaling video picture (height %d) to target size %dx%d before queueing",
 		renderer_ctx->current_codec_ctx->height, renderer_ctx->aw, renderer_ctx->ah);
-    videoPicture->frame = av_frame_alloc();
+	videoPicture->frame = av_frame_alloc();
 	av_image_fill_arrays(
 			videoPicture->frame->data,
 			videoPicture->frame->linesize,
@@ -1477,18 +1481,11 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	// set blit area x and y coordinates, width and height
 	// set video size here
 	/* SDL_Rect rect; */
-	/* rect.x = x; */
-	/* rect.y = y; */
-	/* rect.w = w; */
-	/* rect.h = h; */
 	/* rect.x = 0; */
-	/* rect.x = 100; */
 	/* rect.y = 0; */
-	/* rect.y = 100; */
-	/* rect.w = window_width; */
-	/* rect.h = window_height; */
-	/* rect.h = window_height - 100; */
-	// update the texture with the new pixel data
+	/* rect.w = renderer_ctx->aw; */
+	/* rect.w = renderer_ctx->ah; */
+	// update the texture with the video picture data
 	int textupd = SDL_UpdateYUVTexture(
 			renderer_ctx->sdl_texture,
 			/* &rect, */
@@ -1509,7 +1506,6 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	// copy a portion of the texture to the current rendering target
 	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, nil, nil);
 	// update the screen with any rendering performed since the previous call
-	/* LOG("displaying picture %d", videoPicture->idx); */
 	SDL_RenderPresent(renderer_ctx->sdl_renderer);
 }
 
@@ -1725,8 +1721,8 @@ getAudioResampling(uint64_t channel_layout)
 void
 savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameIndex)
 {
-    AVFrame *frame_rgb = nil;
-    uint8_t *buffer = nil;
+	AVFrame *frame_rgb = nil;
+	uint8_t *buffer = nil;
 	if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 		// Convert the video picture to the target format for saving to disk
 	    frame_rgb = av_frame_alloc();
@@ -1769,33 +1765,33 @@ savePicture(RendererCtx* renderer_ctx, VideoPicture *videoPicture, int frameInde
 	        frame_rgb->data,
 	        frame_rgb->linesize
 	    );
-    }
+	}
 	LOG("saving video picture to file ...");
-    FILE * pFile;
-    char szFilename[32];
-    int  y;
-    // Open file
-    sprintf(szFilename, "/tmp/%06d.ppm", frameIndex);
-    pFile = fopen(szFilename, "wb");
-    if (pFile == nil) {
-        return;
-    }
-    fprintf(pFile, "P6\n%d %d\n255\n", videoPicture->width, videoPicture->height);
+	FILE * pFile;
+	char szFilename[32];
+	int  y;
+	// Open file
+	sprintf(szFilename, "/tmp/%06d.ppm", frameIndex);
+	pFile = fopen(szFilename, "wb");
+	if (pFile == nil) {
+	    return;
+	}
+	fprintf(pFile, "P6\n%d %d\n255\n", videoPicture->width, videoPicture->height);
 	if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
 	    for (y = 0; y < frame_rgb->height; y++) {
 	        fwrite(frame_rgb->data[0] + y * frame_rgb->linesize[0], 1, videoPicture->width * 3, pFile);
 	    }
-    }
-    else if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
+	}
+	else if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
 	    for (y = 0; y < videoPicture->height; y++) {
 	        fwrite(videoPicture->rgbbuf + y * videoPicture->linesize, 1, videoPicture->width * 3, pFile);
 	    }
-    }
-    fclose(pFile);
-    /* av_free_frame(frame_rgb); */
+	}
+	fclose(pFile);
+	/* av_free_frame(frame_rgb); */
 	if (buffer) {
 	    av_free(buffer);
-    }
+	}
 	LOG("saved video picture.");
 }
 
@@ -1845,13 +1841,13 @@ reset_renderer_ctx(RendererCtx *renderer_ctx)
 	renderer_ctx->yuv_ctx = nil;
 	renderer_ctx->rgb_ctx = nil;
 	renderer_ctx->video_idx = 0;
-    renderer_ctx->frame_rgb = nil;
-    renderer_ctx->rgbbuffer = nil;
-    renderer_ctx->yuvbuffer = nil;
-    renderer_ctx->w = 0;
-    renderer_ctx->h = 0;
-    renderer_ctx->aw = 0;
-    renderer_ctx->ah = 0;
+	renderer_ctx->frame_rgb = nil;
+	renderer_ctx->rgbbuffer = nil;
+	renderer_ctx->yuvbuffer = nil;
+	renderer_ctx->w = 0;
+	renderer_ctx->h = 0;
+	renderer_ctx->aw = 0;
+	renderer_ctx->ah = 0;
 	// Seeking
 	renderer_ctx->seek_req = 0;
 	renderer_ctx->seek_flags = 0;
