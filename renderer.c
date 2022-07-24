@@ -140,7 +140,7 @@ typedef struct RendererCtx
 	int                decoder_tid;
 	int                presenter_tid;
 	// Audio Stream.
-	int                audioStream;
+	int                audio_stream;
 	AVCodecContext    *audio_ctx;
 	Channel           *audioq;
 	uint8_t            audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
@@ -157,7 +157,7 @@ typedef struct RendererCtx
 	SDL_Window        *sdl_window;
 	SDL_Texture       *sdl_texture;
 	SDL_Renderer      *sdl_renderer;
-	int                videoStream;
+	int                video_stream;
 	double             frame_rate;
 	double             frame_duration;
 	AVCodecContext    *video_ctx;
@@ -857,7 +857,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		case AVMEDIA_TYPE_AUDIO:
 		{
 			LOG("setting up audio stream context ...");
-			renderer_ctx->audioStream = stream_index;
+			renderer_ctx->audio_stream = stream_index;
 			renderer_ctx->audio_ctx = codecCtx;
 			renderer_ctx->audio_buf_size = 0;
 			renderer_ctx->audio_buf_index = 0;
@@ -875,7 +875,7 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 		case AVMEDIA_TYPE_VIDEO:
 		{
 			LOG("setting up video stream context ...");
-			renderer_ctx->videoStream = stream_index;
+			renderer_ctx->video_stream = stream_index;
 			renderer_ctx->video_ctx = codecCtx;
 			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
 			on_sdl_window_resize(renderer_ctx);
@@ -902,33 +902,33 @@ open_stream_components(RendererCtx *renderer_ctx)
 	if (_DEBUG_) {
 		av_dump_format(renderer_ctx->format_ctx, 0, renderer_ctx->filename, 0);
 	}
-	int videoStream = -1;
-	int audioStream = -1;
+	int video_stream = -1;
+	int audio_stream = -1;
 	for (int i = 0; i < renderer_ctx->format_ctx->nb_streams; i++)
 	{
-		if (renderer_ctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoStream < 0) {
-			videoStream = i;
+		if (renderer_ctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && video_stream < 0) {
+			video_stream = i;
 		}
-		if (renderer_ctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audioStream < 0) {
-			audioStream = i;
+		if (renderer_ctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audio_stream < 0) {
+			audio_stream = i;
 		}
 	}
-	if (videoStream == -1) {
+	if (video_stream == -1) {
 		LOG("Could not find video stream.");
 	}
 	else {
-		ret = open_stream_component(renderer_ctx, videoStream);
+		ret = open_stream_component(renderer_ctx, video_stream);
 		if (ret < 0) {
 			printf("Could not open video codec.\n");
 			return -1;
 		}
 		LOG("video stream component opened successfully.");
 	}
-	if (audioStream == -1) {
+	if (audio_stream == -1) {
 		LOG("Could not find audio stream.");
 	}
 	else {
-		ret = open_stream_component(renderer_ctx, audioStream);
+		ret = open_stream_component(renderer_ctx, audio_stream);
 		// check audio codec was opened correctly
 		if (ret < 0) {
 			LOG("Could not open audio codec.");
@@ -936,7 +936,7 @@ open_stream_components(RendererCtx *renderer_ctx)
 		}
 		LOG("audio stream component opened successfully.");
 	}
-	if (renderer_ctx->videoStream < 0 && renderer_ctx->audioStream < 0) {
+	if (renderer_ctx->video_stream < 0 && renderer_ctx->audio_stream < 0) {
 		LOG("both video and audio stream missing");
 		return -1;
 	}
@@ -1007,7 +1007,7 @@ int
 write_packet_to_decoder(RendererCtx *renderer_ctx, AVPacket* packet)
 {
 	AVCodecContext *codecCtx = nil;
-	if (packet->stream_index == renderer_ctx->videoStream) {
+	if (packet->stream_index == renderer_ctx->video_stream) {
 		LOG("sending video packet of size %d to decoder", packet->size);
 		codecCtx = renderer_ctx->video_ctx;
 	}
@@ -1822,7 +1822,7 @@ reset_renderer_ctx(RendererCtx *renderer_ctx)
 	renderer_ctx->server_tid = 0;
 	renderer_ctx->decoder_tid = 0;
 	renderer_ctx->presenter_tid = 0;
-	renderer_ctx->audioStream = -1;
+	renderer_ctx->audio_stream = -1;
 	renderer_ctx->audio_ctx = nil;
 	renderer_ctx->audioq = nil;
 	renderer_ctx->audio_buf_size = 0;
@@ -1836,7 +1836,7 @@ reset_renderer_ctx(RendererCtx *renderer_ctx)
 	renderer_ctx->sdl_window = nil;
 	renderer_ctx->sdl_texture = nil;
 	renderer_ctx->sdl_renderer = nil;
-	renderer_ctx->videoStream = -1;
+	renderer_ctx->video_stream = -1;
 	renderer_ctx->frame_rate = 0.0;
 	renderer_ctx->frame_duration = 0.0;
 	renderer_ctx->video_ctx = nil;
