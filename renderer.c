@@ -713,7 +713,7 @@ resize_video(RendererCtx *renderer_ctx)
 		renderer_ctx->video_ctx->width,
 		renderer_ctx->video_ctx->height,
 		renderer_ctx->video_ctx->pix_fmt,
-		// set displayed video picture size here to actually scale the image
+		// set video size for the ffmpeg image scaler
 		renderer_ctx->aw,
 		renderer_ctx->ah,
 		AV_PIX_FMT_YUV420P,
@@ -728,8 +728,9 @@ resize_video(RendererCtx *renderer_ctx)
 	renderer_ctx->sdl_texture = SDL_CreateTexture(
 		renderer_ctx->sdl_renderer,
 		SDL_PIXELFORMAT_YV12,
-		SDL_TEXTUREACCESS_STREAMING,
-		// set texture size to displayed video picture size here
+		/* SDL_TEXTUREACCESS_STREAMING, */
+		SDL_TEXTUREACCESS_TARGET,  // fast update w/o locking, can be used as a render target
+		// set video size as the dimensions of the texture
 		renderer_ctx->aw,
 		renderer_ctx->ah
 		);
@@ -951,6 +952,19 @@ int
 alloc_buffers(RendererCtx *renderer_ctx)
 {
 	if (renderer_ctx->video_ctx) {
+		// yuv buffer for displaying to screen
+	    int yuv_num_bytes = av_image_get_buffer_size(
+			AV_PIX_FMT_YUV420P,
+			renderer_ctx->w,
+			renderer_ctx->h,
+			/* renderer_ctx->aw, */
+			/* renderer_ctx->ah, */
+			// crash on bunny with buffer size below
+			/* renderer_ctx->video_ctx->width, */
+			/* renderer_ctx->video_ctx->height, */
+			32
+			);
+		renderer_ctx->yuvbuffer = (uint8_t *) av_malloc(yuv_num_bytes * sizeof(uint8_t));
 		// rgb buffer for saving to disc
 	    renderer_ctx->frame_rgb = av_frame_alloc();
 	    int rgb_num_bytes;
@@ -970,18 +984,6 @@ alloc_buffers(RendererCtx *renderer_ctx)
 			renderer_ctx->video_ctx->height,
 			32
 	    );
-		// yuv buffer for displaying to screen
-	    int yuv_num_bytes = av_image_get_buffer_size(
-			AV_PIX_FMT_YUV420P,
-			renderer_ctx->video_ctx->width,
-			renderer_ctx->video_ctx->height,
-			/* renderer_ctx->w, */
-			/* renderer_ctx->h, */
-			/* renderer_ctx->aw, */
-			/* renderer_ctx->ah, */
-			32
-			);
-		renderer_ctx->yuvbuffer = (uint8_t *) av_malloc(yuv_num_bytes * sizeof(uint8_t));
 	}
 	return 0;
 }
@@ -1479,16 +1481,19 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 		videoPicture->idx,
 		renderer_ctx->current_video_time - renderer_ctx->previous_video_time - renderer_ctx->frame_duration);
 	// set blit area x and y coordinates, width and height
-	// set video size here
-	/* SDL_Rect rect; */
-	/* rect.x = 0; */
-	/* rect.y = 0; */
-	/* rect.w = renderer_ctx->aw; */
-	/* rect.w = renderer_ctx->ah; */
+	SDL_Rect text_update_rect;
+	text_update_rect.x = 0;
+	text_update_rect.y = 0;
+	text_update_rect.w = renderer_ctx->aw;
+	text_update_rect.w = renderer_ctx->ah;
 	// update the texture with the video picture data
+	int tw, th;
+	SDL_QueryTexture(renderer_ctx->sdl_texture, nil, nil, &tw, &th);
+	LOG("updating texture of size: %dx%d", tw, th);
 	int textupd = SDL_UpdateYUVTexture(
 			renderer_ctx->sdl_texture,
-			/* &rect, */
+			// set video size when updating sdl texture
+			/* &text_update_rect, */
 			nil,
 			videoPicture->frame->data[0],
 			videoPicture->frame->linesize[0],
@@ -1504,7 +1509,15 @@ display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture)
 	SDL_SetRenderDrawColor(renderer_ctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
 	SDL_RenderClear(renderer_ctx->sdl_renderer);
 	// copy a portion of the texture to the current rendering target
+	// set video size when copying sdl texture to sdl renderer
+	SDL_Rect blit_update_rect;
+	blit_update_rect.x = 0;
+	blit_update_rect.y = 0;
+	blit_update_rect.w = renderer_ctx->aw;
+	blit_update_rect.w = renderer_ctx->ah;
+	// NOTE texture will be stretched to blit_update_rect
 	SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, nil, nil);
+	/* SDL_RenderCopy(renderer_ctx->sdl_renderer, renderer_ctx->sdl_texture, &text_update_rect, &blit_update_rect); */
 	// update the screen with any rendering performed since the previous call
 	SDL_RenderPresent(renderer_ctx->sdl_renderer);
 }
