@@ -22,7 +22,7 @@
 
 
 // TODO:
-// 1. Seek
+// 1. Seek / audio volume control
 // 2. Fixes / refactoring / testing
 // - fix memory leaks
 // - allow video scaling not only in decoder thread but also in presenter thread
@@ -150,6 +150,7 @@ typedef struct RendererCtx
 	double             current_video_time;
 	double             previous_video_time;
 	int64_t            audio_start_rt;
+	AVRational         audio_timebase;
 	// Video Stream.
 	SDL_Window        *sdl_window;
 	SDL_Texture       *sdl_texture;
@@ -168,12 +169,11 @@ typedef struct RendererCtx
 	uint8_t           *yuvbuffer;
 	int                w, h, aw, ah;
 	SDL_Rect           blit_copy_rect;
+	AVRational         video_timebase;
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
 	int64_t            seek_pos;
-	// Maximum number of frames to be decoded
-	int	               currentFrameIndex;
 	int                frame_fmt;
 	SDL_AudioDeviceID  audio_devid;
 	int                audio_only;
@@ -574,6 +574,9 @@ poll_cmd(RendererCtx *renderer_ctx)
 				blank_window(renderer_ctx);
 				return -1;
 			}
+			else if (cmd.cmd == CMD_SEEK) {
+				/* renderer_ctx->renderer_state = RSTATE_SEEK; */
+			}
 			else if (cmd.cmd == CMD_QUIT) {
 				return 1;
 			}
@@ -876,6 +879,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 			/* SDL_PauseAudio(0); */
 			SDL_PauseAudioDevice(renderer_ctx->audio_devid, 0);
 			LOG("sdl_pauseaudio(0) called.");
+			renderer_ctx->audio_timebase = renderer_ctx->format_ctx->streams[stream_index]->time_base;
+			LOG("timebase of audio stream: %d/%d",
+				renderer_ctx->audio_timebase.num, renderer_ctx->audio_timebase.den);
 		}
 			break;
 		case AVMEDIA_TYPE_VIDEO:
@@ -885,6 +891,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 			renderer_ctx->video_ctx = codecCtx;
 			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
 			resize_video(renderer_ctx);
+			renderer_ctx->video_timebase = renderer_ctx->format_ctx->streams[stream_index]->time_base;
+			LOG("timebase of video stream: %d/%d",
+				renderer_ctx->video_timebase.num, renderer_ctx->video_timebase.den);
 		}
 			break;
 		default:
@@ -1825,6 +1834,8 @@ reset_renderer_ctx(RendererCtx *renderer_ctx)
 	renderer_ctx->current_video_time = 0.0;
 	renderer_ctx->previous_video_time = 0.0;
 	renderer_ctx->audio_start_rt = 0;
+	renderer_ctx->audio_timebase.num = 0;
+	renderer_ctx->audio_timebase.den = 0;
 	// Video Stream.
 	renderer_ctx->sdl_window = nil;
 	renderer_ctx->sdl_texture = nil;
@@ -1844,11 +1855,12 @@ reset_renderer_ctx(RendererCtx *renderer_ctx)
 	renderer_ctx->h = 0;
 	renderer_ctx->aw = 0;
 	renderer_ctx->ah = 0;
+	renderer_ctx->video_timebase.num = 0;
+	renderer_ctx->video_timebase.den = 0;
 	// Seeking
 	renderer_ctx->seek_req = 0;
 	renderer_ctx->seek_flags = 0;
 	renderer_ctx->seek_pos = 0;
-	renderer_ctx->currentFrameIndex = 0;
 	/* renderer_ctx->frame_fmt = FRAME_FMT_RGB; */
 	renderer_ctx->frame_fmt = FRAME_FMT_YUV;
 	renderer_ctx->audio_devid = -1;
@@ -1928,6 +1940,11 @@ threadmain(int argc, char **argv)
 						case SDLK_RETURN:
 						{
 							cmd.cmd = CMD_PLAY;
+						}
+						break;
+						case SDLK_RIGHT:
+						{
+							cmd.cmd = CMD_SEEK;
 						}
 						break;
 					}
