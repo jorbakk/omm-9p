@@ -259,7 +259,7 @@ enum
 
 /* AVPacket flush_pkt; */
 
-void saveFrame(AVFrame *pFrame, int width, int height, int frameIndex);
+void saveFrame(AVFrame *frame, int width, int height, int frameIndex);
 void display_picture(RendererCtx *renderer_ctx, VideoPicture *videoPicture);
 void savePicture(RendererCtx *renderer_ctx, VideoPicture *pPic, int frameIndex);
 int open_stream_component(RendererCtx * renderer_ctx, int stream_index);
@@ -1062,10 +1062,10 @@ write_packet_to_decoder(RendererCtx *renderer_ctx, AVPacket* packet)
 
 
 int
-read_frame_from_decoder(RendererCtx *renderer_ctx, AVFrame *pFrame)
+read_frame_from_decoder(RendererCtx *renderer_ctx, AVFrame *frame)
 {
 	LOG("reading decoded frame from decoder ...");
-	int ret = avcodec_receive_frame(renderer_ctx->current_codec_ctx, pFrame);
+	int ret = avcodec_receive_frame(renderer_ctx->current_codec_ctx, frame);
 	// check if entire frame was decoded
 	if (ret == AVERROR(EAGAIN)) {
 		LOG("no more decoded frames to squeeze out of current av packet");
@@ -1089,22 +1089,22 @@ read_frame_from_decoder(RendererCtx *renderer_ctx, AVFrame *pFrame)
 
 
 int
-create_pristine_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
+create_pristine_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *frame, VideoPicture *videoPicture)
 {
 	// FIXME sending pristine frames over the video picture channel doesn't work
 	videoPicture->pix_fmt = renderer_ctx->current_codec_ctx->pix_fmt;
 	LOG("AV_NUM_DATA_POINTERS: %d", AV_NUM_DATA_POINTERS);
-	/* memcpy(videoPicture->linesizes, pFrame->linesize, 4 * sizeof(uint8_t*) / 8); */
-	/* memcpy(videoPicture->linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS); */
-	/* memcpy(videoPicture->linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
-	/* memcpy(videoPicture->linesizes, pFrame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*) / 8); */
-	/* memcpy(videoPicture->planes, pFrame->data, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
-	/* memcpy(videoPicture->planes, pFrame->data, 4 * sizeof(uint8_t*) / 8); */
+	/* memcpy(videoPicture->linesizes, frame->linesize, 4 * sizeof(uint8_t*) / 8); */
+	/* memcpy(videoPicture->linesizes, frame->linesize, AV_NUM_DATA_POINTERS); */
+	/* memcpy(videoPicture->linesizes, frame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
+	/* memcpy(videoPicture->linesizes, frame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*) / 8); */
+	/* memcpy(videoPicture->planes, frame->data, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
+	/* memcpy(videoPicture->planes, frame->data, 4 * sizeof(uint8_t*) / 8); */
 	// FIXME avoid hardcoding parameter align to 32 ...
 	LOG("allocating video picture for queueing ...");
 	int frame_size = av_image_alloc(
 		videoPicture->planes,
-		pFrame->linesize,
+		frame->linesize,
 		renderer_ctx->current_codec_ctx->width,
 		renderer_ctx->current_codec_ctx->height,
 		renderer_ctx->current_codec_ctx->pix_fmt,
@@ -1115,9 +1115,9 @@ create_pristine_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, V
 	av_image_copy(
 		videoPicture->planes,
 		//videoPicture->linesizes,
-	          pFrame->linesize,
-	          (uint8_t const**)pFrame->data,
-	          pFrame->linesize,
+	          frame->linesize,
+	          (uint8_t const**)frame->data,
+	          frame->linesize,
 		renderer_ctx->current_codec_ctx->pix_fmt,
 		renderer_ctx->current_codec_ctx->width,
 		renderer_ctx->current_codec_ctx->height
@@ -1128,18 +1128,18 @@ create_pristine_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, V
 
 
 int
-create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
+create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *frame, VideoPicture *videoPicture)
 {
 	sws_scale(
 	    renderer_ctx->rgb_ctx,
-	    (uint8_t const * const *)pFrame->data,
-	    pFrame->linesize,
+	    (uint8_t const * const *)frame->data,
+	    frame->linesize,
 	    0,
 	    renderer_ctx->current_codec_ctx->height,
 	    renderer_ctx->frame_rgb->data,
 	    renderer_ctx->frame_rgb->linesize
 	);
-	// av_frame_unref(pFrame);
+	// av_frame_unref(frame);
 	videoPicture->linesize = renderer_ctx->frame_rgb->linesize[0];
 	int rgb_num_bytes = av_image_get_buffer_size(
 		AV_PIX_FMT_RGB24,
@@ -1154,7 +1154,7 @@ create_rgb_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 
 
 int
-create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoPicture *videoPicture)
+create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *frame, VideoPicture *videoPicture)
 {
 	LOG("scaling video picture (height %d) to target size %dx%d before queueing",
 		renderer_ctx->current_codec_ctx->height, renderer_ctx->aw, renderer_ctx->ah);
@@ -1171,8 +1171,8 @@ create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 	);
 	sws_scale(
 	    renderer_ctx->yuv_ctx,
-	    (uint8_t const * const *)pFrame->data,
-	    pFrame->linesize,
+	    (uint8_t const * const *)frame->data,
+	    frame->linesize,
 	    0,
 	    // set video height here to select the slice in the *SOURCE* picture to scale (usually the whole picture)
 	    renderer_ctx->current_codec_ctx->height,
@@ -1185,12 +1185,12 @@ create_yuv_picture_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, VideoP
 
 
 int
-create_sample_from_frame(RendererCtx *renderer_ctx, AVFrame *pFrame, AudioSample *audioSample)
+create_sample_from_frame(RendererCtx *renderer_ctx, AVFrame *frame, AudioSample *audioSample)
 {
 	int bytes_per_sec = 2 * renderer_ctx->current_codec_ctx->sample_rate * renderer_ctx->audio_out_channels;
 	int data_size = resample_audio(
 			renderer_ctx,
-			pFrame,
+			frame,
 			AV_SAMPLE_FMT_S16,
 			renderer_ctx->audio_buf);
 	double sample_duration = 1000.0 * data_size / bytes_per_sec;
@@ -1272,8 +1272,8 @@ start:
 		LOG("Could not allocate AVPacket.");
 		goto start;
 	}
-	AVFrame *pFrame = av_frame_alloc();
-	if (pFrame == nil) {
+	AVFrame *frame = av_frame_alloc();
+	if (frame == nil) {
 		printf("Could not allocate AVFrame.\n");
 		goto start;
 	}
@@ -1299,7 +1299,7 @@ start:
 		// of one packet read from the demuxer
 		int decoder_ret = 0;
 		while (decoder_ret == 0) {
-			decoder_ret = read_frame_from_decoder(renderer_ctx, pFrame);
+			decoder_ret = read_frame_from_decoder(renderer_ctx, frame);
 			if (decoder_ret == -1) {
 				goto start;
 			}
@@ -1324,17 +1324,17 @@ start:
 					.pts = video_pts,
 					};
 				if (renderer_ctx->frame_fmt == FRAME_FMT_PRISTINE) {
-					if (create_pristine_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
+					if (create_pristine_picture_from_frame(renderer_ctx, frame, &videoPicture) == 2) {
 						break;
 					}
 				}
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_RGB) {
-					if (create_rgb_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
+					if (create_rgb_picture_from_frame(renderer_ctx, frame, &videoPicture) == 2) {
 						break;
 					}
 			    }
 				else if (renderer_ctx->frame_fmt == FRAME_FMT_YUV) {
-					if (create_yuv_picture_from_frame(renderer_ctx, pFrame, &videoPicture) == 2) {
+					if (create_yuv_picture_from_frame(renderer_ctx, frame, &videoPicture) == 2) {
 						break;
 					}
 			    }
@@ -1348,7 +1348,7 @@ start:
 					.idx = renderer_ctx->audio_idx,
 					.sample = malloc(sizeof(renderer_ctx->audio_buf)),
 					};
-				if (create_sample_from_frame(renderer_ctx, pFrame, &audioSample) == 2) {
+				if (create_sample_from_frame(renderer_ctx, frame, &audioSample) == 2) {
 					break;
 				}
 				audio_pts += audioSample.duration;
@@ -1360,7 +1360,7 @@ start:
 			}
 		}
 		av_packet_unref(packet);
-		av_frame_unref(pFrame);
+		av_frame_unref(frame);
 	}
 
 quit:
