@@ -22,23 +22,22 @@
 
 
 // TODO:
-// 1. Audio volume control
-// 2. Fixes
+// 1. Fixes
 // - memory leaks
 // - seek
 // - blanking screen on stop / eof
 // - responsiveness to keyboard input
-// 3. AV sync
+// 2. AV sync
 // - decrease video picture display rate variation further
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
-// 4. Query renderer info (current position, state, audio volume) from 9P server
-// 5. Display single still images
-// 6. Refactoring / testing
+// 3. Query renderer info (current position, state, audio volume) from 9P server
+// 4. Display single still images
+// 5. Refactoring / testing
 // - allow video scaling not only in decoder thread but also in presenter thread
 // - test keyboard / server input combinations (fuzz testing ...)
-// 7. Experiment with serving video and audio output channels via the 9P server
-// 8. Build renderer into drawterm-av
+// 6. Experiment with serving video and audio output channels via the 9P server
+// 7. Build renderer into drawterm-av
 
 // Thread layout:
 //   main_thread (event loop)
@@ -144,6 +143,7 @@ typedef struct RendererCtx
 	AVCodecContext    *audio_ctx;
 	Channel           *audioq;
 	uint8_t            audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
+	uint8_t            mixed_audio_buf[(MAX_AUDIO_FRAME_SIZE * 3) /2];
 	unsigned int       audio_buf_size;
 	unsigned int       audio_buf_index;
 	AVFrame            audio_frame;
@@ -155,6 +155,7 @@ typedef struct RendererCtx
 	int64_t            audio_start_rt;
 	AVRational         audio_timebase;
 	double             audio_tbd;
+	int                audio_vol;
 	// Video Stream.
 	SDL_Window        *sdl_window;
 	SDL_Texture       *sdl_texture;
@@ -249,6 +250,7 @@ enum
 	CMD_SEEK,
 	CMD_QUIT,
 	CMD_SET,
+	CMD_VOL,
 	CMD_NONE,
 };
 
@@ -462,6 +464,9 @@ srvwrite(Req *r)
 	if (strncmp(cmdstr, "set", 3) == 0) {
 		command.cmd = CMD_SET;
 	}
+	else if (strncmp(cmdstr, "vol", 3) == 0) {
+		command.cmd = CMD_VOL;
+	}
 	else if (strncmp(cmdstr, "stop", 4) == 0) {
 		command.cmd = CMD_STOP;
 	}
@@ -583,6 +588,12 @@ poll_cmd(RendererCtx *rctx)
 				av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0);
 				av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0);
 				/* rctx->renderer_state = RSTATE_SEEK; */
+			}
+			else if (cmd.cmd == CMD_VOL) {
+				int vol = atoi(cmd.arg);
+				if (vol >=0 && vol <= 100) {
+					rctx->audio_vol = vol;
+				}
 			}
 			else if (cmd.cmd == CMD_QUIT) {
 				return 1;
@@ -1443,7 +1454,10 @@ presenter_thread(void *arg)
 		}
 		LOG("<== received sample with idx: %d, pts: %.2fms from audio queue.", audioSample.idx, audioSample.pts);
 		//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
-		int ret = SDL_QueueAudio(rctx->audio_devid, audioSample.sample, audioSample.size);
+		SDL_memset(rctx->mixed_audio_buf, 0, audioSample.size);
+		SDL_MixAudioFormat(rctx->mixed_audio_buf, audioSample.sample, rctx->specs.format, audioSample.size, (rctx->audio_vol / 100.0) * SDL_MIX_MAXVOLUME);
+		int ret = SDL_QueueAudio(rctx->audio_devid, rctx->mixed_audio_buf, audioSample.size);
+		/* int ret = SDL_QueueAudio(rctx->audio_devid, audioSample.sample, audioSample.size); */
 		if (ret < 0) {
 			LOG("failed to write audio sample: %s", SDL_GetError());
 			free(audioSample.sample);
@@ -1851,6 +1865,8 @@ reset_rctx(RendererCtx *rctx)
 	rctx->audio_start_rt = 0;
 	rctx->audio_timebase.num = 0;
 	rctx->audio_timebase.den = 0;
+	rctx->audio_tbd = 0.0;
+	rctx->audio_vol = 100;
 	// Video Stream.
 	rctx->sdl_window = nil;
 	rctx->sdl_texture = nil;
@@ -1872,6 +1888,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->ah = 0;
 	rctx->video_timebase.num = 0;
 	rctx->video_timebase.den = 0;
+	rctx->video_tbd = 0.0;
 	// Seeking
 	rctx->seek_req = 0;
 	rctx->seek_flags = 0;
