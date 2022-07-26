@@ -11,16 +11,17 @@
  ***************************************************************************/
 
 #include <iostream>
+#include <fstream>
 
 #include <Poco/Timestamp.h>
 
-#include <Omm/Util.h>
-#include <Omm/Dvb/Device.h>
-#include <Omm/Dvb/Frontend.h>
-#include <Omm/Dvb/Transponder.h>
-#include <Omm/Dvb/Service.h>
-#include <Omm/Dvb/TransportStream.h>
-#include <fstream>
+#include "Log.h"
+// #include <Omm/Util.h>
+#include "Device.h"
+#include "Frontend.h"
+#include "Transponder.h"
+#include "Service.h"
+#include "TransportStream.h"
 
 
 void
@@ -36,7 +37,7 @@ recordService(std::string serviceName)
         Omm::Dvb::Service* pService = pTransponder->getService(serviceName);
         if (pService && pService->getStatus() == Omm::Dvb::Service::StatusRunning && !pService->getScrambled()
                 && (pService->isAudio() || pService->isSdVideo())) {
-            LOGNS(Omm::Dvb, dvb, information, "recording service: " + serviceName);
+            LOG(dvb, information, "recording service: " + serviceName);
             std::istream* pDvbStream = pDevice->getStream(serviceName);
             if (pDvbStream) {
                 std::ofstream serviceStream((serviceName + std::string(".ts")).c_str());
@@ -45,7 +46,7 @@ recordService(std::string serviceName)
                 while (t.elapsed() < maxTime) {
                     pDvbStream->read(buf, bufSize);
                     serviceStream.write(buf, bufSize);
-                    LOGNS(Omm::Dvb, dvb, debug, "received stream packets: " + Poco::NumberFormatter::format(streamBufPacketCount));
+                    LOG(dvb, debug, "received stream packets: " + Poco::NumberFormatter::format(streamBufPacketCount));
                 }
                 pDevice->freeStream(pDvbStream);
             }

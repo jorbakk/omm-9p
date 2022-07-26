@@ -29,7 +29,7 @@
 #include <Poco/DOM/Document.h>
 #include "Poco/Notification.h"
 
-#include "../AvStream.h"
+#include "AvStream.h"
 
 namespace Omm {
 namespace Dvb {

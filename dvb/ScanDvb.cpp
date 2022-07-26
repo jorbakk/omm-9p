@@ -12,8 +12,8 @@
 
 #include <Poco/StringTokenizer.h>
 
-#include <Omm/Dvb/Device.h>
-#include <Omm/Dvb/Frontend.h>
+#include "Device.h"
+#include "Frontend.h"
 
 
 int
