@@ -38,6 +38,7 @@
 // - test keyboard / server input combinations (fuzz testing ...)
 // 6. Experiment with serving video and audio output channels via the 9P server
 // 7. Build renderer into drawterm-av
+// 8. Support local files, not only 9P server (maybe also other protocols like http ...)
 
 // Thread layout:
 //   main_thread (event loop)
