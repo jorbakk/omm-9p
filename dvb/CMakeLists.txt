@@ -6,6 +6,8 @@ ${CMAKE_CURRENT_SOURCE_DIR}
 ${CMAKE_MODULE_PATH}
 )
 
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wno-format-security")
+
 find_package(LinuxDVB)
 
 if(LINUXDVB_FOUND)
@@ -27,9 +29,10 @@ add_resources(TransponderData
 )
 
 set(OMM_DVB_LIB_SRCS
+AvStream.cpp
 Descriptor.cpp
 Device.cpp
-DvbLogger.cpp
+#DvbLogger.cpp
 Section.cpp
 Stream.cpp
 Service.cpp

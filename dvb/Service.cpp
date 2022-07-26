@@ -33,7 +33,6 @@
 #include <stack>
 
 #include "Log.h"
-#include "DvbLogger.h"
 #include "Stream.h"
 #include "TransportStream.h"
 #include "Section.h"

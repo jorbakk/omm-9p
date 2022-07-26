@@ -16,13 +16,15 @@
 #include <unistd.h>
 #include <cstring>
 
+#include <iostream>
+
 #include <Poco/BufferedStreamBuf.h>
 //#include <Poco/UnbufferedStreamBuf.h>
 #include <Poco/ByteOrder.h>
 #include <Poco/AtomicCounter.h>
 #include <Poco/String.h>
 
-/* #include "../AvStream.h" */
+#include "../AvStream.h"
 
 
 namespace Omm {

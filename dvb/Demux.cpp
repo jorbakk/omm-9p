@@ -33,7 +33,7 @@
 #include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/DocumentFragment.h>
 
-#include "DvbLogger.h"
+#include "Log.h"
 #include "Stream.h"
 #include "TransportStream.h"
 #include "Section.h"

@@ -10,8 +10,9 @@
 |  it under the terms of the MIT License                                    |
  ***************************************************************************/
 
+#include <Poco/NumberFormatter.h>
+
 #include "Log.h"
-#include "DvbLogger.h"
 #include "Descriptor.h"
 #include "Service.h"
 #include "Transponder.h"

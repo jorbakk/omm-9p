@@ -30,7 +30,7 @@
 #include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 
-#include "DvbLogger.h"
+#include "Log.h"
 #include "Service.h"
 #include "Transponder.h"
 #include "Frontend.h"

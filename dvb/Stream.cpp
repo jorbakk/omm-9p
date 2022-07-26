@@ -28,7 +28,6 @@
 #include <Poco/DOM/Document.h>
 
 #include "Log.h"
-#include "DvbLogger.h"
 #include "Stream.h"
 #include "ElementaryStream.h"
 #include "Mux.h"

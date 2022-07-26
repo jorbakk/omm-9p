@@ -15,7 +15,7 @@
 
 #include <Poco/Types.h>
 
-#include "DvbLogger.h"
+#include "Log.h"
 #include "Remux.h"
 #include "Device.h"
 #include "TransportStream.h"

@@ -12,13 +12,13 @@
 
 #include <Poco/Checksum.h>
 
+#include "Log.h"
 #include "Descriptor.h"
 #include "Section.h"
 #include "Demux.h"
 #include "Stream.h"
-#include "Dvb/Section.h"
-#include "DvbLogger.h"
-#include "Dvb/Service.h"
+#include "Section.h"
+#include "Service.h"
 
 
 namespace Omm {

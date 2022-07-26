@@ -14,7 +14,6 @@
 #include <Poco/Types.h>
 #include <string.h>
 
-#include "DvbLogger.h"
 #include "ElementaryStream.h"
 
 

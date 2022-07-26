@@ -36,7 +36,7 @@
 #include <Poco/Zip/ZipStream.h>
 #include <Poco/StringTokenizer.h>
 
-#include "DvbLogger.h"
+#include "Log.h"
 #include "Descriptor.h"
 #include "Section.h"
 #include "Stream.h"
@@ -47,10 +47,10 @@
 #include "Dvr.h"
 #include "Frontend.h"
 #include "Device.h"
-#include "Dvb/Transponder.h"
-#include "Dvb/Service.h"
-#include "Dvb/Section.h"
-#include "Dvb/Remux.h"
+#include "Transponder.h"
+#include "Service.h"
+#include "Section.h"
+#include "Remux.h"
 
 
 namespace Omm {

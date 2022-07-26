@@ -15,7 +15,6 @@
 #include <Poco/Timestamp.h>
 
 #include <Omm/Util.h>
-#include <Omm/Dvb/DvbLogger.h>
 #include <Omm/Dvb/Device.h>
 #include <Omm/Dvb/Frontend.h>
 #include <Omm/Dvb/Transponder.h>

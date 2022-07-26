@@ -12,7 +12,7 @@
 
 #include <fcntl.h>
 
-#include "DvbLogger.h"
+#include "Log.h"
 #include "DvbUtil.h"
 #include "Dvr.h"
 #include "Device.h"

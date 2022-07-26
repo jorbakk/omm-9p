@@ -34,7 +34,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/Condition.h>
 
-/* #include "../AvStream.h" */
+#include "../AvStream.h"
 
 namespace Omm {
 namespace Dvb {

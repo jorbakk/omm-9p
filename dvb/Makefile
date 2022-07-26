@@ -1,11 +1,11 @@
 LIBS := -lm -lPocoUtil -lPocoFoundation
 
-all: build/resgen build/libommdvb.so
+all: build/resgen build/libommdvb.a
 
 build/resgen: resgen.cpp
 	clang -g -o build/resgen -Wl,--copy-dt-needed-entries $(CFLAGS) $(LIBS) resgen.cpp
 
-build/libommdvb.so: CMakeLists.txt
+build/libommdvb.a: CMakeLists.txt
 	cmake -S . -B build
 	make -C build
 
