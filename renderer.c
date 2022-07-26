@@ -108,12 +108,6 @@ void printloginfo(void)
 #define THREAD_STACK_SIZE 1024 * 1024 * 10
 #define avctxBufferSize 8192 * 10
 
-// FIXME saving frames with FRAME_FMT_PRISTINE = 1 results in random noise images,
-//       FRAME_FMT_PRISTINE = 0 crashes
-#define FRAME_FMT_PRISTINE 1
-#define FRAME_FMT_RGB 1
-#define FRAME_FMT_YUV 2
-
 
 typedef struct RendererCtx
 {
@@ -252,6 +246,13 @@ enum
 	CMD_SET,
 	CMD_VOL,
 	CMD_NONE,
+};
+
+enum
+{
+	FRAME_FMT_PRISTINE,
+	FRAME_FMT_RGB,
+	FRAME_FMT_YUV,
 };
 
 enum
@@ -1534,7 +1535,7 @@ display_picture(RendererCtx *rctx, VideoPicture *videoPicture)
 		LOG("failed to update sdl texture: %s", SDL_GetError());
 	}
 	// clear the current rendering target with the drawing color
-	SDL_SetRenderDrawColor(rctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);  // FIXME needed ...?
+	SDL_SetRenderDrawColor(rctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 	SDL_RenderClear(rctx->sdl_renderer);
 	// copy and place a portion of the texture to the current rendering target
 	// set video size when copying sdl texture to sdl renderer. Texture will be stretched to blit_copy_rect!
