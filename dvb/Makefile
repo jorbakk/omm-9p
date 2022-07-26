@@ -12,14 +12,14 @@ build/libommdvb.so: CMakeLists.txt build/resgen
 	cmake -S . -B build
 	make -C build
 
-# build/tunedvb: TuneDvb.cpp build/libommdvb.a
-	# # FIXME linking of static lib libommdvb.a fails, note the order of the libs ... (build libommdvb.so instead?)
-	# # clang -g -o build/tunedvb -Wl,--copy-dt-needed-entries $(CFLAGS) $(LIBS) -Lbuild -lommdvb TuneDvb.cpp
+build/tunedvb: TuneDvb.cpp build/libommdvb.a
+	# FIXME linking of static lib libommdvb.a fails, note the order of the libs ... (build libommdvb.so instead?)
+	clang -g -o build/tunedvb -Wl,--copy-dt-needed-entries $(CFLAGS) $(LIBS) -Lbuild -lommdvb TuneDvb.cpp
 	# clang -g -c -o build/tunedvb.o -Wl,--copy-dt-needed-entries $(CFLAGS) TuneDvb.cpp
 	# clang -o build/tunedvb $(LIBS) build/tunedvb.o build/libommdvb.a $(LIBS) build/tunedvb.o build/libommdvb.a $(LIBS) build/tunedvb.o build/libommdvb.a
 
-# build/scandvb: ScanDvb.cpp build/libommdvb.a
-#	clang -g -o build/scandvb -Wl,--copy-dt-needed-entries $(CFLAGS) $(LIBS) -Lbuild -lommdvb ScanDvb.cpp
+build/scandvb: ScanDvb.cpp build/libommdvb.a
+	clang -g -o build/scandvb -Wl,--copy-dt-needed-entries $(CFLAGS) $(LIBS) -Lbuild -lommdvb ScanDvb.cpp
 
 clean:
 	rm -r build/*
