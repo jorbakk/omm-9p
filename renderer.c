@@ -23,19 +23,22 @@
 
 // TODO:
 // 1. Audio volume control
-// 2. Fixes / refactoring / testing
-// - fix memory leaks
-// - allow video scaling not only in decoder thread but also in presenter thread
-// - blanking screen on stop / eof doesn't work allways
-// - test keyboard / server input combinations (fuzz testing ...)
+// 2. Fixes
+// - memory leaks
+// - seek
+// - blanking screen on stop / eof
+// - responsiveness to keyboard input
 // 3. AV sync
 // - decrease video picture display rate variation further
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
 // 4. Query renderer info (current position, state, audio volume) from 9P server
 // 5. Display single still images
-// 6. Experiment with serving video and audio output channels via the 9P server
-// 7. Build renderer into drawterm-av
+// 6. Refactoring / testing
+// - allow video scaling not only in decoder thread but also in presenter thread
+// - test keyboard / server input combinations (fuzz testing ...)
+// 7. Experiment with serving video and audio output channels via the 9P server
+// 8. Build renderer into drawterm-av
 
 // Thread layout:
 //   main_thread (event loop)
