@@ -151,6 +151,7 @@ typedef struct RendererCtx
 	double             previous_video_time;
 	int64_t            audio_start_rt;
 	AVRational         audio_timebase;
+	double             audio_tbd;
 	// Video Stream.
 	SDL_Window        *sdl_window;
 	SDL_Texture       *sdl_texture;
@@ -170,6 +171,7 @@ typedef struct RendererCtx
 	int                w, h, aw, ah;
 	SDL_Rect           blit_copy_rect;
 	AVRational         video_timebase;
+	double             video_tbd;
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
@@ -880,8 +882,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 			SDL_PauseAudioDevice(renderer_ctx->audio_devid, 0);
 			LOG("sdl_pauseaudio(0) called.");
 			renderer_ctx->audio_timebase = renderer_ctx->format_ctx->streams[stream_index]->time_base;
-			LOG("timebase of audio stream: %d/%d",
-				renderer_ctx->audio_timebase.num, renderer_ctx->audio_timebase.den);
+			renderer_ctx->audio_tbd = av_q2d(renderer_ctx->audio_timebase);
+			LOG("timebase of audio stream: %d/%d = %f",
+				renderer_ctx->audio_timebase.num, renderer_ctx->audio_timebase.den, renderer_ctx->audio_tbd);
 		}
 			break;
 		case AVMEDIA_TYPE_VIDEO:
@@ -892,8 +895,9 @@ open_stream_component(RendererCtx *renderer_ctx, int stream_index)
 			renderer_ctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
 			resize_video(renderer_ctx);
 			renderer_ctx->video_timebase = renderer_ctx->format_ctx->streams[stream_index]->time_base;
-			LOG("timebase of video stream: %d/%d",
-				renderer_ctx->video_timebase.num, renderer_ctx->video_timebase.den);
+			renderer_ctx->video_tbd = av_q2d(renderer_ctx->video_timebase);
+			LOG("timebase of video stream: %d/%d = %f",
+				renderer_ctx->video_timebase.num, renderer_ctx->video_timebase.den, renderer_ctx->video_tbd);
 		}
 			break;
 		default:
@@ -1001,10 +1005,9 @@ alloc_buffers(RendererCtx *renderer_ctx)
 
 
 int
-read_packet(RendererCtx *renderer_ctx, AVPacket* packet)
+read_packet(RendererCtx *renderer_ctx, AVPacket *packet)
 {
 	int demuxer_ret = av_read_frame(renderer_ctx->format_ctx, packet);
-	LOG("read av packet of size: %i", packet->size);
 	if (demuxer_ret < 0) {
 		LOG("failed to read av packet: %s", av_err2str(demuxer_ret));
 		if (demuxer_ret == AVERROR_EOF) {
@@ -1019,6 +1022,13 @@ read_packet(RendererCtx *renderer_ctx, AVPacket* packet)
 		LOG("packet size is zero, exiting demuxer thread");
 		return -1;
 	}
+	LOG("read packet with size: %d, pts: %ld, dts: %ld, duration: %ld, pos: %ld",
+		packet->size, packet->pts, packet->dts, packet->duration, packet->pos);
+	double tbdms = 1000 * ((packet->stream_index == renderer_ctx->audio_stream) ?
+		renderer_ctx->audio_tbd : renderer_ctx->video_tbd);
+	char *stream = (packet->stream_index == renderer_ctx->audio_stream) ? "audio" : "video";
+	LOG("%s packet times pts: %.2fms, dts: %.2fms, duration: %.2fms",
+		 stream, tbdms * packet->pts, tbdms * packet->dts, tbdms * packet->duration);
 	return 0;
 }
 
