@@ -1,4 +1,4 @@
-LIBS := -lPocoUtil -lPocoFoundation
+LIBS := -lm -lPocoUtil -lPocoFoundation
 
 all: build/resgen build/libommdvb.so
 
