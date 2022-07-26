@@ -22,7 +22,7 @@
 
 
 // TODO:
-// 1. Seek / audio volume control
+// 1. Audio volume control
 // 2. Fixes / refactoring / testing
 // - fix memory leaks
 // - allow video scaling not only in decoder thread but also in presenter thread
@@ -532,7 +532,6 @@ read_cmd(RendererCtx *renderer_ctx)
 		if (cmdret == 1) {
 			LOG("<== received command: %d", cmd.cmd);
 			if (cmd.cmd == CMD_SET) {
-				/* setstr(&renderer_ctx->filename, cmd.arg, cmd.narg); */
 				setstr(&renderer_ctx->url, cmd.arg, cmd.narg);
 				seturl(renderer_ctx, renderer_ctx->url);
 				free(cmd.arg);
@@ -577,6 +576,9 @@ poll_cmd(RendererCtx *renderer_ctx)
 				return -1;
 			}
 			else if (cmd.cmd == CMD_SEEK) {
+				uint64_t seekpos = atoll(cmd.arg);
+				av_seek_frame(renderer_ctx->format_ctx, renderer_ctx->audio_stream, seekpos / renderer_ctx->audio_tbd, 0);
+				av_seek_frame(renderer_ctx->format_ctx, renderer_ctx->video_stream, seekpos / renderer_ctx->video_tbd, 0);
 				/* renderer_ctx->renderer_state = RSTATE_SEEK; */
 			}
 			else if (cmd.cmd == CMD_QUIT) {
