@@ -31,7 +31,7 @@
 // - decrease video picture display rate variation further
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
-// 3. Query renderer info (current position, state, audio volume) from 9P server
+// 3. Query renderer info (current position, media length, renderer state, audio volume) from 9P server
 // 4. Display single still images
 // 5. Refactoring / testing
 // - allow video scaling not only in decoder thread but also in presenter thread
