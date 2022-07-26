@@ -10,44 +10,40 @@
 |  it under the terms of the MIT License                                    |
  ***************************************************************************/
 
-#include "Log.h"
-#include "DvbLogger.h"
+#ifndef DvbLogger_INCLUDED
+#define DvbLogger_INCLUDED
 
+#include <Poco/Logger.h>
+#include <Poco/Format.h>
+#include <Poco/StringTokenizer.h>
+#include <Poco/TextConverter.h>
+#include <Poco/TextEncoding.h>
+#include <Poco/UTF8Encoding.h>
+
+#include "../Log.h"
 
 namespace Omm {
 namespace Dvb {
 
+
 #ifndef NDEBUG
-Log* Log::_pInstance = 0;
-
-// possible log levels: trace, debug, information, notice, warning, error, critical, fatal
-
-Log::Log()
+class Log
 {
-    Poco::Channel* pChannel = Util::Log::instance()->channel();
-    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_TRACE);
-//    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_DEBUG);
-//    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_ERROR);
-}
+public:
+    static Log* instance();
 
+    Poco::Logger& dvb();
 
-Log*
-Log::instance()
-{
-    if (!_pInstance) {
-        _pInstance = new Log;
-    }
-    return _pInstance;
-}
+private:
+    Log();
 
-
-Poco::Logger&
-Log::dvb()
-{
-    return *_pDvbLogger;
-}
+    static Log*     _pInstance;
+    Poco::Logger*   _pDvbLogger;
+};
 #endif // NDEBUG
 
 
 }  // namespace Omm
 }  // namespace Dvb
+
+#endif

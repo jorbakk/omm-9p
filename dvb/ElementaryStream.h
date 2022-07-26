@@ -10,44 +10,36 @@
 |  it under the terms of the MIT License                                    |
  ***************************************************************************/
 
-#include "Log.h"
-#include "DvbLogger.h"
+#ifndef ElementaryStream_INCLUDED
+#define ElementaryStream_INCLUDED
 
+#include "DvbUtil.h"
 
 namespace Omm {
 namespace Dvb {
 
-#ifndef NDEBUG
-Log* Log::_pInstance = 0;
 
-// possible log levels: trace, debug, information, notice, warning, error, critical, fatal
-
-Log::Log()
+class ElementaryStreamPacket : public BitField
 {
-    Poco::Channel* pChannel = Util::Log::instance()->channel();
-    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_TRACE);
-//    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_DEBUG);
-//    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_ERROR);
-}
+public:
+    ElementaryStreamPacket();
 
+    Poco::UInt8 getStreamId();
+    Poco::UInt16 getSize();
+    static const int getMaxSize();
+    void* getDataAfterStartcodePrefix();
+    void* getDataStart();
 
-Log*
-Log::instance()
-{
-    if (!_pInstance) {
-        _pInstance = new Log;
-    }
-    return _pInstance;
-}
+    bool isAudio();
+    bool isVideo();
 
-
-Poco::Logger&
-Log::dvb()
-{
-    return *_pDvbLogger;
-}
-#endif // NDEBUG
+private:
+    static const int    _maxSize;
+    Poco::UInt16        _size;
+};
 
 
 }  // namespace Omm
 }  // namespace Dvb
+
+#endif

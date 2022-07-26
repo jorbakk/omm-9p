@@ -10,44 +10,52 @@
 |  it under the terms of the MIT License                                    |
  ***************************************************************************/
 
-#include "Log.h"
-#include "DvbLogger.h"
+#ifndef Dvr_INCLUDED
+#define Dvr_INCLUDED
+
+#include <sys/poll.h>
 
 
 namespace Omm {
 namespace Dvb {
 
-#ifndef NDEBUG
-Log* Log::_pInstance = 0;
+class Adapter;
+class Remux;
+class Service;
 
-// possible log levels: trace, debug, information, notice, warning, error, critical, fatal
-
-Log::Log()
+class Dvr
 {
-    Poco::Channel* pChannel = Util::Log::instance()->channel();
-    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_TRACE);
-//    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_DEBUG);
-//    _pDvbLogger = &Poco::Logger::create("DVB", pChannel, Poco::Message::PRIO_ERROR);
-}
+    friend class Adapter;
+    friend class Device;
 
+public:
+    Dvr(Adapter* pAdapter, int num);
+    ~Dvr();
 
-Log*
-Log::instance()
-{
-    if (!_pInstance) {
-        _pInstance = new Log;
-    }
-    return _pInstance;
-}
+    void openDvr();
+    void closeDvr();
+    void clearBuffer();
+    void prefillBuffer();
+    void startReadThread();
+    void stopReadThread();
+    bool readThreadRunning();
 
+    Service* addService(Service* pService);
+    void delService(Service* pService);
 
-Poco::Logger&
-Log::dvb()
-{
-    return *_pDvbLogger;
-}
-#endif // NDEBUG
+    std::istream* getStream();
 
+private:
+    void readThread();
+
+    Adapter*                            _pAdapter;
+    std::string                         _deviceName;
+    int                                 _num;
+    int                                 _fileDescDvr;
+    Remux*                              _pRemux;
+};
 
 }  // namespace Omm
 }  // namespace Dvb
+
+#endif
