@@ -32,6 +32,7 @@ set(OMM_DVB_LIB_SRCS
 AvStream.cpp
 Descriptor.cpp
 Device.cpp
+Log.cpp
 #DvbLogger.cpp
 Section.cpp
 Stream.cpp
@@ -46,7 +47,7 @@ TransportStream.cpp
 ElementaryStream.cpp
 )
 
-add_library(ommdvb
+add_library(ommdvb SHARED
 ${OMM_DVB_LIB_SRCS}
 ${TransponderData_CPP}
 )
