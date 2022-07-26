@@ -1,3 +1,11 @@
+project(ommdvb)
+cmake_minimum_required(VERSION 3.16)
+
+set(CMAKE_MODULE_PATH
+${CMAKE_CURRENT_SOURCE_DIR}
+${CMAKE_MODULE_PATH}
+)
+
 find_package(LinuxDVB)
 
 if(LINUXDVB_FOUND)
@@ -5,7 +13,11 @@ message(STATUS "linux DVB headers found in " ${LINUXDVB_INCLUDE_DIR})
 
 include_directories(
 ${LINUXDVB_INCLUDE_DIR}
-${OMM_INCLUDE_DIR}/Dvb
+)
+
+find_package(POCO REQUIRED)
+include_directories(
+${POCO_INCLUDE_DIRS}
 )
 
 include(AddResources)
@@ -41,7 +53,6 @@ ommdvb
 CACHE INTERNAL libommdvb
 )
 
-
 target_link_libraries(ommdvb
 ${POCO_FOUNDATION}
 ${POCO_XML}
@@ -53,6 +64,29 @@ ${OMM_AVSTREAM}
 install(TARGETS ommdvb
 LIBRARY DESTINATION lib
 ARCHIVE DESTINATION lib
+)
+
+add_executable(scandvb
+ScanDvb.cpp
+)
+
+target_link_libraries(scandvb
+${OMM_DVB}
+)
+
+
+add_executable(tunedvb
+TuneDvb.cpp
+)
+
+target_link_libraries(tunedvb
+${OMM_UTIL}
+${OMM_DVB}
+)
+
+install(TARGETS scandvb tunedvb
+RUNTIME DESTINATION bin
+LIBRARY DESTINATION lib
 )
 
 else(LINUXDVB_FOUND)
