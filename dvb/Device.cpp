@@ -47,8 +47,7 @@
 #include <Poco/Thread.h>
 #include <map>
 
-// FIXME implement getting DVB devices
-// #include "Sys/System.h"
+#include "Sys.h"
 #include "Log.h"
 #include "Descriptor.h"
 #include "Section.h"
@@ -433,39 +432,40 @@ void
 Device::detectAdapters()
 {
     clearAdapters();
-	// FIXME implement getting DVB devices
 
-    // std::vector<Sys::Device*> dvbDevices;
+    std::vector<Sys::Device*> dvbDevices;
+    Sys::System system;
+    system.getDevicesForType(dvbDevices, Sys::System::DeviceTypeDvb);
     // Sys::System::instance()->getDevicesForType(dvbDevices, Sys::System::DeviceTypeDvb);
 
-    // for (std::vector<Sys::Device*>::iterator it = dvbDevices.begin(); it != dvbDevices.end(); ++it) {
-        // std::string adapterId = (*it)->getId().substr(0, (*it)->getId().length() - std::string(".frontendX").length());
-        // LOG(dvb, debug, "found dvb device node " + (*it)->getNode() + " with id: " + adapterId);
+    for (std::vector<Sys::Device*>::iterator it = dvbDevices.begin(); it != dvbDevices.end(); ++it) {
+        std::string adapterId = (*it)->getId().substr(0, (*it)->getId().length() - std::string(".frontendX").length());
+        LOG(dvb, debug, "found dvb device node " + (*it)->getNode() + " with id: " + adapterId);
 
-        // std::string deviceNode = (*it)->getNode();
-        // Poco::StringTokenizer deviceNodePath(deviceNode, "/");
-        // if (deviceNodePath.count() < 2) {
-            // LOG(dvb, error, "failed to detect dvb adapters, device path too short: " + deviceNode);
-            // return;
-        // }
-        // try {
-            // if (deviceNodePath[deviceNodePath.count() - 1].substr(0, std::string("frontend").length()) == "frontend") {
-                // int adapterNum = Poco::NumberParser::parse(deviceNodePath[deviceNodePath.count() - 2].substr(std::string("adapter").length()));
-                // int frontendNum = Poco::NumberParser::parse(deviceNodePath[deviceNodePath.count() - 1].substr(std::string("frontend").length()));
-                // Adapter* pAdapter = addAdapter(adapterId, adapterNum);
-                // Frontend* pFrontend = Frontend::detectFrontend(pAdapter, frontendNum);
-                // if (pFrontend) {
-                    // pAdapter->addFrontend(pFrontend);
-                // }
-                // else {
-                    // LOG(dvb, error, "failed to detect frontend " + (*it)->getNode());
-                // }
-            // }
-        // }
-        // catch (Poco::Exception& e) {
-            // LOG(dvb, error, "failed to detect dvb device numbers: " + e.message());
-        // }
-    // }
+        std::string deviceNode = (*it)->getNode();
+        Poco::StringTokenizer deviceNodePath(deviceNode, "/");
+        if (deviceNodePath.count() < 2) {
+            LOG(dvb, error, "failed to detect dvb adapters, device path too short: " + deviceNode);
+            return;
+        }
+        try {
+            if (deviceNodePath[deviceNodePath.count() - 1].substr(0, std::string("frontend").length()) == "frontend") {
+                int adapterNum = Poco::NumberParser::parse(deviceNodePath[deviceNodePath.count() - 2].substr(std::string("adapter").length()));
+                int frontendNum = Poco::NumberParser::parse(deviceNodePath[deviceNodePath.count() - 1].substr(std::string("frontend").length()));
+                Adapter* pAdapter = addAdapter(adapterId, adapterNum);
+                Frontend* pFrontend = Frontend::detectFrontend(pAdapter, frontendNum);
+                if (pFrontend) {
+                    pAdapter->addFrontend(pFrontend);
+                }
+                else {
+                    LOG(dvb, error, "failed to detect frontend " + (*it)->getNode());
+                }
+            }
+        }
+        catch (Poco::Exception& e) {
+            LOG(dvb, error, "failed to detect dvb device numbers: " + e.message());
+        }
+    }
 }
 
 

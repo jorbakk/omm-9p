@@ -22,6 +22,11 @@ include_directories(
 ${POCO_INCLUDE_DIRS}
 )
 
+find_package(UDEV)
+include_directories(
+${UDEV_INCLUDE_DIRS}
+)
+
 include(AddResources)
 
 add_resources(TransponderData
@@ -29,11 +34,11 @@ add_resources(TransponderData
 )
 
 set(OMM_DVB_LIB_SRCS
+Sys.cpp
 AvStream.cpp
 Descriptor.cpp
 Device.cpp
 Log.cpp
-#DvbLogger.cpp
 Section.cpp
 Stream.cpp
 Service.cpp
@@ -58,6 +63,7 @@ CACHE INTERNAL libommdvb
 )
 
 target_link_libraries(ommdvb
+${UDEV_LIBRARIES}
 ${POCO_FOUNDATION}
 ${POCO_XML}
 ${POCO_ZIP}
