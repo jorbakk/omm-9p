@@ -30,7 +30,6 @@ public:
     static const std::string DeviceTypeDvb;
     static const std::string DeviceTypeDisk;
 
-    /* static System* instance(); */
     System();
     ~System();
 
@@ -38,8 +37,6 @@ public:
 
 private:
 
-    /* static System*     _pInstance; */
-    /* SysImpl*           _pImpl; */
     struct udev*       _pUdev;
 };
 

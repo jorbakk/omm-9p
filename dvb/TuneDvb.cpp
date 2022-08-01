@@ -74,6 +74,7 @@ main(int argc, char** argv)
         dvbXml.open(argv[1]);
     }
 
+	pDevice->detectAdapters();
     pDevice->readXml(dvbXml);
     pDevice->open();
 
