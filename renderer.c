@@ -945,9 +945,11 @@ open_stream_components(RendererCtx *rctx)
 	{
 		if (rctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && video_stream < 0) {
 			video_stream = i;
+			LOG("selecting stream %d for video", video_stream);
 		}
 		if (rctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audio_stream < 0) {
 			audio_stream = i;
+			LOG("selecting stream %d for audio", audio_stream);
 		}
 	}
 	if (video_stream == -1) {
@@ -1081,6 +1083,7 @@ write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet)
 		blank_window(rctx);
 	}
 	if (decsend_ret < 0) {
+		// FIXME sending audio packet to decoder fails with arte.ts
 		LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
 		return -1;
 	}
@@ -1276,6 +1279,8 @@ decoder_thread(void *arg)
 	LOG("decoder thread started with id: %d", rctx->decoder_tid);
 
 start:
+	// FIXME handle renderer state properly in any situation
+	rctx->renderer_state = RSTATE_STOP;
 	if (read_cmd(rctx) == 1) {
 		goto quit;
 	}
@@ -1321,7 +1326,8 @@ start:
 			goto start;
 		}
 		if (write_packet_to_decoder(rctx, packet) == -1) {
-			goto start;
+			continue;
+			/* goto start; */
 		}
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
