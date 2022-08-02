@@ -68,6 +68,11 @@ enum
 	Qquery,
 };
 
+const char *OBJTYPE_VIDEO = "video";
+const char *OBJTYPE_AUDIO = "audio";
+const char *OBJTYPE_IMAGE = "image";
+const char *OBJTYPE_DVB   = "dvb";
+
 static void closedb(void);
 
 static vlong
@@ -290,7 +295,7 @@ srvopen(Req *r)
 	vlong path = r->fid->qid.path;
 	vlong objid = QOBJID(path);
 	/* const unsigned char *objpath; */
-	const char *objpath;
+	const char *objtype, *objpath;
 	LOG("server open on qid path: 0%08llo, vers: %ld, type: %d",
 		path, r->fid->qid.vers, r->fid->qid.type);
 	r->ofcall.qid = r->fid->qid;
@@ -299,11 +304,16 @@ srvopen(Req *r)
 		sqlite3_bind_int(metastmt, 1, objid);
 		int sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
+			objtype = sqlite3_column_text(metastmt, 0);
 			objpath = sqlite3_column_text(metastmt, 2);
-			LOG("meta query returned file path: %s", objpath);
-			r->fid->aux = open(objpath, OREAD);
-			if(r->fid->aux == nil) {
-				LOG("failed to open file system handle for media object");
+			LOG("meta query returned file type: %s, path: %s", objtype, objpath);
+			if (strcmp(objtype, OBJTYPE_VIDEO) ||
+				strcmp(objtype, OBJTYPE_AUDIO) ||
+				strcmp(objtype, OBJTYPE_IMAGE)) {
+				r->fid->aux = open(objpath, OREAD);
+				if(r->fid->aux == nil) {
+					LOG("failed to open file system handle for media object");
+				}
 			}
 		}
 		sqlite3_reset(metastmt);
