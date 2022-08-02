@@ -53,7 +53,7 @@ static sqlite3_stmt *countstmt = NULL;
 static sqlite3_stmt *metastmt  = NULL;
 static const char *idqry       = "SELECT id FROM obj LIMIT 1 OFFSET ?";
 static const char *countqry    = "SELECT COUNT(id) FROM obj LIMIT 1";
-static const char *metaqry     = "SELECT title, path FROM obj WHERE id = ? LIMIT 1";
+static const char *metaqry     = "SELECT type, title, path FROM obj WHERE id = ? LIMIT 1";
 
 /* static int nrootdir = 4; */
 static int objcount = 0;
@@ -295,11 +295,11 @@ srvopen(Req *r)
 		path, r->fid->qid.vers, r->fid->qid.type);
 	r->ofcall.qid = r->fid->qid;
 	if (QTYPE(path) == Qdata && r->fid->aux == nil) {
-		// SELECT title, path FROM obj WHERE id = objid LIMIT 1
+		// SELECT type, title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
 		int sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
-			objpath = sqlite3_column_text(metastmt, 1);
+			objpath = sqlite3_column_text(metastmt, 2);
 			LOG("meta query returned file path: %s", objpath);
 			r->fid->aux = open(objpath, OREAD);
 			if(r->fid->aux == nil) {
@@ -338,11 +338,11 @@ srvread(Req *r)
 		}
 		break;
 	case Qmeta:
-		// SELECT title, path FROM obj WHERE id = objid LIMIT 1
+		// SELECT type, title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
 		int sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
-			title   = sqlite3_column_text(metastmt, 0);
+			title   = sqlite3_column_text(metastmt, 1);
 			LOG("meta query returned title: %s", title);
 			readstr(r, title);
 		}
