@@ -73,11 +73,56 @@ dvb_service(DvbTransponder *transponder, const char *service_name)
 }
 
 
-// int dvb_service_status(DvbService *service);
-// int dvb_service_scrambled(DvbService *service);
-// int dvb_service_has_audio(DvbService *service);
-// int dvb_service_has_sdvideo(DvbService *service);
-// DvbStream* dvb_stream(const char *service_name);
+int
+dvb_service_status(DvbService *service)
+{
+	if (!service->pService) {
+		return -1;
+	}
+	if (service->pService->getStatus() == Omm::Dvb::Service::StatusUndefined) {
+		return DvbServiceStatusUndefined;
+	}
+	if (service->pService->getStatus() == Omm::Dvb::Service::StatusNotRunning) {
+		return DvbServiceStatusNotRunning;
+	}
+	if (service->pService->getStatus() == Omm::Dvb::Service::StatusStartsShortly) {
+		return DvbServiceStatusStartsShortly;
+	}
+	if (service->pService->getStatus() == Omm::Dvb::Service::StatusPausing) {
+		return DvbServiceStatusPausing;
+	}
+	if (service->pService->getStatus() == Omm::Dvb::Service::StatusRunning) {
+		return DvbServiceStatusRunning;
+	}
+	if (service->pService->getStatus() == Omm::Dvb::Service::StatusOffAir) {
+		return DvbServiceStatusOffAir;
+	}
+	return -1;
+}
+
+int
+dvb_service_scrambled(DvbService *service)
+{
+}
+
+int
+dvb_service_has_audio(DvbService *service)
+{
+}
+
+int
+dvb_service_has_sdvideo(DvbService *service)
+{
+}
+
+
+
+DvbStream*
+dvb_stream(const char *service_name)
+{
+}
+
+
 // int dvb_read(DvbStream *stream, char *buf, int nbuf);
 
 

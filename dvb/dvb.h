@@ -5,6 +5,15 @@ struct DvbTransponder;
 struct DvbService;
 struct DvbStream;
 
+enum {
+	DvbServiceStatusUndefined,
+	DvbServiceStatusNotRunning,
+	DvbServiceStatusStartsShortly,
+	DvbServiceStatusPausing,
+	DvbServiceStatusRunning,
+	DvbServiceStatusOffAir,
+};
+
 int dvb_init(const char *conf_xml);
 void dvb_open();
 void dvb_close();
