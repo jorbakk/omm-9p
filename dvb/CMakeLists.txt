@@ -34,6 +34,7 @@ add_resources(TransponderData
 )
 
 set(OMM_DVB_LIB_SRCS
+dvb.cpp
 Sys.cpp
 AvStream.cpp
 Descriptor.cpp

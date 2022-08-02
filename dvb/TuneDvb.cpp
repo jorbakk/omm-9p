@@ -1,7 +1,7 @@
 /***************************************************************************|
 |  OMM - Open Multimedia                                                    |
 |                                                                           |
-|  Copyright (C) 2009, 2010, 2011                                           |
+|  Copyright (C) 2009, 2010, 2011, 2022                                     |
 |  Jörg Bakker                                                              |
 |                                                                           |
 |  This file is part of OMM.                                                |
