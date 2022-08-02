@@ -9,6 +9,7 @@ extern "C" {
 }
 
 struct DvbTransponder {
+	Omm::Dvb::Transponder* pTransponder;
 };
 
 struct DvbService {
@@ -38,7 +39,17 @@ void dvb_close()
 }
 
 
-// DvbTransponder* dvb_first_transponder(const char *service_name);
+DvbTransponder* dvb_first_transponder(const char *service_name)
+{
+	DvbTransponder *ret = (DvbTransponder*)malloc(sizeof(DvbTransponder));
+	ret->pTransponder = Omm::Dvb::Device::instance()->getFirstTransponder(service_name);
+	if (!ret->pTransponder) {
+		return NULL;
+	}
+	return ret;
+}
+
+
 // DvbService* dvb_service(DvbTransponder *transponder, const char *service_name);
 // int dvb_service_status(DvbService *service);
 // int dvb_service_scrambled(DvbService *service);
