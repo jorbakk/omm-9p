@@ -468,6 +468,13 @@ Service::getStream()
 }
 
 
+AvStream::ByteQueue*
+Service::getByteQueue()
+{
+    return &_byteQueue;
+}
+
+
 void
 Service::stopStream()
 {

@@ -3,6 +3,7 @@
 #include "Transponder.h"
 #include "Service.h"
 #include "TransportStream.h"
+#include "AvStream.h"
 
 extern "C" {
 #include "dvb.h"
@@ -17,7 +18,7 @@ struct DvbService {
 };
 
 struct DvbStream {
-	Omm::Dvb::Stream* pStream;
+	Omm::AvStream::ByteQueue* pByteQueue;
 };
 
 
@@ -100,30 +101,57 @@ dvb_service_status(DvbService *service)
 	return -1;
 }
 
+
 int
 dvb_service_scrambled(DvbService *service)
 {
+	if (!service->pService) {
+		return -1;
+	}
+	return service->pService->getScrambled() ? 1 : 0;
 }
+
 
 int
 dvb_service_has_audio(DvbService *service)
 {
+	if (!service->pService) {
+		return -1;
+	}
+	return service->pService->isAudio() ? 1 : 0;
 }
+
 
 int
 dvb_service_has_sdvideo(DvbService *service)
 {
+	if (!service->pService) {
+		return -1;
+	}
+	return service->pService->isSdVideo() ? 1 : 0;
 }
 
+
+int
+dvb_service_has_hdvideo(DvbService *service)
+{
+	if (!service->pService) {
+		return -1;
+	}
+	return service->pService->isHdVideo() ? 1 : 0;
+}
 
 
 DvbStream*
 dvb_stream(const char *service_name)
 {
+	DvbStream *ret = (DvbStream*)malloc(sizeof(DvbStream));
+	ret->pByteQueue = Omm::Dvb::Device::instance()->getByteQueue(service_name);
+	if (!ret->pByteQueue) {
+		return NULL;
+	}
+	return ret;
 }
-
-
-// int dvb_read(DvbStream *stream, char *buf, int nbuf);
 
 
 void
@@ -145,6 +173,6 @@ free_service(struct DvbService *service)
 void
 free_stream(DvbStream *stream)
 {
-	delete stream->pStream;
+	delete stream->pByteQueue;
 	free(stream);
 }

@@ -126,7 +126,9 @@ public:
     std::vector<Transponder*>& getTransponders(const std::string& serviceName);
 
     std::istream* getStream(const std::string& serviceName);
+    AvStream::ByteQueue* getByteQueue(const std::string& serviceName);
     void freeStream(std::istream* pIstream);
+    void freeByteQueue(AvStream::ByteQueue* pIstream);
 
 private:
     Device();
@@ -146,6 +148,7 @@ private:
     std::map<std::string, Adapter*>                     _adapters;
     std::map<std::string, std::vector<Transponder*> >   _serviceMap;
     std::map<std::istream*, Service*>                   _streamMap;
+    std::map<AvStream::ByteQueue*, Service*>            _bytequeueMap;
     std::map<std::string, std::set<std::string> >       _initialTransponders;
 
     Poco::FastMutex                                     _deviceLock;

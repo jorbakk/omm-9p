@@ -111,6 +111,7 @@ public:
     bool hasPacketIdentifier(Poco::UInt16 pid);
 
     std::istream* getStream();
+    AvStream::ByteQueue* getByteQueue();
     void stopStream();
     void flush();
     void queueTsPacket(TransportStreamPacket* pPacket);

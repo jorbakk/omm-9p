@@ -409,6 +409,26 @@ Device::getStream(const std::string& serviceName)
 }
 
 
+AvStream::ByteQueue*
+Device::getByteQueue(const std::string& serviceName)
+{
+    LOG(dvb, debug, "get bytequeue: " + serviceName);
+
+    Poco::ScopedLock<Poco::FastMutex> lock(_deviceLock);
+
+    // scrambled services are not supported, yet
+    Transponder* pTransponder = tuneToService(serviceName, true);
+    if (!pTransponder) {
+        return 0;
+    }
+    Service* pService = pTransponder->getService(serviceName);
+    pService = startService(pService);
+    AvStream::ByteQueue* pStream = pService->getByteQueue();
+    _bytequeueMap[pStream] = pService;
+    return pStream;
+}
+
+
 void
 Device::freeStream(std::istream* pIstream)
 {
@@ -425,6 +445,25 @@ Device::freeStream(std::istream* pIstream)
     delete pIstream;
 
     LOG(dvb, debug, "free stream finished.");
+}
+
+
+void
+Device::freeByteQueue(AvStream::ByteQueue* pIstream)
+{
+    LOG(dvb, debug, "free bytequeue ...");
+
+    Poco::ScopedLock<Poco::FastMutex> lock(_deviceLock);
+
+    Service* pService = _bytequeueMap[pIstream];
+    if (!pService) {
+        return;
+    }
+    stopService(pService);
+    _bytequeueMap.erase(pIstream);
+    delete pIstream;
+
+    LOG(dvb, debug, "free bytequeue finished.");
 }
 
 
