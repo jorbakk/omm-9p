@@ -15,7 +15,7 @@ main(int argc, char **argv)
 	struct DvbStream *stream = nil;
 	struct DvbTransponder *transponder = nil;
 	int bytes_read = 0;
-	int nbuf = 100 * 188;
+	int nbuf = 100 * dvb_transport_stream_packet_size;
 	char buf[nbuf];
 	char outf_name[128];
 	int noutf_name = 0;
@@ -46,15 +46,15 @@ main(int argc, char **argv)
 	outf_name[noutf_name] = '\0';
 	outf = create(outf_name, OWRITE, 0664);
 	while (telapsed < tmax) {
-		bytes_read = dvb_read_stream(stream, buf, 188);
+		bytes_read = dvb_read_stream(stream, buf, dvb_transport_stream_packet_size);
 		fprintf(stderr, "dvb bytes read: %d\n", bytes_read);
 		write(outf, buf, bytes_read);
 		telapsed = (clock() - tstart) / CLOCKS_PER_SEC;
 	}
 quit:
-	/* dvb_free_transponder(transponder); */
-	/* dvb_free_service(service); */
-	/* dvb_free_stream(stream); */
+	dvb_free_transponder(transponder);
+	dvb_free_service(service);
+	dvb_free_stream(stream);
 	close(outf);
 	dvb_close();
 }

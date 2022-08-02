@@ -9,6 +9,8 @@ extern "C" {
 #include "dvb.h"
 }
 
+const int dvb_transport_stream_packet_size = Omm::Dvb::TransportStreamPacket::Size;
+
 struct DvbTransponder {
 	Omm::Dvb::Transponder* pTransponder;
 };
@@ -192,6 +194,5 @@ dvb_free_stream(DvbStream *stream)
 	if (!stream) {
 		return;
 	}
-	delete stream->pByteQueue;
 	free(stream);
 }

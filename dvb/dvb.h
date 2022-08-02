@@ -14,6 +14,8 @@ enum {
 	DvbServiceStatusOffAir,
 };
 
+extern const int dvb_transport_stream_packet_size;
+
 int dvb_init(const char *conf_xml);
 void dvb_open();
 void dvb_close();
