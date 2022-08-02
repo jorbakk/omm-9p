@@ -16,6 +16,8 @@ int dvb_service_has_audio(struct DvbService *service);
 int dvb_service_has_sdvideo(struct DvbService *service);
 struct DvbStream* dvb_stream(const char *service_name);
 int dvb_read(struct DvbStream *stream, char *buf, int nbuf);
+void free_transponder(struct DvbTransponder *transponder);
+void free_service(struct DvbService *service);
 void free_stream(struct DvbStream *stream);
 
 #endif
