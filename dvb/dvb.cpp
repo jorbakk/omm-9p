@@ -154,8 +154,18 @@ dvb_stream(const char *service_name)
 }
 
 
+int
+dvb_read_stream(DvbStream *stream, char *buf, int nbuf)
+{
+	if (!stream->pByteQueue) {
+		return -1;
+	}
+	return stream->pByteQueue->readSome(buf, nbuf);
+}
+
+
 void
-free_transponder(struct DvbTransponder *transponder)
+free_transponder(DvbTransponder *transponder)
 {
 	delete transponder->pTransponder;
 	free(transponder);
@@ -163,7 +173,7 @@ free_transponder(struct DvbTransponder *transponder)
 
 
 void
-free_service(struct DvbService *service)
+free_service(DvbService *service)
 {
 	delete service->pService;
 	free(service);
