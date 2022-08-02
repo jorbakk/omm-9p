@@ -20,6 +20,9 @@ main(int argc, char **argv)
 	char outf_name[128];
 	int noutf_name = 0;
 	int outf = -1;
+	clock_t tstart = clock();
+	clock_t telapsed = 0;
+	int tmax = 5; // sec
 
 	dvb_init(config_xml);
 	dvb_open();
@@ -42,10 +45,11 @@ main(int argc, char **argv)
 	snprint(outf_name, noutf_name, "%s.ts", service_name);
 	outf_name[noutf_name] = '\0';
 	outf = create(outf_name, OWRITE, 0664);
-	for (int nread = 0; nread < 20000; nread++) {
+	while (telapsed < tmax) {
 		bytes_read = dvb_read_stream(stream, buf, 188);
 		fprintf(stderr, "dvb bytes read: %d\n", bytes_read);
 		write(outf, buf, bytes_read);
+		telapsed = (clock() - tstart) / CLOCKS_PER_SEC;
 	}
 quit:
 	/* dvb_free_transponder(transponder); */
