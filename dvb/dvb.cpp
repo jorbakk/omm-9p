@@ -165,24 +165,33 @@ dvb_read_stream(DvbStream *stream, char *buf, int nbuf)
 
 
 void
-free_transponder(DvbTransponder *transponder)
+dvb_free_transponder(DvbTransponder *transponder)
 {
+	if (!transponder) {
+		return;
+	}
 	delete transponder->pTransponder;
 	free(transponder);
 }
 
 
 void
-free_service(DvbService *service)
+dvb_free_service(DvbService *service)
 {
+	if (!service) {
+		return;
+	}
 	delete service->pService;
 	free(service);
 }
 
 
 void
-free_stream(DvbStream *stream)
+dvb_free_stream(DvbStream *stream)
 {
+	if (!stream) {
+		return;
+	}
 	delete stream->pByteQueue;
 	free(stream);
 }
