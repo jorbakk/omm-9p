@@ -75,6 +75,11 @@ const char *OBJTYPE_AUDIO = "audio";
 const char *OBJTYPE_IMAGE = "image";
 const char *OBJTYPE_DVB   = "dvb";
 
+struct AuxFile
+{
+	int fh;
+};
+
 static void closedb(void);
 
 static vlong
@@ -311,9 +316,14 @@ srvopen(Req *r)
 			if (strcmp(objtype, OBJTYPE_VIDEO) ||
 				strcmp(objtype, OBJTYPE_AUDIO) ||
 				strcmp(objtype, OBJTYPE_IMAGE)) {
-				r->fid->aux = open(objpath, OREAD);
-				if(r->fid->aux == nil) {
+				struct AuxFile *af = malloc(sizeof(struct AuxFile));
+				int fh = open(objpath, OREAD);
+				if (fh == -1) {
 					LOG("failed to open file system handle for media object");
+				}
+				else {
+					af->fh = fh;
+					r->fid->aux = af;
 				}
 			}
 			else if (strcmp(objtype, OBJTYPE_DVB)) {
@@ -357,7 +367,7 @@ srvread(Req *r)
 	offset = r->ifcall.offset;
 	vlong objid = QOBJID(path);
 	long count = r->ifcall.count;
-	char *type, *title;
+	char *title;
 	int sqlret;
 	switch(QTYPE(path)) {
 	case Qroot:
@@ -367,19 +377,13 @@ srvread(Req *r)
 		dirread9p(r, objgen, nil);
 		break;
 	case Qdata:
-		sqlite3_bind_int(metastmt, 1, objid);
-		sqlret = sqlite3_step(metastmt);
-		if (sqlret == SQLITE_ROW) {
-			type    = (char*)sqlite3_column_text(metastmt, 0);
-			title   = (char*)sqlite3_column_text(metastmt, 1);
-			LOG("meta query returned type: %s, title: %s", type, title);
-			// FIXME store objtype in r->fid->aux ...?
-			// FIXME check obj type and handle dvb streams
-			if (r->fid->aux) {
-				seek(r->fid->aux, offset, 0);
-				size_t bytesread = read(r->fid->aux, r->ofcall.data, count);
-				r->ofcall.count = bytesread;
-			}
+		// FIXME store objtype in r->fid->aux ...?
+		// FIXME check obj type and handle dvb streams
+		if (r->fid->aux) {
+			struct AuxFile *af = (struct AuxFile*)r->fid->aux;
+			seek(af->fh, offset, 0);
+			size_t bytesread = read(af->fh, r->ofcall.data, count);
+			r->ofcall.count = bytesread;
 		}
 		break;
 	case Qmeta:
@@ -428,12 +432,13 @@ srvwrite(Req *r)
 static void
 srvdestroyfid(Fid *fid)
 {
-	int datafh = fid->aux;
-	if(!datafh)
+	if(!fid->aux)
 		return;
 	LOG("closing file data handle");
-	close(datafh);
-	fid->aux = 0;
+	// FIXME deinit aux data depending on its type
+	close(((struct AuxFile*)fid->aux)->fh);
+	free(fid->aux);
+	fid->aux = nil;
 }
 
 
