@@ -330,43 +330,29 @@ srvopen(Req *r)
 			objtype = (char*)sqlite3_column_text(metastmt, 0);
 			objpath = (char*)sqlite3_column_text(metastmt, 2);
 			LOG("meta query returned file type: %s, path: %s", objtype, objpath);
-			AuxObj *ao = malloc(sizeof(AuxObj));
 			if (strcmp(objtype, OBJTYPESTR_FILE) == 0) {
 				int fh = open(objpath, OREAD);
 				if (fh == -1) {
-					LOG("failed to open file system handle for media object");
+					LOG("failed to open file media object");
 				}
 				else {
+					AuxObj *ao = malloc(sizeof(AuxObj));
 					ao->ot = OTfile;
 					ao->od.fh = fh;
 					r->fid->aux = ao;
 				}
 			}
 			else if (strcmp(objtype, OBJTYPESTR_DVB) == 0) {
-				struct DvbService *service = nil;
-				struct DvbStream *stream = nil;
-				struct DvbTransponder *transponder = nil;
-				transponder = dvb_first_transponder(objpath);
-				if (transponder == nil) {
-					/* goto quit; */
-				}
-				service = dvb_service(transponder, objpath);
-				if (service == nil ||
-					dvb_service_status(service) != DvbServiceStatusRunning ||
-					dvb_service_scrambled(service) ||
-					(!dvb_service_has_audio(service) && !dvb_service_has_sdvideo(service))) {
-					/* goto quit; */
-				}
-				stream = dvb_stream(objpath);
-				r->fid->aux = stream;
+				struct DvbStream *stream = dvb_stream(objpath);
 				if (stream == nil) {
-					LOG("failed to open file system handle for media object");
-					/* goto quit; */
+					LOG("failed to open dvb media object");
 				}
-				ao->ot = OTdvb;
-				ao->od.st = stream;
-				// FIXME need to free transponder, service, and stream when finished
-				//       better put all three in a structure that r->fid->aux points to
+				else {
+					AuxObj *ao = malloc(sizeof(AuxObj));
+					ao->ot = OTdvb;
+					ao->od.st = stream;
+					r->fid->aux = ao;
+				}
 			}
 		}
 		sqlite3_reset(metastmt);
@@ -399,11 +385,14 @@ srvread(Req *r)
 		if (r->fid->aux == nil) {
 			break;
 		}
-		// FIXME check obj type and handle dvb streams
 		ao = (AuxObj*)r->fid->aux;
 		if (ao->ot == OTfile) {
 			seek(ao->od.fh, offset, 0);
 			size_t bytesread = read(ao->od.fh, r->ofcall.data, count);
+			r->ofcall.count = bytesread;
+		}
+		else if (ao->ot == OTdvb) {
+			size_t bytesread = dvb_read_stream(ao->od.st, r->ofcall.data, count);
 			r->ofcall.count = bytesread;
 		}
 		break;
