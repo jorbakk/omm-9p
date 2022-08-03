@@ -296,8 +296,7 @@ srvopen(Req *r)
 {
 	vlong path = r->fid->qid.path;
 	vlong objid = QOBJID(path);
-	/* const unsigned char *objpath; */
-	const char *objtype, *objpath;
+	char *objtype, *objpath;
 	LOG("server open on qid path: 0%08llo, vers: %ld, type: %d",
 		path, r->fid->qid.vers, r->fid->qid.type);
 	r->ofcall.qid = r->fid->qid;
@@ -306,8 +305,8 @@ srvopen(Req *r)
 		sqlite3_bind_int(metastmt, 1, objid);
 		int sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
-			objtype = sqlite3_column_text(metastmt, 0);
-			objpath = sqlite3_column_text(metastmt, 2);
+			objtype = (char*)sqlite3_column_text(metastmt, 0);
+			objpath = (char*)sqlite3_column_text(metastmt, 2);
 			LOG("meta query returned file type: %s, path: %s", objtype, objpath);
 			if (strcmp(objtype, OBJTYPE_VIDEO) ||
 				strcmp(objtype, OBJTYPE_AUDIO) ||
@@ -358,7 +357,8 @@ srvread(Req *r)
 	offset = r->ifcall.offset;
 	vlong objid = QOBJID(path);
 	long count = r->ifcall.count;
-	const unsigned char *type, *title;
+	char *type, *title;
+	int sqlret;
 	switch(QTYPE(path)) {
 	case Qroot:
 		dirread9p(r, rootgen, nil);
@@ -368,10 +368,10 @@ srvread(Req *r)
 		break;
 	case Qdata:
 		sqlite3_bind_int(metastmt, 1, objid);
-		int sqlret = sqlite3_step(metastmt);
+		sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
-			type    = sqlite3_column_text(metastmt, 0);
-			title   = sqlite3_column_text(metastmt, 1);
+			type    = (char*)sqlite3_column_text(metastmt, 0);
+			title   = (char*)sqlite3_column_text(metastmt, 1);
 			LOG("meta query returned type: %s, title: %s", type, title);
 			// FIXME store objtype in r->fid->aux ...?
 			// FIXME check obj type and handle dvb streams
@@ -385,9 +385,9 @@ srvread(Req *r)
 	case Qmeta:
 		// SELECT type, title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
-		int sqlret = sqlite3_step(metastmt);
+		sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
-			title   = sqlite3_column_text(metastmt, 1);
+			title   = (char*)sqlite3_column_text(metastmt, 1);
 			LOG("meta query returned title: %s", title);
 			readstr(r, title);
 		}
