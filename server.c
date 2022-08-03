@@ -70,16 +70,32 @@ enum
 	Qquery,
 };
 
-const char *OBJTYPE_FILE = "file";
-const char *OBJTYPE_DVB  = "dvb";
+enum
+{
+	OTfile = 0,
+	OTdvb,
+};
+
+const char *OBJTYPESTR_FILE = "file";
+const char *OBJTYPESTR_DVB  = "dvb";
+
+// Object format could be extended in the future to also store information
+// about the codec and container format
 const char *OBJFMT_AUDIO = "audio";
 const char *OBJFMT_VIDEO = "video";
 const char *OBJFMT_IMAGE = "image";
 
-struct AuxFile
+typedef union AuxData
 {
 	int fh;
-};
+	struct DvbStream *st;
+} AuxData;
+
+typedef struct AuxObj
+{
+	int ot;
+	AuxData od;
+} AuxObj;
 
 static void closedb(void);
 
@@ -314,18 +330,19 @@ srvopen(Req *r)
 			objtype = (char*)sqlite3_column_text(metastmt, 0);
 			objpath = (char*)sqlite3_column_text(metastmt, 2);
 			LOG("meta query returned file type: %s, path: %s", objtype, objpath);
-			if (strcmp(objtype, OBJTYPE_FILE) == 0) {
-				struct AuxFile *af = malloc(sizeof(struct AuxFile));
+			AuxObj *ao = malloc(sizeof(AuxObj));
+			if (strcmp(objtype, OBJTYPESTR_FILE) == 0) {
 				int fh = open(objpath, OREAD);
 				if (fh == -1) {
 					LOG("failed to open file system handle for media object");
 				}
 				else {
-					af->fh = fh;
-					r->fid->aux = af;
+					ao->ot = OTfile;
+					ao->od.fh = fh;
+					r->fid->aux = ao;
 				}
 			}
-			else if (strcmp(objtype, OBJTYPE_DVB) == 0) {
+			else if (strcmp(objtype, OBJTYPESTR_DVB) == 0) {
 				struct DvbService *service = nil;
 				struct DvbStream *stream = nil;
 				struct DvbTransponder *transponder = nil;
@@ -346,6 +363,8 @@ srvopen(Req *r)
 					LOG("failed to open file system handle for media object");
 					/* goto quit; */
 				}
+				ao->ot = OTdvb;
+				ao->od.st = stream;
 				// FIXME need to free transponder, service, and stream when finished
 				//       better put all three in a structure that r->fid->aux points to
 			}
@@ -368,6 +387,7 @@ srvread(Req *r)
 	long count = r->ifcall.count;
 	char *title;
 	int sqlret;
+	AuxObj *ao = nil;
 	switch(QTYPE(path)) {
 	case Qroot:
 		dirread9p(r, rootgen, nil);
@@ -376,12 +396,14 @@ srvread(Req *r)
 		dirread9p(r, objgen, nil);
 		break;
 	case Qdata:
-		// FIXME store objtype in r->fid->aux ...?
+		if (r->fid->aux == nil) {
+			break;
+		}
 		// FIXME check obj type and handle dvb streams
-		if (r->fid->aux) {
-			struct AuxFile *af = (struct AuxFile*)r->fid->aux;
-			seek(af->fh, offset, 0);
-			size_t bytesread = read(af->fh, r->ofcall.data, count);
+		ao = (AuxObj*)r->fid->aux;
+		if (ao->ot == OTfile) {
+			seek(ao->od.fh, offset, 0);
+			size_t bytesread = read(ao->od.fh, r->ofcall.data, count);
 			r->ofcall.count = bytesread;
 		}
 		break;
@@ -434,8 +456,15 @@ srvdestroyfid(Fid *fid)
 	if(!fid->aux)
 		return;
 	LOG("closing file data handle");
-	// FIXME deinit aux data depending on its type
-	close(((struct AuxFile*)fid->aux)->fh);
+	AuxObj *ao = (AuxObj*)(fid->aux);
+	switch (ao->ot) {
+	case OTfile:
+		close(ao->od.fh);
+		break;
+	case OTdvb:
+		dvb_free_stream(ao->od.st);
+		break;
+	}
 	free(fid->aux);
 	fid->aux = nil;
 }
