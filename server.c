@@ -33,6 +33,8 @@
 #include <9p.h>
 #include <sqlite3.h>
 
+#include "dvb/dvb.h"
+
 #define _DEBUG_ 1
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
@@ -315,6 +317,30 @@ srvopen(Req *r)
 					LOG("failed to open file system handle for media object");
 				}
 			}
+			else if (strcmp(objtype, OBJTYPE_DVB)) {
+				struct DvbService *service = nil;
+				struct DvbStream *stream = nil;
+				struct DvbTransponder *transponder = nil;
+				transponder = dvb_first_transponder(objpath);
+				if (transponder == nil) {
+					/* goto quit; */
+				}
+				service = dvb_service(transponder, objpath);
+				if (service == nil ||
+					dvb_service_status(service) != DvbServiceStatusRunning ||
+					dvb_service_scrambled(service) ||
+					(!dvb_service_has_audio(service) && !dvb_service_has_sdvideo(service))) {
+					/* goto quit; */
+				}
+				stream = dvb_stream(objpath);
+				r->fid->aux = stream;
+				if (stream == nil) {
+					LOG("failed to open file system handle for media object");
+					/* goto quit; */
+				}
+				// FIXME need to free transponder, service, and stream when finished
+				//       better put all three in a structure that r->fid->aux points to
+			}
 		}
 		sqlite3_reset(metastmt);
 	}
@@ -332,7 +358,7 @@ srvread(Req *r)
 	offset = r->ifcall.offset;
 	vlong objid = QOBJID(path);
 	long count = r->ifcall.count;
-	const unsigned char *title;
+	const unsigned char *type, *title;
 	switch(QTYPE(path)) {
 	case Qroot:
 		dirread9p(r, rootgen, nil);
@@ -341,10 +367,19 @@ srvread(Req *r)
 		dirread9p(r, objgen, nil);
 		break;
 	case Qdata:
-		if (r->fid->aux) {
-			seek(r->fid->aux, offset, 0);
-			size_t bytesread = read(r->fid->aux, r->ofcall.data, count);
-			r->ofcall.count = bytesread;
+		sqlite3_bind_int(metastmt, 1, objid);
+		int sqlret = sqlite3_step(metastmt);
+		if (sqlret == SQLITE_ROW) {
+			type    = sqlite3_column_text(metastmt, 0);
+			title   = sqlite3_column_text(metastmt, 1);
+			LOG("meta query returned type: %s, title: %s", type, title);
+			// FIXME store objtype in r->fid->aux ...?
+			// FIXME check obj type and handle dvb streams
+			if (r->fid->aux) {
+				seek(r->fid->aux, offset, 0);
+				size_t bytesread = read(r->fid->aux, r->ofcall.data, count);
+				r->ofcall.count = bytesread;
+			}
 		}
 		break;
 	case Qmeta:
@@ -476,6 +511,21 @@ closedb(void)
 }
 
 
+static void
+opendvb(char *config_xml)
+{
+	dvb_init(config_xml);
+	dvb_open();
+}
+
+
+static void
+closedvb(void)
+{
+	dvb_close();
+}
+
+
 void
 threadmain(int argc, char **argv)
 {
@@ -486,7 +536,13 @@ threadmain(int argc, char **argv)
 		chatty9p = 1;
 	}
 	opendb(argv[1]);
+	if (argc == 3) {
+		opendvb(argv[2]);
+	}
 	startserver(nil);
 	stopserver();
-	closedb();
+	if (argc == 3) {
+		closedb();
+	}
+	closedvb();
 }

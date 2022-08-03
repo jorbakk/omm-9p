@@ -17,7 +17,7 @@ build/ommrender: renderer.c
 
 build/ommserve: server.c
 	9c -g -o build/server.o server.c
-	9l -g -o build/ommserve build/server.o $(9PLIBS) $(SQLITE3LIBS)
+	9l -g -o build/ommserve build/server.o $(9PLIBS) $(SQLITE3LIBS) -Ldvb/build -lommdvb
 
 clean:
 	rm -r build/*
