@@ -57,14 +57,14 @@
 #include <9p.h>
 #include <9pclient.h>
 
+#include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/avstring.h>
 #include <libavutil/time.h>
 #include <libavutil/opt.h>
-#include <libavformat/avformat.h>
-#include <libswscale/swscale.h>
-#include <libswresample/swresample.h>
 
 #include <SDL2/SDL.h>
 
