@@ -23,6 +23,8 @@
 
 // TODO:
 // 1. Fixes
+// - mp2 audio track on dvb live ts streams
+// - aspect ratio in half screen sized vertical windows
 // - memory leaks
 // - seek
 // - blanking screen on stop / eof
@@ -282,7 +284,6 @@ static int resample_audio(
 		enum AVSampleFormat out_sample_fmt,
 		uint8_t * out_buf
 );
-AudioResamplingState * getAudioResampling(uint64_t channel_layout);
 void stream_seek(RendererCtx *rctx, int64_t pos, int rel);
 
 
@@ -1323,11 +1324,11 @@ start:
 			goto quit;
 		}
 		if (read_packet(rctx, packet) == -1) {
+			// FIXME maybe better continue here ...?
 			goto start;
 		}
 		if (write_packet_to_decoder(rctx, packet) == -1) {
 			continue;
-			/* goto start; */
 		}
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
@@ -1377,6 +1378,23 @@ start:
 				}
 			}
 			else if (rctx->current_codec_ctx == rctx->audio_ctx) {
+
+				// write audio sample to file after decoding, before resampling
+				/* LOG("writing pcm sample to file, channels: %d, sample size: %d, sample count: %d", */
+					/* rctx->current_codec_ctx->channels, */
+					/* rctx->current_codec_ctx->bits_per_raw_sample, */
+					/* //rctx->current_codec_ctx->frame_size, */
+					/* frame->nb_samples */
+					/* ); */
+				LOG("writing pcm sample of size %d to file", frame->linesize[0]);
+				fwrite(frame->data,
+					/* rctx->current_codec_ctx->channels * rctx->current_codec_ctx->bits_per_raw_sample / 8, */
+					/* rctx->current_codec_ctx->frame_size, */
+					1,
+					frame->linesize[0],
+					/* frame->nb_samples, */
+					audio_out);
+
 				rctx->audio_idx++;
 				AudioSample audioSample = {
 					.idx = rctx->audio_idx,
@@ -1388,6 +1406,9 @@ start:
 				audio_pts += audioSample.duration;
 				audioSample.pts = audio_pts;
 				send_sample_to_queue(rctx, &audioSample);
+
+				// write audio sample to file after decoding, after resampling, before sending to queue
+				//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 			}
 			else {
 				LOG("non AV packet from demuxer, ignoring");
@@ -1461,6 +1482,7 @@ presenter_thread(void *arg)
 			continue;
 		}
 		LOG("<== received sample with idx: %d, pts: %.2fms from audio queue.", audioSample.idx, audioSample.pts);
+		// write audio sample to file after decoding, after resampling, after sending to queue
 		//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 		SDL_memset(rctx->mixed_audio_buf, 0, audioSample.size);
 		SDL_MixAudioFormat(rctx->mixed_audio_buf, audioSample.sample, rctx->specs.format, audioSample.size, (rctx->audio_vol / 100.0) * SDL_MIX_MAXVOLUME);
@@ -1552,13 +1574,31 @@ display_picture(RendererCtx *rctx, VideoPicture *videoPicture)
 }
 
 
+AudioResamplingState*
+getAudioResampling(uint64_t channel_layout)
+{
+	AudioResamplingState *audioResampling = av_mallocz(sizeof(AudioResamplingState));
+	audioResampling->swr_ctx = swr_alloc();
+	audioResampling->in_channel_layout = channel_layout;
+	audioResampling->out_channel_layout = AV_CH_LAYOUT_STEREO;
+	audioResampling->out_nb_channels = 0;
+	audioResampling->out_linesize = 0;
+	audioResampling->in_nb_samples = 0;
+	audioResampling->out_nb_samples = 0;
+	audioResampling->max_out_nb_samples = 0;
+	audioResampling->resampled_data = nil;
+	audioResampling->resampled_data_size = 0;
+	return audioResampling;
+}
+
+
 int 
 resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFormat out_sample_fmt, uint8_t *out_buf)
 {
 	// get an instance of the AudioResamplingState struct
 	AudioResamplingState * arState = getAudioResampling(rctx->audio_ctx->channel_layout);
 	if (!arState->swr_ctx) {
-		printf("swr_alloc error.\n");
+		LOG("swr_alloc error");
 		return -1;
 	}
 	// get input audio channels
@@ -1568,7 +1608,7 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 								 av_get_default_channel_layout(rctx->audio_ctx->channels);
 	// check input audio channels correctly retrieved
 	if (arState->in_channel_layout <= 0) {
-		printf("in_channel_layout error.\n");
+		LOG("in_channel_layout error");
 		return -1;
 	}
 	// set output audio channels based on the input audio channels
@@ -1584,7 +1624,7 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 	// retrieve number of audio samples (per channel)
 	arState->in_nb_samples = decoded_audio_frame->nb_samples;
 	if (arState->in_nb_samples <= 0) {
-		printf("in_nb_samples error.\n");
+		LOG("in_nb_samples error");
 		return -1;
 	}
 	// Set SwrContext parameters for resampling
@@ -1630,9 +1670,9 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 			0
 	);
 	// initialize SWR context after user parameters have been set
-	int ret = swr_init(arState->swr_ctx);;
+	int ret = swr_init(arState->swr_ctx);
 	if (ret < 0) {
-		printf("Failed to initialize the resampling context.\n");
+		LOG("Failed to initialize the resampling context");
 		return -1;
 	}
 	arState->max_out_nb_samples = arState->out_nb_samples = av_rescale_rnd(
@@ -1643,7 +1683,7 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 	);
 	// check rescaling was successful
 	if (arState->max_out_nb_samples <= 0) {
-		printf("av_rescale_rnd error.\n");
+		LOG("av_rescale_rnd error");
 		return -1;
 	}
 	// get number of output audio channels
@@ -1660,7 +1700,7 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 	);
 	// check memory allocation for the resampled data was successful
 	if (ret < 0) {
-		printf("av_samples_alloc_array_and_samples() error: Could not allocate destination samples.\n");
+		LOG("av_samples_alloc_array_and_samples() error: Could not allocate destination samples");
 		return -1;
 	}
 	// retrieve output samples number taking into account the progressive delay
@@ -1672,7 +1712,7 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 	);
 	// check output samples number was correctly rescaled
 	if (arState->out_nb_samples <= 0) {
-		printf("av_rescale_rnd error\n");
+		LOG("av_rescale_rnd error");
 		return -1;
 	}
 	if (arState->out_nb_samples > arState->max_out_nb_samples) {
@@ -1689,7 +1729,7 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 		);
 		// check samples buffer correctly allocated
 		if (ret < 0) {
-			printf("av_samples_alloc failed.\n");
+			LOG("av_samples_alloc failed");
 			return -1;
 		}
 		arState->max_out_nb_samples = arState->out_nb_samples;
@@ -1705,7 +1745,7 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 		);
 		// check audio conversion was successful
 		if (ret < 0) {
-			printf("swr_convert_error.\n");
+			LOG("swr_convert_error");
 			return -1;
 		}
 		// get the required buffer size for the given audio parameters
@@ -1718,12 +1758,12 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 		);
 		// check audio buffer size
 		if (arState->resampled_data_size < 0) {
-			printf("av_samples_get_buffer_size error.\n");
+			LOG("av_samples_get_buffer_size error");
 			return -1;
 		}
 	}
 	else {
-		printf("swr_ctx null error.\n");
+		LOG("swr_ctx null error");
 		return -1;
 	}
 	// copy the resampled data to the output buffer
@@ -1739,24 +1779,6 @@ resample_audio(RendererCtx *rctx, AVFrame *decoded_audio_frame, enum AVSampleFor
 		swr_free(&arState->swr_ctx);
 	}
 	return arState->resampled_data_size;
-}
-
-
-AudioResamplingState*
-getAudioResampling(uint64_t channel_layout)
-{
-	AudioResamplingState * audioResampling = av_mallocz(sizeof(AudioResamplingState));
-	audioResampling->swr_ctx = swr_alloc();
-	audioResampling->in_channel_layout = channel_layout;
-	audioResampling->out_channel_layout = AV_CH_LAYOUT_STEREO;
-	audioResampling->out_nb_channels = 0;
-	audioResampling->out_linesize = 0;
-	audioResampling->in_nb_samples = 0;
-	audioResampling->out_nb_samples = 0;
-	audioResampling->max_out_nb_samples = 0;
-	audioResampling->resampled_data = nil;
-	audioResampling->resampled_data_size = 0;
-	return audioResampling;
 }
 
 

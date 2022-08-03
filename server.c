@@ -444,13 +444,14 @@ srvdestroyfid(Fid *fid)
 {
 	if(!fid->aux)
 		return;
-	LOG("closing file data handle");
 	AuxObj *ao = (AuxObj*)(fid->aux);
 	switch (ao->ot) {
 	case OTfile:
+		LOG("closing file data handle");
 		close(ao->od.fh);
 		break;
 	case OTdvb:
+		LOG("closing dvb data handle");
 		dvb_free_stream(ao->od.st);
 		break;
 	}
