@@ -70,10 +70,11 @@ enum
 	Qquery,
 };
 
-const char *OBJTYPE_VIDEO = "video";
-const char *OBJTYPE_AUDIO = "audio";
-const char *OBJTYPE_IMAGE = "image";
-const char *OBJTYPE_DVB   = "dvb";
+const char *OBJTYPE_FILE = "file";
+const char *OBJTYPE_DVB  = "dvb";
+const char *OBJFMT_AUDIO = "audio";
+const char *OBJFMT_VIDEO = "video";
+const char *OBJFMT_IMAGE = "image";
 
 struct AuxFile
 {
@@ -313,9 +314,7 @@ srvopen(Req *r)
 			objtype = (char*)sqlite3_column_text(metastmt, 0);
 			objpath = (char*)sqlite3_column_text(metastmt, 2);
 			LOG("meta query returned file type: %s, path: %s", objtype, objpath);
-			if (strcmp(objtype, OBJTYPE_VIDEO) ||
-				strcmp(objtype, OBJTYPE_AUDIO) ||
-				strcmp(objtype, OBJTYPE_IMAGE)) {
+			if (strcmp(objtype, OBJTYPE_FILE) == 0) {
 				struct AuxFile *af = malloc(sizeof(struct AuxFile));
 				int fh = open(objpath, OREAD);
 				if (fh == -1) {
@@ -326,7 +325,7 @@ srvopen(Req *r)
 					r->fid->aux = af;
 				}
 			}
-			else if (strcmp(objtype, OBJTYPE_DVB)) {
+			else if (strcmp(objtype, OBJTYPE_DVB) == 0) {
 				struct DvbService *service = nil;
 				struct DvbStream *stream = nil;
 				struct DvbTransponder *transponder = nil;
