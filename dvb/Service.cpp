@@ -594,10 +594,10 @@ Service::queueThread()
             break;
         }
         tsPacketCounter++;
-//        LOG(dvb, information, "service " + _name + std::string(_clone ? "(clone)" : "")
-//                + " write packet no: " + Poco::NumberFormatter::format(tsPacketCounter)
-//                + ", queue size: " + Poco::NumberFormatter::format(_packetQueue.size())
-//                + ", pid: " + Poco::NumberFormatter::format(pPacket->getPacketIdentifier()));
+       LOG(dvb, information, "service " + _name + std::string(_clone ? "(clone)" : "")
+               + " write packet no: " + Poco::NumberFormatter::format(tsPacketCounter)
+               + ", queue size: " + Poco::NumberFormatter::format(_packetQueue.size())
+               + ", pid: " + Poco::NumberFormatter::format(pPacket->getPacketIdentifier()));
 
         if (!(tsPacketCounter & 0x7f)) {
 //        if (t.elapsed() % 100000 == 0) { // PAT has 15,000 bps, that's 9 PAT packets per second (let's make 10)
