@@ -941,7 +941,7 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 				return -1;
 			}
 			LOG("audio device with id: %d opened successfully", rctx->audio_devid);
-			LOG("audio specs are freq: %d, channels: %d", rctx->specs.freq, rctx->specs.channels);
+			LOG("audio specs are sample rate: %d, channels: %d, channel layout: 0x%lx, sample fmt: 0x%x", rctx->specs.freq, rctx->specs.channels, codecCtx->channel_layout, codecCtx->sample_fmt);
 			rctx->swr_ctx = swr_alloc_set_opts(NULL,  // we're allocating a new context
 				AV_CH_LAYOUT_STEREO,      // out_ch_layout
 				AV_SAMPLE_FMT_S16,        // out_sample_fmt
@@ -1124,6 +1124,7 @@ write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet)
 		LOG("sending audio packet of size %d to decoder", packet->size);
 		codecCtx = rctx->audio_ctx;
 	}
+	codecCtx->skip_frame = 0;
 	int decsend_ret = avcodec_send_packet(codecCtx, packet);
 	LOG("sending packet of size %d to decoder returned: %d", packet->size, decsend_ret);
 	if (decsend_ret == AVERROR(EAGAIN)) {
@@ -1143,7 +1144,9 @@ write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet)
 	}
 	if (decsend_ret < 0) {
 		// FIXME sending audio packet to decoder fails with arte.ts
+		// this might be the cause of audio artifacts in the dvb live streams
 		LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
+		codecCtx->skip_frame = 1;
 		return -1;
 	}
 	rctx->current_codec_ctx = codecCtx;
@@ -1391,7 +1394,12 @@ start:
 			goto start;
 		}
 		if (write_packet_to_decoder(rctx, packet) == -1) {
-			continue;
+			// FIXME avcodec_send_packet() frequently returns this on dvb live streams:
+			//   "Invalid data found when processing input"
+			// The decoder crashes, even though skip_frame in the current codec context was set to 1.
+			// When continuing sending packets to the decoder, we get a repetition of audio samples
+			// (video is fine).
+			/* continue; */
 		}
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
