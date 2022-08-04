@@ -90,7 +90,9 @@ _scrambled(false),
 _byteQueue(2 * 1024),
 _pIStream(0),
 _packetQueueTimeout(100),
-_packetQueueSize(10000),
+// FIXME currently need a large queue, because the renderer needs a long startup time
+// until it begins to actually render the stream
+_packetQueueSize(100000),
 _pQueueThread(0),
 _queueThreadRunnable(*this, &Service::queueThread),
 _queueThreadRunning(false)
