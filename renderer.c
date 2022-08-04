@@ -260,6 +260,77 @@ void decoder_thread(void *arg);
 void presenter_thread(void *arg);
 void blank_window(RendererCtx *rctx);
 
+void
+reset_rctx(RendererCtx *rctx)
+{
+	rctx->url = nil;
+	rctx->fileservername = nil;
+	rctx->filename = nil;
+	rctx->isaddr = 0;
+	rctx->fileserverfd = -1;
+	rctx->fileserverfid = nil;
+	rctx->fileserver = nil;
+	rctx->io_ctx = nil;
+	rctx->format_ctx = nil;
+	rctx->current_codec_ctx = nil;
+	/* rctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
+	rctx->renderer_state = RSTATE_STOP;
+	rctx->cmdq = nil;
+	rctx->screen_width = 0;
+	rctx->screen_height = 0;
+	rctx->window_width = 0;
+	rctx->window_height = 0;
+	rctx->server_tid = 0;
+	rctx->decoder_tid = 0;
+	rctx->presenter_tid = 0;
+	// Audio stream
+	rctx->audio_stream = -1;
+	rctx->audio_ctx = nil;
+	rctx->audioq = nil;
+	rctx->audio_buf_size = 0;
+	rctx->audio_buf_index = 0;
+	rctx->audio_idx = 0;
+	rctx->audio_out_channels = 2;
+	rctx->current_video_time = 0.0;
+	rctx->previous_video_time = 0.0;
+	rctx->audio_start_rt = 0;
+	rctx->audio_timebase.num = 0;
+	rctx->audio_timebase.den = 0;
+	rctx->audio_tbd = 0.0;
+	rctx->audio_vol = 100;
+	rctx->swr_ctx = nil;
+	// Video stream.
+	rctx->sdl_window = nil;
+	rctx->sdl_texture = nil;
+	rctx->sdl_renderer = nil;
+	rctx->video_stream = -1;
+	rctx->frame_rate = 0.0;
+	rctx->frame_duration = 0.0;
+	rctx->video_ctx = nil;
+	rctx->pictq = nil;
+	rctx->yuv_ctx = nil;
+	rctx->rgb_ctx = nil;
+	rctx->video_idx = 0;
+	rctx->frame_rgb = nil;
+	rctx->rgbbuffer = nil;
+	rctx->yuvbuffer = nil;
+	rctx->w = 0;
+	rctx->h = 0;
+	rctx->aw = 0;
+	rctx->ah = 0;
+	rctx->video_timebase.num = 0;
+	rctx->video_timebase.den = 0;
+	rctx->video_tbd = 0.0;
+	// Seeking
+	rctx->seek_req = 0;
+	rctx->seek_flags = 0;
+	rctx->seek_pos = 0;
+	/* rctx->frame_fmt = FRAME_FMT_RGB; */
+	rctx->frame_fmt = FRAME_FMT_YUV;
+	rctx->audio_devid = -1;
+	rctx->audio_only = 0;
+}
+
 
 void
 setstr(char **str, char *instr, int ninstr)
@@ -769,13 +840,13 @@ setup_format_ctx(RendererCtx *rctx)
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
 	AVIOContext *io_ctx = avio_alloc_context(
-		avctxBuffer,                   // buffer
-		avctxBufferSize,               // buffer size
-		0,                             // buffer is only readable - set to 1 for read/write
-		rctx->fileserverfid,   // user specified data
-		demuxerPacketRead,             // function for reading packets
-		nil,                          // function for writing packets
-		demuxerPacketSeek              // function for seeking to position in stream
+		avctxBuffer,          // buffer
+		avctxBufferSize,      // buffer size
+		0,                    // buffer is only readable - set to 1 for read/write
+		rctx->fileserverfid,  // user specified data
+		demuxerPacketRead,    // function for reading packets
+		nil,                  // function for writing packets
+		demuxerPacketSeek     // function for seeking to position in stream
 		);
 	if(io_ctx == nil) {
 		LOG("failed to allocate memory for ffmpeg av io context");
@@ -1644,78 +1715,6 @@ savePicture(RendererCtx* rctx, VideoPicture *videoPicture, int frameIndex)
 	    av_free(buffer);
 	}
 	LOG("saved video picture.");
-}
-
-
-void
-reset_rctx(RendererCtx *rctx)
-{
-	rctx->url = nil;
-	rctx->fileservername = nil;
-	rctx->filename = nil;
-	rctx->isaddr = 0;
-	rctx->fileserverfd = -1;
-	rctx->fileserverfid = nil;
-	rctx->fileserver = nil;
-	rctx->io_ctx = nil;
-	rctx->format_ctx = nil;
-	rctx->current_codec_ctx = nil;
-	/* rctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
-	rctx->renderer_state = RSTATE_STOP;
-	rctx->cmdq = nil;
-	rctx->screen_width = 0;
-	rctx->screen_height = 0;
-	rctx->window_width = 0;
-	rctx->window_height = 0;
-	rctx->server_tid = 0;
-	rctx->decoder_tid = 0;
-	rctx->presenter_tid = 0;
-	// Audio stream
-	rctx->audio_stream = -1;
-	rctx->audio_ctx = nil;
-	rctx->audioq = nil;
-	rctx->audio_buf_size = 0;
-	rctx->audio_buf_index = 0;
-	rctx->audio_idx = 0;
-	rctx->audio_out_channels = 2;
-	rctx->current_video_time = 0.0;
-	rctx->previous_video_time = 0.0;
-	rctx->audio_start_rt = 0;
-	rctx->audio_timebase.num = 0;
-	rctx->audio_timebase.den = 0;
-	rctx->audio_tbd = 0.0;
-	rctx->audio_vol = 100;
-	rctx->swr_ctx = nil;
-	// Video stream.
-	rctx->sdl_window = nil;
-	rctx->sdl_texture = nil;
-	rctx->sdl_renderer = nil;
-	rctx->video_stream = -1;
-	rctx->frame_rate = 0.0;
-	rctx->frame_duration = 0.0;
-	rctx->video_ctx = nil;
-	rctx->pictq = nil;
-	rctx->yuv_ctx = nil;
-	rctx->rgb_ctx = nil;
-	rctx->video_idx = 0;
-	rctx->frame_rgb = nil;
-	rctx->rgbbuffer = nil;
-	rctx->yuvbuffer = nil;
-	rctx->w = 0;
-	rctx->h = 0;
-	rctx->aw = 0;
-	rctx->ah = 0;
-	rctx->video_timebase.num = 0;
-	rctx->video_timebase.den = 0;
-	rctx->video_tbd = 0.0;
-	// Seeking
-	rctx->seek_req = 0;
-	rctx->seek_flags = 0;
-	rctx->seek_pos = 0;
-	/* rctx->frame_fmt = FRAME_FMT_RGB; */
-	rctx->frame_fmt = FRAME_FMT_YUV;
-	rctx->audio_devid = -1;
-	rctx->audio_only = 0;
 }
 
 
