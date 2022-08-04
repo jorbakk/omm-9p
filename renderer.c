@@ -23,11 +23,11 @@
 
 // TODO:
 // 1. Fixes
-// - dvb life streams need to long to start rendering, service queue on server gets full
+// - dvb life streams need too long to start rendering, service queue on server gets full
 // - aspect ratio in half screen sized vertical windows
+// - start / stop different media streams in sequence
 // - memory leaks
 // - seek
-// - start / stop different media streams in sequence
 // - blanking screen on stop / eof
 // - responsiveness to keyboard input
 // 2. Support local files, not only 9P server (maybe also other protocols like http ...)
