@@ -118,6 +118,7 @@ typedef struct RendererCtx
 	char              *url;
 	char              *fileservername;
 	char              *filename;
+	int                input_is_file;
 	int                isaddr;
 	int                fileserverfd;
 	CFid              *fileserverfid;
@@ -253,15 +254,15 @@ enum
 	AV_SYNC_EXTERNAL_MASTER,
 };
 
-    struct sample_fmt_entry {
-        enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;
-    } sample_fmt_entries[] = {
-        { AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
-        { AV_SAMPLE_FMT_S16, "s16be", "s16le" },
-        { AV_SAMPLE_FMT_S32, "s32be", "s32le" },
-        { AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
-        { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
-    };
+struct sample_fmt_entry {
+    enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;
+} sample_fmt_entries[] = {
+    { AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
+    { AV_SAMPLE_FMT_S16, "s16be", "s16le" },
+    { AV_SAMPLE_FMT_S32, "s32be", "s32le" },
+    { AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
+    { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
+};
 
 /* AVPacket flush_pkt; */
 
@@ -276,6 +277,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->url = nil;
 	rctx->fileservername = nil;
 	rctx->filename = nil;
+	rctx->input_is_file = 1;
 	rctx->isaddr = 0;
 	rctx->fileserverfd = -1;
 	rctx->fileserverfid = nil;
@@ -411,7 +413,11 @@ parseurl(char *url, char **fileservername, char **filename, int *isaddr)
 void
 seturl(RendererCtx *rctx, char *url)
 {
-	/* setstr(&rctx->url, url, 0); */
+	if (rctx->input_is_file) {
+		LOG("input is file, setting url to %s", url);
+		setstr(&rctx->filename, url, 0);
+		return;
+	}
 	char *s, *f;
 	int ret = parseurl(rctx->url, &s, &f, &rctx->isaddr);
 	if (ret == -1) {
@@ -558,6 +564,10 @@ open_9pconnection(RendererCtx *rctx)
 {
 	// FIXME restructure server open/close code
 	LOG("opening 9P connection ...");
+	if (rctx->input_is_file) {
+		LOG("input is a file, nothing to do");
+		return 0;
+	}
 	int ret;
 	if (!rctx->fileserver) {
 		if (rctx->isaddr) {
@@ -847,6 +857,10 @@ int
 setup_format_ctx(RendererCtx *rctx)
 {
 	LOG("setting up IO context ...");
+	if (rctx->input_is_file) {
+		LOG("input is a file, nothing to setup");
+		return 0;
+	}
 	unsigned char *avctxBuffer;
 	avctxBuffer = malloc(avctxBufferSize);
 	AVIOContext *io_ctx = avio_alloc_context(
@@ -878,9 +892,14 @@ int
 open_input_stream(RendererCtx *rctx)
 {
 	LOG("opening input stream ...");
-	int ret = avformat_open_input(&rctx->format_ctx, nil, nil, nil);
+	int ret;
+	if (rctx->input_is_file) {
+		ret = avformat_open_input(&rctx->format_ctx, rctx->filename, nil, nil);
+	} else {
+		ret = avformat_open_input(&rctx->format_ctx, nil, nil, nil);
+	}
 	if (ret < 0) {
-		LOG("Could not open file %s", rctx->filename);
+		LOG("could not open file %s", rctx->filename);
 		if (rctx->io_ctx) {
 			avio_context_free(&rctx->io_ctx);
 		}
