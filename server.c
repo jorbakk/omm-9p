@@ -21,8 +21,10 @@
  */
 
 // TODO
-// 1. Test server on a network (replace u9fs)
-// 2. Test multiple clients
+// 1. Fixes
+// - opening a dvb stream after closing it crashes the server
+// 2. Avoid 9pserve overhead
+// 3. Test multiple clients
 
 #include <u.h>
 #include <stdio.h>

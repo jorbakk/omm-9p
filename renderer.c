@@ -23,6 +23,7 @@
 
 // TODO:
 // 1. Fixes
+// - dvb life streams are playing too slow, service queue on server gets full
 // - aspect ratio in half screen sized vertical windows
 // - memory leaks
 // - seek
