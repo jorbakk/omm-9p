@@ -23,7 +23,6 @@
 
 // TODO:
 // 1. Fixes
-// - mp2 audio track on dvb live ts streams
 // - aspect ratio in half screen sized vertical windows
 // - memory leaks
 // - seek
@@ -76,8 +75,8 @@ static FILE *audio_out;
 
 void printloginfo(void)
 {
-	long            ms; // Milliseconds
-	time_t          s;  // Seconds
+	long ms;  // Milliseconds
+	time_t s; // Seconds
 	pid_t tid;
 	/* tid = syscall(SYS_gettid); */
 	tid = threadid();
@@ -277,7 +276,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->url = nil;
 	rctx->fileservername = nil;
 	rctx->filename = nil;
-	rctx->input_is_file = 1;
+	rctx->input_is_file = 0;
 	rctx->isaddr = 0;
 	rctx->fileserverfd = -1;
 	rctx->fileserverfid = nil;
@@ -915,6 +914,50 @@ open_input_stream(RendererCtx *rctx)
 
 
 int
+open_codec_context(RendererCtx *rctx, enum AVMediaType type, int *stream_idx, AVCodecContext **dec_ctx)
+{
+    int ret, stream_index;
+    AVStream *st;
+    const AVCodec *dec = NULL;
+
+    ret = av_find_best_stream(rctx->format_ctx, type, -1, -1, NULL, 0);
+    if (ret < 0) {
+        LOG("could not find %s stream", av_get_media_type_string(type));
+        return ret;
+    } else {
+        stream_index = ret;
+        st = rctx->format_ctx->streams[stream_index];
+        // find decoder for the stream
+        dec = avcodec_find_decoder(st->codecpar->codec_id);
+        if (!dec) {
+            LOG("failed to find %s codec", av_get_media_type_string(type));
+            return AVERROR(EINVAL);
+        }
+        // Allocate a codec context for the decoder
+        *dec_ctx = avcodec_alloc_context3(dec);
+        if (!*dec_ctx) {
+            LOG("failed to allocate the %s codec context", av_get_media_type_string(type));
+            return AVERROR(ENOMEM);
+        }
+        // Copy codec parameters from input stream to output codec context
+        if ((ret = avcodec_parameters_to_context(*dec_ctx, st->codecpar)) < 0) {
+            LOG("failed to copy %s codec parameters to decoder context",
+                    av_get_media_type_string(type));
+            return ret;
+        }
+        // Init the decoders
+        if ((ret = avcodec_open2(*dec_ctx, dec, NULL)) < 0) {
+            fprintf(stderr, "Failed to open %s codec\n",
+                    av_get_media_type_string(type));
+            return ret;
+        }
+        *stream_idx = stream_index;
+    }
+    return 0;
+}
+
+
+int
 open_stream_component(RendererCtx *rctx, int stream_index)
 {
 	LOG("opening stream component ...");
@@ -1027,35 +1070,35 @@ open_stream_components(RendererCtx *rctx)
 	if (_DEBUG_) {
 		av_dump_format(rctx->format_ctx, 0, rctx->filename, 0);
 	}
-	int video_stream = -1;
-	int audio_stream = -1;
+	rctx->video_stream = -1;
+	rctx->audio_stream = -1;
 	for (int i = 0; i < rctx->format_ctx->nb_streams; i++)
 	{
-		if (rctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && video_stream < 0) {
-			video_stream = i;
-			LOG("selecting stream %d for video", video_stream);
+		if (rctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && rctx->video_stream < 0) {
+			rctx->video_stream = i;
+			LOG("selecting stream %d for video", rctx->video_stream);
 		}
-		if (rctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && audio_stream < 0) {
-			audio_stream = i;
-			LOG("selecting stream %d for audio", audio_stream);
+		if (rctx->format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && rctx->audio_stream < 0) {
+			rctx->audio_stream = i;
+			LOG("selecting stream %d for audio", rctx->audio_stream);
 		}
 	}
-	if (video_stream == -1) {
+	if (rctx->video_stream == -1) {
 		LOG("Could not find video stream.");
 	}
 	else {
-		ret = open_stream_component(rctx, video_stream);
+		ret = open_stream_component(rctx, rctx->video_stream);
 		if (ret < 0) {
 			printf("Could not open video codec.\n");
 			return -1;
 		}
 		LOG("video stream component opened successfully.");
 	}
-	if (audio_stream == -1) {
+	if (rctx->audio_stream == -1) {
 		LOG("Could not find audio stream.");
 	}
 	else {
-		ret = open_stream_component(rctx, audio_stream);
+		ret = open_stream_component(rctx, rctx->audio_stream);
 		// check audio codec was opened correctly
 		if (ret < 0) {
 			LOG("Could not open audio codec.");
@@ -1130,11 +1173,17 @@ read_packet(RendererCtx *rctx, AVPacket *packet)
 		LOG("packet size is zero, exiting demuxer thread");
 		return -1;
 	}
-	LOG("read packet with size: %d, pts: %ld, dts: %ld, duration: %ld, pos: %ld",
-		packet->size, packet->pts, packet->dts, packet->duration, packet->pos);
+	char *stream = "not selected";
+	if (packet->stream_index == rctx->audio_stream) {
+		stream = "audio";
+	}
+	else if (packet->stream_index == rctx->video_stream) {
+		stream = "video";
+	}
+	LOG("read %s packet with size: %d, pts: %ld, dts: %ld, duration: %ld, pos: %ld",
+		stream, packet->size, packet->pts, packet->dts, packet->duration, packet->pos);
 	double tbdms = 1000 * ((packet->stream_index == rctx->audio_stream) ?
 		rctx->audio_tbd : rctx->video_tbd);
-	char *stream = (packet->stream_index == rctx->audio_stream) ? "audio" : "video";
 	LOG("%s packet times pts: %.2fms, dts: %.2fms, duration: %.2fms",
 		 stream, tbdms * packet->pts, tbdms * packet->dts, tbdms * packet->duration);
 	return 0;
@@ -1149,11 +1198,15 @@ write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet)
 		LOG("sending video packet of size %d to decoder", packet->size);
 		codecCtx = rctx->video_ctx;
 	}
-	else {
+	else if (packet->stream_index == rctx->audio_stream) {
 		LOG("sending audio packet of size %d to decoder", packet->size);
 		codecCtx = rctx->audio_ctx;
 	}
-	codecCtx->skip_frame = 0;
+	else {
+		LOG("skipping packet of size %d, not a selected AV packet", packet->size);
+		av_packet_unref(packet);
+		return -1;
+	}
 	int decsend_ret = avcodec_send_packet(codecCtx, packet);
 	LOG("sending packet of size %d to decoder returned: %d", packet->size, decsend_ret);
 	if (decsend_ret == AVERROR(EAGAIN)) {
@@ -1172,10 +1225,7 @@ write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet)
 		blank_window(rctx);
 	}
 	if (decsend_ret < 0) {
-		// FIXME sending audio packet to decoder fails with arte.ts
-		// this might be the cause of audio artifacts in the dvb live streams
 		LOG("error sending packet to decoder: %s", av_err2str(decsend_ret));
-		codecCtx->skip_frame = 1;
 		return -1;
 	}
 	rctx->current_codec_ctx = codecCtx;
@@ -1423,12 +1473,7 @@ start:
 			goto start;
 		}
 		if (write_packet_to_decoder(rctx, packet) == -1) {
-			// FIXME avcodec_send_packet() frequently returns this on dvb live streams:
-			//   "Invalid data found when processing input"
-			// The decoder crashes, even though skip_frame in the current codec context was set to 1.
-			// When continuing sending packets to the decoder, we get a repetition of audio samples
-			// (video is fine).
-			/* continue; */
+			continue;
 		}
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
