@@ -26,20 +26,21 @@
 // - aspect ratio in half screen sized vertical windows
 // - memory leaks
 // - seek
+// - start / stop different media streams in sequence
 // - blanking screen on stop / eof
 // - responsiveness to keyboard input
-// 2. AV sync
+// 2. Support local files, not only 9P server (maybe also other protocols like http ...)
+// 3. AV sync
 // - decrease video picture display rate variation further
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback
-// 3. Query renderer info (current position, media length, renderer state, audio volume) from 9P server
-// 4. Display single still images
-// 5. Refactoring / testing
+// 4. Query renderer info (current position, media length, renderer state, audio volume) from 9P server
+// 5. Display single still images
+// 6. Refactoring / testing
 // - allow video scaling not only in decoder thread but also in presenter thread
 // - test keyboard / server input combinations (fuzz testing ...)
-// 6. Experiment with serving video and audio output channels via the 9P server
-// 7. Build renderer into drawterm-av
-// 8. Support local files, not only 9P server (maybe also other protocols like http ...)
+// 7. Experiment with serving video and audio output channels via the 9P server
+// 8. Build renderer into drawterm-av
 
 // Thread layout:
 //   main_thread (event loop)
