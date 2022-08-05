@@ -24,7 +24,6 @@
 // TODO:
 // 1. Fixes
 // - dvb life streams need too long to start rendering, service queue on server gets full
-// - aspect ratio in half screen sized vertical windows
 // - start / stop different media streams in sequence
 // - memory leaks
 // - seek
