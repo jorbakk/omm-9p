@@ -23,8 +23,9 @@
 // TODO
 // 1. Fixes
 // - opening a dvb stream after closing it crashes the server
-// 2. Avoid 9pserve overhead
-// 3. Test multiple clients
+// 2. Queries
+// 3. Avoid 9pserve overhead
+// 4. Test multiple clients
 
 #include <u.h>
 #include <stdio.h>
