@@ -771,15 +771,18 @@ calc_videoscale(RendererCtx *rctx)
 	int h = rctx->h;
 	float war = (float)h / w;
 	float far = (float)rctx->video_ctx->height / rctx->video_ctx->width;
-	int aw = h / far;
+	float fsar = av_q2d(rctx->video_ctx->sample_aspect_ratio);
+	fsar = rctx->video_ctx->sample_aspect_ratio.num == 0 ? 1.0 : fsar;
+	int aw = h / far * fsar;
 	int ah = h;
 	if (war > far) {
 		aw = w;
-		ah = w * far;
+		ah = w * far / fsar;
 	}
 	rctx->aw = aw;
 	rctx->ah = ah;
-	LOG("scaling frame: %dx%d to win size: %dx%d, aspect ratio win: %f, aspect ratio frame: %f, final picture size: %dx%d", rctx->video_ctx->width, rctx->video_ctx->height, w, h, war, far, aw, ah);
+	LOG("scaling frame: %dx%d to win size: %dx%d, aspect ratio win: %f, aspect ratio frame: %f, sample aspect ratio: %f, final picture size: %dx%d",
+		rctx->video_ctx->width, rctx->video_ctx->height, w, h, war, far, fsar, aw, ah);
 	return 0;
 }
 
@@ -1049,6 +1052,9 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 			rctx->video_tbd = av_q2d(rctx->video_timebase);
 			LOG("timebase of video stream: %d/%d = %f",
 				rctx->video_timebase.num, rctx->video_timebase.den, rctx->video_tbd);
+			LOG("sample aspect ratio: %d/%d",
+				codecCtx->sample_aspect_ratio.num,
+				codecCtx->sample_aspect_ratio.den);
 		}
 		break;
 		default:
