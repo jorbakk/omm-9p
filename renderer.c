@@ -118,7 +118,7 @@ typedef struct RendererCtx
 	char              *url;
 	char              *fileservername;
 	char              *filename;
-	int                input_is_file;
+	int                isfile;
 	int                isaddr;
 	int                fileserverfd;
 	CFid              *fileserverfid;
@@ -277,7 +277,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->url = nil;
 	rctx->fileservername = nil;
 	rctx->filename = nil;
-	rctx->input_is_file = 0;
+	rctx->isfile = 0;
 	rctx->isaddr = 0;
 	rctx->fileserverfd = -1;
 	rctx->fileserverfid = nil;
@@ -382,18 +382,24 @@ demuxerPacketSeek(void *fid, int64_t offset, int whence)
 
 
 int
-parseurl(char *url, char **fileservername, char **filename, int *isaddr)
+parseurl(char *url, char **fileservername, char **filename, int *isaddr, int *isfile)
 {
 	char *pfileservername = nil;
 	char *pfilename = nil;
 	char *pbang = strchr(url, '!');
 	char *pslash = strchr(url, '/');
 	int fisaddr = 0;
+	int fisfile = 0;
 	if (pslash == nil) {
 		if (pbang != nil) {
 			return -1;
 		}
 		pfilename = url;
+	}
+	else if (pslash == url) {
+		// Local file path that starts with '/'
+		pfilename = url;
+		fisfile = 1;
 	}
 	else {
 		*pslash = '\0';
@@ -406,6 +412,7 @@ parseurl(char *url, char **fileservername, char **filename, int *isaddr)
 	*fileservername = pfileservername;
 	*filename = pfilename;
 	*isaddr = fisaddr;
+	*isfile = fisfile;
 	return 0;
 }
 
@@ -413,13 +420,13 @@ parseurl(char *url, char **fileservername, char **filename, int *isaddr)
 void
 seturl(RendererCtx *rctx, char *url)
 {
-	if (rctx->input_is_file) {
+	char *s, *f;
+	int ret = parseurl(rctx->url, &s, &f, &rctx->isaddr, &rctx->isfile);
+	if (rctx->isfile) {
 		LOG("input is file, setting url to %s", url);
 		setstr(&rctx->filename, url, 0);
 		return;
 	}
-	char *s, *f;
-	int ret = parseurl(rctx->url, &s, &f, &rctx->isaddr);
 	if (ret == -1) {
 		LOG("failed to parse url %s", url);
 		rctx->fileservername = nil;
@@ -564,7 +571,7 @@ open_9pconnection(RendererCtx *rctx)
 {
 	// FIXME restructure server open/close code
 	LOG("opening 9P connection ...");
-	if (rctx->input_is_file) {
+	if (rctx->isfile) {
 		LOG("input is a file, nothing to do");
 		return 0;
 	}
@@ -860,7 +867,7 @@ int
 setup_format_ctx(RendererCtx *rctx)
 {
 	LOG("setting up IO context ...");
-	if (rctx->input_is_file) {
+	if (rctx->isfile) {
 		LOG("input is a file, nothing to setup");
 		return 0;
 	}
@@ -896,7 +903,7 @@ open_input_stream(RendererCtx *rctx)
 {
 	LOG("opening input stream ...");
 	int ret;
-	if (rctx->input_is_file) {
+	if (rctx->isfile) {
 		ret = avformat_open_input(&rctx->format_ctx, rctx->filename, nil, nil);
 	} else {
 		ret = avformat_open_input(&rctx->format_ctx, nil, nil, nil);
