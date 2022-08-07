@@ -183,13 +183,6 @@ typedef struct RendererCtx
 	int                frame_fmt;
 } RendererCtx;
 
-typedef struct Command
-{
-	int         cmd;
-	char       *arg;
-	int         narg;
-} Command;
-
 typedef struct VideoPicture
 {
 	AVFrame    *frame;
@@ -216,7 +209,9 @@ typedef struct AudioSample
 	double      duration;
 } AudioSample;
 
-#define NSTATES 8
+// State machine
+
+#define NSTATE 8
 typedef void (*state_func)(RendererCtx*);
 
 void state_stop(RendererCtx* rctx);
@@ -228,7 +223,7 @@ void state_unload(RendererCtx* rctx);
 void state_engage(RendererCtx* rctx);
 void state_disengage(RendererCtx* rctx);
 
-state_func states[NSTATES] =
+static state_func states[NSTATE] =
 {
 	state_stop,
 	state_run,
@@ -242,32 +237,68 @@ state_func states[NSTATES] =
 
 enum
 {
-	RSTATE_STOP = 0,
-	RSTATE_RUN,
-	RSTATE_IDLE,
-	RSTATE_EXIT,
-	RSTATE_LOAD,
-	RSTATE_UNLOAD,
-	RSTATE_ENGAGE,
-	RSTATE_DISENGAGE,
+	STOP = 0,
+	RUN,
+	IDLE,
+	LOAD,
+	UNLOAD,
+	ENGAGE,
+	DISENG,
+	EXIT,
+	NONE,
 
+	RSTATE_STOP,
 	RSTATE_PLAY,
 	RSTATE_PAUSE,
 	RSTATE_SEEK,
 	RSTATE_QUIT,
 };
 
+typedef struct Command
+{
+	int         cmd;
+	char       *arg;
+	int         narg;
+} Command;
+
+#define NCMD 8
 enum
 {
+	CMD_SET = 0,   // set *next* url
 	CMD_STOP,
 	CMD_PLAY,
 	CMD_PAUSE,
-	CMD_SEEK,
 	CMD_QUIT,
-	CMD_SET,
-	CMD_VOL,
 	CMD_NONE,
+
+	CMD_SEEK,
+	CMD_VOL,
 };
+
+// Transitions is the State matrix with dimensions [cmds x current state]
+// Each entry is the *next* state when cmd is received in current state
+static int transitions[NCMD][NSTATE-1] =
+{
+// Current state:
+//   STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG
+// CMD_SET
+	{STOP,    RUN,     IDLE,    NONE,    NONE,    NONE,    NONE},
+// CMD_STOP
+	{NONE,    UNLOAD,  UNLOAD,  NONE,    NONE,    NONE,    NONE},
+// CMD_PLAY
+	{LOAD,    NONE,    ENGAGE,  NONE,    NONE,    NONE,    NONE},
+// CMD_PAUSE
+	{NONE,    DISENG,  ENGAGE,  NONE,    NONE,    NONE,    NONE},
+// CMD_QUIT
+	{EXIT,    EXIT,    EXIT,    NONE,    NONE,    NONE,    NONE},
+// CMD_NONE
+	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
+// CMD_SEEK
+// CMD_VOL
+};
+
+
+// Frame and clock types
 
 enum
 {
