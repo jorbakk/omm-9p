@@ -264,15 +264,15 @@ typedef struct Command
 #define NCMD 8
 enum
 {
-	CMD_SET = 0,   // set *next* url
+	CMD_SET = 0,   // Set *next* url
 	CMD_STOP,
 	CMD_PLAY,
 	CMD_PAUSE,
 	CMD_QUIT,
 	CMD_NONE,
 
-	CMD_SEEK,
-	CMD_VOL,
+	CMD_SEEK,      // Seek to second from start
+	CMD_VOL,       // Set percent soft volume
 };
 
 // Transitions is the State matrix with dimensions [cmds x current state]
