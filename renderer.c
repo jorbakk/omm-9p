@@ -61,9 +61,7 @@
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
 #include <libavutil/imgutils.h>
-#include <libavutil/avstring.h>
 #include <libavutil/time.h>
-#include <libavutil/opt.h>
 
 #include <SDL2/SDL.h>
 
