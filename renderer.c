@@ -23,11 +23,12 @@
 
 // TODO:
 // 1. Fixes
-// - dvb life streams need too long to start rendering, service queue on server gets full
 // - start / stop different media streams in sequence
+//   - audio only stream doesn't stop first time
+// - dvb life streams need too long to start rendering, service queue on server gets full
 // - memory leaks
 // - seek
-// - blanking screen on stop / eof
+// - blank screen on stop / eof
 // - responsiveness to keyboard input
 // 2. AV sync
 // - decrease video picture display rate variation further
