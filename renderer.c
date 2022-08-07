@@ -112,6 +112,9 @@ void printloginfo(void)
 
 typedef struct RendererCtx
 {
+	// State machine
+	int                renderer_state;
+	int                next_renderer_state;
 	// Input file name, plan 9 file reference, os window
 	char              *url;
 	char              *fileservername;
@@ -124,7 +127,6 @@ typedef struct RendererCtx
 	AVIOContext       *io_ctx;
 	AVFormatContext   *format_ctx;
 	AVCodecContext    *current_codec_ctx;
-	int                renderer_state;
 	Channel           *cmdq;
 	int                screen_width;
 	int                screen_height;
@@ -214,9 +216,41 @@ typedef struct AudioSample
 	double      duration;
 } AudioSample;
 
+#define NSTATES 8
+typedef void (*state_func)(RendererCtx*);
+
+void state_stop(RendererCtx* rctx);
+void state_run(RendererCtx* rctx);
+void state_idle(RendererCtx* rctx);
+void state_exit(RendererCtx* rctx);
+void state_load(RendererCtx* rctx);
+void state_unload(RendererCtx* rctx);
+void state_engage(RendererCtx* rctx);
+void state_disengage(RendererCtx* rctx);
+
+state_func states[NSTATES] =
+{
+	state_stop,
+	state_run,
+	state_idle,
+	state_exit,
+	state_load,
+	state_unload,
+	state_engage,
+	state_disengage,
+};
+
 enum
 {
-	RSTATE_STOP,
+	RSTATE_STOP = 0,
+	RSTATE_RUN,
+	RSTATE_IDLE,
+	RSTATE_EXIT,
+	RSTATE_LOAD,
+	RSTATE_UNLOAD,
+	RSTATE_ENGAGE,
+	RSTATE_DISENGAGE,
+
 	RSTATE_PLAY,
 	RSTATE_PAUSE,
 	RSTATE_SEEK,
@@ -285,6 +319,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->current_codec_ctx = nil;
 	/* rctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
 	rctx->renderer_state = RSTATE_STOP;
+	rctx->next_renderer_state = RSTATE_STOP;
 	rctx->cmdq = nil;
 	rctx->screen_width = 0;
 	rctx->screen_height = 0;
@@ -620,6 +655,9 @@ read_cmd(RendererCtx *rctx)
 			}
 			else if (cmd.cmd == CMD_PLAY) {
 				rctx->renderer_state = RSTATE_PLAY;
+			}
+			else if (cmd.cmd == CMD_STOP) {
+				rctx->renderer_state = RSTATE_STOP;
 			}
 			else if (cmd.cmd == CMD_QUIT) {
 				return 1;
@@ -1430,6 +1468,46 @@ send_sample_to_queue(RendererCtx *rctx, AudioSample *audioSample)
 }
 
 
+void state_stop(RendererCtx* rctx)
+{
+}
+
+
+void state_run(RendererCtx* rctx)
+{
+}
+
+
+void state_idle(RendererCtx* rctx)
+{
+}
+
+
+void state_exit(RendererCtx* rctx)
+{
+}
+
+
+void state_load(RendererCtx* rctx)
+{
+}
+
+
+void state_unload(RendererCtx* rctx)
+{
+}
+
+
+void state_engage(RendererCtx* rctx)
+{
+}
+
+
+void state_disengage(RendererCtx* rctx)
+{
+}
+
+
 void
 decoder_thread(void *arg)
 {
@@ -1442,6 +1520,7 @@ start:
 	if (read_cmd(rctx) == 1) {
 		goto quit;
 	}
+
 	if (open_9pconnection(rctx) == -1) {
 		goto start;
 	}
