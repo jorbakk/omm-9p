@@ -218,22 +218,22 @@ typedef void (*state_func)(RendererCtx*);
 void state_stop(RendererCtx* rctx);
 void state_run(RendererCtx* rctx);
 void state_idle(RendererCtx* rctx);
-void state_exit(RendererCtx* rctx);
 void state_load(RendererCtx* rctx);
 void state_unload(RendererCtx* rctx);
 void state_engage(RendererCtx* rctx);
 void state_disengage(RendererCtx* rctx);
+void state_exit(RendererCtx* rctx);
 
 static state_func states[NSTATE] =
 {
 	state_stop,
 	state_run,
 	state_idle,
-	state_exit,
 	state_load,
 	state_unload,
 	state_engage,
 	state_disengage,
+	state_exit,
 };
 
 enum
@@ -246,7 +246,6 @@ enum
 	ENGAGE,
 	DISENG,
 	EXIT,
-	NONE,
 
 	RSTATE_STOP,
 	RSTATE_PLAY,
@@ -262,7 +261,7 @@ typedef struct Command
 	int         narg;
 } Command;
 
-#define NCMD 8
+#define NCMD 9
 typedef void (*cmd_func)(RendererCtx*, char*, int);
 
 void cmd_set(RendererCtx *rctx, char *arg, int narg);
@@ -280,44 +279,65 @@ enum
 	CMD_PLAY,
 	CMD_PAUSE,
 	CMD_QUIT,
-
 	CMD_SEEK,      // Seek to second from start
 	CMD_VOL,       // Set percent soft volume
-
 	CMD_NONE,
+	CMD_ERR,
 };
 
-static cmd_func cmds[NCMD - 1] =
+enum
+{
+	READCMD_BLOCK = 0,
+	READCMD_POLL,
+};
+
+enum
+{
+	KEEP_STATE = 0,
+	CHANGE_STATE,
+};
+
+static cmd_func cmds[NCMD] =
 {
 	cmd_set,
-	cmd_stop,
-	cmd_play,
-	cmd_pause,
+	/* cmd_stop, */
+	/* cmd_play, */
+	/* cmd_pause, */
+	nil,
+	nil,
+	nil,
 	cmd_quit,
 	cmd_seek,
 	cmd_vol,
+	nil,
+	nil
 };
 
 // Transitions is the State matrix with dimensions [cmds x current state]
 // Each entry is the *next* state when cmd is received in current state
-static int transitions[NCMD][NSTATE-1] =
+// FIXME better ignore commands in states like LOAD, UNLOAD, ENGAGE, DISENG
+static int transitions[NCMD][NSTATE-1] = // no entry for EXIT state needed
 {
 // Current state:
 //   STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG
 // CMD_SET
-	{STOP,    RUN,     IDLE,    NONE,    NONE,    NONE,    NONE},
+	{STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
 // CMD_STOP
-	{NONE,    UNLOAD,  UNLOAD,  NONE,    NONE,    NONE,    NONE},
+	{STOP,    UNLOAD,  UNLOAD,  STOP,    UNLOAD,  UNLOAD,  UNLOAD},
 // CMD_PLAY
-	{LOAD,    NONE,    ENGAGE,  NONE,    NONE,    NONE,    NONE},
+	{LOAD,    RUN,     ENGAGE,  LOAD,    UNLOAD,  ENGAGE,  ENGAGE},
 // CMD_PAUSE
-	{NONE,    DISENG,  ENGAGE,  NONE,    NONE,    NONE,    NONE},
+	{STOP,    DISENG,  ENGAGE,  DISENG,  UNLOAD,  DISENG,  DISENG},
 // CMD_QUIT
-	{EXIT,    EXIT,    EXIT,    NONE,    NONE,    NONE,    NONE},
-// CMD_NONE
-	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
+	{EXIT,    EXIT,    EXIT,    EXIT,    EXIT,    EXIT,    EXIT},
 // CMD_SEEK
+	{STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
 // CMD_VOL
+	{STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
+// CMD_NONE - unconditional straight transitions
+	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
+// CMD_ERR - error occured while running the state
+	{STOP,    UNLOAD,  IDLE,    STOP,    STOP,    STOP,    STOP},
 };
 
 
@@ -357,6 +377,7 @@ void display_picture(RendererCtx *rctx, VideoPicture *videoPicture);
 void decoder_thread(void *arg);
 void presenter_thread(void *arg);
 void blank_window(RendererCtx *rctx);
+int read_cmd(RendererCtx *rctx, int mode);
 
 
 // Implementation
@@ -1452,26 +1473,163 @@ send_sample_to_queue(RendererCtx *rctx, AudioSample *audioSample)
 
 void state_stop(RendererCtx* rctx)
 {
+	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
+	}
 }
 
 
 void state_run(RendererCtx* rctx)
 {
+	AVPacket *packet = av_packet_alloc();
+	if (packet == nil) {
+		LOG("Could not allocate AVPacket.");
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+	}
+	AVFrame *frame = av_frame_alloc();
+	if (frame == nil) {
+		printf("Could not allocate AVFrame.\n");
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+	}
+	double audio_pts = 0.0;
+	double video_pts = 0.0;
+
+	// Main decoder loop
+	for (;;) {
+		if (read_cmd(rctx, READCMD_POLL) == CHANGE_STATE) {
+			return;
+		}
+		if (read_packet(rctx, packet) == -1) {
+			rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+		}
+		if (write_packet_to_decoder(rctx, packet) == -1) {
+			rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+		}
+		// This loop is only needed when we get more than one decoded frame out
+		// of one packet read from the demuxer
+		int decoder_ret = 0;
+		while (decoder_ret == 0) {
+			decoder_ret = read_frame_from_decoder(rctx, frame);
+			if (decoder_ret == -1) {
+				rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+			}
+			if (decoder_ret == 2) {
+				break;
+			}
+			// TODO it would be nicer to check for the frame type instead for the codec context
+			if (rctx->current_codec_ctx == rctx->video_ctx) {
+				rctx->video_idx++;
+				rctx->frame_rate = av_q2d(rctx->video_ctx->framerate);
+				rctx->frame_duration = 1000.0 / rctx->frame_rate;
+				LOG("video frame duration: %.2fms, fps: %.2f",
+					rctx->frame_duration, 1000.0 / rctx->frame_duration);
+				video_pts += rctx->frame_duration;
+				VideoPicture videoPicture = {
+					.frame = nil,
+					.rgbbuf = nil,
+					.planes = nil,
+					.width = rctx->aw,
+					.height = rctx->ah,
+					.idx = rctx->video_idx,
+					.pts = video_pts,
+					};
+				if (rctx->frame_fmt == FRAME_FMT_PRISTINE) {
+					if (create_pristine_picture_from_frame(rctx, frame, &videoPicture) == 2) {
+						break;
+					}
+				}
+				else if (rctx->frame_fmt == FRAME_FMT_RGB) {
+					if (create_rgb_picture_from_frame(rctx, frame, &videoPicture) == 2) {
+						break;
+					}
+			    }
+				else if (rctx->frame_fmt == FRAME_FMT_YUV) {
+					if (create_yuv_picture_from_frame(rctx, frame, &videoPicture) == 2) {
+						break;
+					}
+			    }
+				if (!rctx->audio_only) {
+					send_picture_to_queue(rctx, &videoPicture);
+				}
+			}
+			else if (rctx->current_codec_ctx == rctx->audio_ctx) {
+
+				// write audio sample to file after decoding, before resampling
+				/* LOG("writing pcm sample to file, channels: %d, sample size: %d, sample count: %d", */
+					/* rctx->current_codec_ctx->channels, */
+					/* rctx->current_codec_ctx->bits_per_raw_sample, */
+					/* //rctx->current_codec_ctx->frame_size, */
+					/* frame->nb_samples */
+					/* ); */
+				/* LOG("writing pcm sample of size %d to file", frame->linesize[0]); */
+				/* fwrite(frame->data, */
+					/* //rctx->current_codec_ctx->channels * rctx->current_codec_ctx->bits_per_raw_sample / 8, */
+					/* //rctx->current_codec_ctx->frame_size, */
+					/* 1, */
+					/* frame->linesize[0], */
+					/* //frame->nb_samples, */
+					/* audio_out); */
+
+				rctx->audio_idx++;
+				AudioSample audioSample = {
+					.idx = rctx->audio_idx,
+					/* .sample = malloc(sizeof(rctx->audio_buf)), */
+					};
+				if (create_sample_from_frame(rctx, frame, &audioSample) == 0) {
+					break;
+				}
+				audio_pts += audioSample.duration;
+				audioSample.pts = audio_pts;
+				send_sample_to_queue(rctx, &audioSample);
+
+				// write audio sample to file after decoding, after resampling, before sending to queue
+				//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
+			}
+			else {
+				LOG("non AV packet from demuxer, ignoring");
+			}
+		}
+		av_packet_unref(packet);
+		av_frame_unref(frame);
+	}
 }
 
 
 void state_idle(RendererCtx* rctx)
 {
+	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
+	}
 }
 
 
 void state_exit(RendererCtx* rctx)
 {
+	rctx->quit = 1;
 }
 
 
 void state_load(RendererCtx* rctx)
 {
+	if (open_9pconnection(rctx) == -1) {
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+		return;
+	}
+	if (setup_format_ctx(rctx) == -1) {
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+		return;
+	}
+	if (open_input_stream(rctx) == -1) {
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+		return;
+	}
+	if (open_stream_components(rctx) == -1) {
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+		return;
+	}
+	if (alloc_buffers(rctx) == -1) {
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+		return;
+	}
+	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
 
@@ -1498,25 +1656,25 @@ cmd_set(RendererCtx *rctx, char *arg, int narg)
 }
 
 
-void
-cmd_stop(RendererCtx *rctx, char *arg, int narg)
-{
-	// Do nothing
-}
+/* void */
+/* cmd_stop(RendererCtx *rctx, char *arg, int narg) */
+/* { */
+	/* // Do nothing */
+/* } */
 
 
-void
-cmd_play(RendererCtx *rctx, char *arg, int narg)
-{
-	// Do nothing
-}
+/* void */
+/* cmd_play(RendererCtx *rctx, char *arg, int narg) */
+/* { */
+	/* // Do nothing */
+/* } */
 
 
-void
-cmd_pause(RendererCtx *rctx, char *arg, int narg)
-{
-	// Do nothing
-}
+/* void */
+/* cmd_pause(RendererCtx *rctx, char *arg, int narg) */
+/* { */
+	/* // Do nothing */
+/* } */
 
 
 void
@@ -1541,27 +1699,58 @@ cmd_vol(RendererCtx *rctx, char *arg, int narg)
 
 
 int
-read_cmd(RendererCtx *rctx, Command *cmd)
+read_cmd(RendererCtx *rctx, int mode)
 {
-	int cmdret = recv(rctx->cmdq, cmd);
-	if (cmdret == 1) {
-		LOG("<== received command: %d", cmd->cmd);
-		return 0;
+	int ret;
+	Command cmd = {.cmd = -1, .arg = nil, .narg = 0};
+	if (mode == READCMD_BLOCK) {
+		ret = recv(rctx->cmdq, &cmd);
 	}
-	return 1;
+	else if (mode == READCMD_POLL) {
+		ret = nbrecv(rctx->cmdq, &cmd);
+	}
+	else {
+		LOG("unsupported read command mode");
+		return KEEP_STATE;
+	}
+	if (ret == -1) {
+		LOG("receiving command interrupted");
+		return KEEP_STATE;
+	}
+	if (ret == 1) {
+		LOG("<== received command: %d", cmd.cmd);
+		if (cmds[cmd.cmd] == nil) {
+			LOG("command is nil, nothing to execute");
+		}
+		else {
+			cmds[cmd.cmd](rctx, cmd.arg, cmd.narg);
+		}
+		// FIXME find a better check for allocated cmd arg
+		if (cmd.arg != nil && cmd.narg > 0) {
+			free(cmd.arg);
+		}
+		int next_renderer_state = transitions[cmd.cmd][rctx->renderer_state];
+		LOG("state: %d -> %d", rctx->renderer_state, next_renderer_state);
+		if (next_renderer_state == rctx->renderer_state) {
+			return KEEP_STATE;
+		}
+		rctx->renderer_state = next_renderer_state;
+		return CHANGE_STATE;
+	}
+	return KEEP_STATE;
 }
 
 
-int
-poll_cmd(RendererCtx *rctx, Command *cmd)
-{
-	int cmdret = nbrecv(rctx->cmdq, cmd);
-	if (cmdret == 1) {
-		LOG("<== received command: %d", cmd->cmd);
-		return 0;
-	}
-	return 1;
-}
+/* int */
+/* poll_cmd(RendererCtx *rctx, Command *cmd) */
+/* { */
+	/* int cmdret = nbrecv(rctx->cmdq, cmd); */
+	/* if (cmdret == 1) { */
+		/* LOG("<== received command: %d", cmd->cmd); */
+		/* return 0; */
+	/* } */
+	/* return 1; */
+/* } */
 
 
 void
@@ -1570,18 +1759,10 @@ decoder_thread(void *arg)
 	RendererCtx *rctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", rctx->decoder_tid);
 
-	// Initial renderer state is RUN only if an url was given as a command line argument
+	// Initial renderer state is LOAD only if an url was given as a command line argument
 	// otherwise it defaults to STOP
-	if (rctx->renderer_state == RUN) {
-		states[rctx->renderer_state](rctx);
-	}
-
 	while(!rctx->quit) {
-		Command cmd;
-		read_cmd(rctx, &cmd);
-		cmds[cmd.cmd](rctx, cmd.arg, cmd.narg);
-		free(cmd.arg);
-		rctx->renderer_state = transitions[cmd.cmd][rctx->renderer_state];
+		LOG("entering state %d", rctx->renderer_state);
 		states[rctx->renderer_state](rctx);
 	}
 }
@@ -2073,7 +2254,7 @@ threadmain(int argc, char **argv)
 	if (argc >= 2) {
 		seturl(rctx, argv[1]);
 		/* rctx->renderer_state = RSTATE_PLAY; */
-		rctx->renderer_state = RUN;
+		rctx->renderer_state = LOAD;
 	}
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
