@@ -128,6 +128,8 @@ typedef struct RendererCtx
 	AVIOContext       *io_ctx;
 	AVFormatContext   *format_ctx;
 	AVCodecContext    *current_codec_ctx;
+	AVFrame           *decoder_frame;
+	AVPacket          *decoder_packet;
 	Channel           *cmdq;
 	int                screen_width;
 	int                screen_height;
@@ -147,8 +149,6 @@ typedef struct RendererCtx
 	uint8_t            mixed_audio_buf[MAX_AUDIO_FRAME_SIZE];
 	unsigned int       audio_buf_size;
 	unsigned int       audio_buf_index;
-	AVFrame            audio_frame;
-	AVPacket           audio_pkt;
 	int                audio_idx;
 	int                audio_out_channels;
 	double             current_video_time;
@@ -394,6 +394,8 @@ reset_rctx(RendererCtx *rctx)
 	rctx->io_ctx = nil;
 	rctx->format_ctx = nil;
 	rctx->current_codec_ctx = nil;
+	rctx->decoder_frame = nil;
+	rctx->decoder_packet = nil;
 	/* rctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
 	/* rctx->renderer_state = RSTATE_STOP; */
 	/* rctx->next_renderer_state = RSTATE_STOP; */
@@ -1039,7 +1041,6 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 			rctx->audio_ctx = codecCtx;
 			rctx->audio_buf_size = 0;
 			rctx->audio_buf_index = 0;
-			memset(&rctx->audio_pkt, 0, sizeof(rctx->audio_pkt));
 			rctx->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
 			rctx->presenter_tid = threadcreate(presenter_thread, rctx, THREAD_STACK_SIZE);
 			rctx->audio_timebase = rctx->format_ctx->streams[stream_index]->time_base;
@@ -1480,13 +1481,13 @@ void state_stop(RendererCtx* rctx)
 
 void state_run(RendererCtx* rctx)
 {
-	AVPacket *packet = av_packet_alloc();
-	if (packet == nil) {
+	rctx->decoder_packet = av_packet_alloc();
+	if (rctx->decoder_packet == nil) {
 		LOG("Could not allocate AVPacket.");
 		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
 	}
-	AVFrame *frame = av_frame_alloc();
-	if (frame == nil) {
+	rctx->decoder_frame = av_frame_alloc();
+	if (rctx->decoder_frame == nil) {
 		printf("Could not allocate AVFrame.\n");
 		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
 	}
@@ -1498,17 +1499,17 @@ void state_run(RendererCtx* rctx)
 		if (read_cmd(rctx, READCMD_POLL) == CHANGE_STATE) {
 			return;
 		}
-		if (read_packet(rctx, packet) == -1) {
+		if (read_packet(rctx, rctx->decoder_packet) == -1) {
 			rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
 		}
-		if (write_packet_to_decoder(rctx, packet) == -1) {
+		if (write_packet_to_decoder(rctx, rctx->decoder_packet) == -1) {
 			rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
 		}
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
 		int decoder_ret = 0;
 		while (decoder_ret == 0) {
-			decoder_ret = read_frame_from_decoder(rctx, frame);
+			decoder_ret = read_frame_from_decoder(rctx, rctx->decoder_frame);
 			if (decoder_ret == -1) {
 				rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
 			}
@@ -1533,17 +1534,17 @@ void state_run(RendererCtx* rctx)
 					.pts = video_pts,
 					};
 				if (rctx->frame_fmt == FRAME_FMT_PRISTINE) {
-					if (create_pristine_picture_from_frame(rctx, frame, &videoPicture) == 2) {
+					if (create_pristine_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture) == 2) {
 						break;
 					}
 				}
 				else if (rctx->frame_fmt == FRAME_FMT_RGB) {
-					if (create_rgb_picture_from_frame(rctx, frame, &videoPicture) == 2) {
+					if (create_rgb_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture) == 2) {
 						break;
 					}
 			    }
 				else if (rctx->frame_fmt == FRAME_FMT_YUV) {
-					if (create_yuv_picture_from_frame(rctx, frame, &videoPicture) == 2) {
+					if (create_yuv_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture) == 2) {
 						break;
 					}
 			    }
@@ -1552,44 +1553,25 @@ void state_run(RendererCtx* rctx)
 				}
 			}
 			else if (rctx->current_codec_ctx == rctx->audio_ctx) {
-
-				// write audio sample to file after decoding, before resampling
-				/* LOG("writing pcm sample to file, channels: %d, sample size: %d, sample count: %d", */
-					/* rctx->current_codec_ctx->channels, */
-					/* rctx->current_codec_ctx->bits_per_raw_sample, */
-					/* //rctx->current_codec_ctx->frame_size, */
-					/* frame->nb_samples */
-					/* ); */
-				/* LOG("writing pcm sample of size %d to file", frame->linesize[0]); */
-				/* fwrite(frame->data, */
-					/* //rctx->current_codec_ctx->channels * rctx->current_codec_ctx->bits_per_raw_sample / 8, */
-					/* //rctx->current_codec_ctx->frame_size, */
-					/* 1, */
-					/* frame->linesize[0], */
-					/* //frame->nb_samples, */
-					/* audio_out); */
-
 				rctx->audio_idx++;
+				// TODO better initialize audioSample in create_sample_from_frame()
 				AudioSample audioSample = {
 					.idx = rctx->audio_idx,
 					/* .sample = malloc(sizeof(rctx->audio_buf)), */
 					};
-				if (create_sample_from_frame(rctx, frame, &audioSample) == 0) {
+				if (create_sample_from_frame(rctx, rctx->decoder_frame, &audioSample) == 0) {
 					break;
 				}
 				audio_pts += audioSample.duration;
 				audioSample.pts = audio_pts;
 				send_sample_to_queue(rctx, &audioSample);
-
-				// write audio sample to file after decoding, after resampling, before sending to queue
-				//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 			}
 			else {
 				LOG("non AV packet from demuxer, ignoring");
 			}
 		}
-		av_packet_unref(packet);
-		av_frame_unref(frame);
+		av_packet_unref(rctx->decoder_packet);
+		av_frame_unref(rctx->decoder_frame);
 	}
 }
 
