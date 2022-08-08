@@ -137,6 +137,7 @@ typedef struct RendererCtx
 	int                server_tid;
 	int                decoder_tid;
 	int                presenter_tid;
+	int                stop_presenter_thread;
 	// Audio stream
 	int                audio_stream;
 	AVCodecContext    *audio_ctx;
@@ -300,9 +301,6 @@ enum
 static cmd_func cmds[NCMD] =
 {
 	cmd_set,
-	/* cmd_stop, */
-	/* cmd_play, */
-	/* cmd_pause, */
 	nil,
 	nil,
 	nil,
@@ -314,8 +312,9 @@ static cmd_func cmds[NCMD] =
 };
 
 // Transitions is the State matrix with dimensions [cmds x current state]
-// Each entry is the *next* state when cmd is received in current state
-// FIXME better ignore commands in states like LOAD, UNLOAD, ENGAGE, DISENG
+// Each entry is the *next* state when cmd is received in current state.
+// Commands in states LOAD, UNLOAD, ENGAGE, DISENG are ignored because
+// read_cmd() is not called
 static int transitions[NCMD][NSTATE-1] = // no entry for EXIT state needed
 {
 // Current state:
@@ -328,15 +327,15 @@ static int transitions[NCMD][NSTATE-1] = // no entry for EXIT state needed
 	{LOAD,    RUN,     ENGAGE,  LOAD,    UNLOAD,  ENGAGE,  ENGAGE},
 // CMD_PAUSE
 	{STOP,    DISENG,  ENGAGE,  DISENG,  UNLOAD,  DISENG,  DISENG},
-// CMD_QUIT
-	{EXIT,    EXIT,    EXIT,    EXIT,    EXIT,    EXIT,    EXIT},
+// CMD_QUIT, exiting only in state STOP possible, all others keep the state
+	{EXIT,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
 // CMD_SEEK
 	{STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
 // CMD_VOL
 	{STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
-// CMD_NONE - unconditional straight transitions
+// CMD_NONE, unconditional straight transitions
 	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
-// CMD_ERR - error occured while running the state
+// CMD_ERR, error occured while running the state
 	{STOP,    UNLOAD,  IDLE,    STOP,    STOP,    STOP,    STOP},
 };
 
@@ -409,6 +408,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->server_tid = 0;
 	rctx->decoder_tid = 0;
 	rctx->presenter_tid = 0;
+	rctx->stop_presenter_thread = 0;
 	// Audio stream
 	rctx->audio_stream = -1;
 	rctx->audio_ctx = nil;
@@ -1604,6 +1604,7 @@ void state_idle(RendererCtx* rctx)
 void state_exit(RendererCtx* rctx)
 {
 	rctx->quit = 1;
+	threadexitsall("");
 }
 
 
@@ -1635,16 +1636,40 @@ void state_load(RendererCtx* rctx)
 
 void state_unload(RendererCtx* rctx)
 {
+	rctx->stop_presenter_thread = 1;
+	if (rctx->io_ctx) {
+		avio_context_free(&rctx->io_ctx);
+	}
+	avformat_close_input(&rctx->format_ctx);
+	if (rctx->format_ctx) {
+		avformat_free_context(rctx->format_ctx);
+	}
+	/* if (rctx->videoq) { */
+		/* chanfree(rctx->videoq); */
+	/* } */
+	if (rctx->audioq) {
+		chanfree(rctx->audioq);
+	}
+	if (rctx->pictq) {
+		chanfree(rctx->pictq);
+	}
+	if (rctx->swr_ctx) {
+		swr_free(&rctx->swr_ctx);
+	}
+	fclose(audio_out);
+	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
 
 void state_engage(RendererCtx* rctx)
 {
+	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
 
 void state_disengage(RendererCtx* rctx)
 {
+	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
 
@@ -1656,31 +1681,10 @@ cmd_set(RendererCtx *rctx, char *arg, int narg)
 }
 
 
-/* void */
-/* cmd_stop(RendererCtx *rctx, char *arg, int narg) */
-/* { */
-	/* // Do nothing */
-/* } */
-
-
-/* void */
-/* cmd_play(RendererCtx *rctx, char *arg, int narg) */
-/* { */
-	/* // Do nothing */
-/* } */
-
-
-/* void */
-/* cmd_pause(RendererCtx *rctx, char *arg, int narg) */
-/* { */
-	/* // Do nothing */
-/* } */
-
-
 void
 cmd_quit(RendererCtx *rctx, char *arg, int narg)
 {
-	rctx->quit = 1;
+	// currently nothing planned here ...
 }
 
 
@@ -1741,24 +1745,11 @@ read_cmd(RendererCtx *rctx, int mode)
 }
 
 
-/* int */
-/* poll_cmd(RendererCtx *rctx, Command *cmd) */
-/* { */
-	/* int cmdret = nbrecv(rctx->cmdq, cmd); */
-	/* if (cmdret == 1) { */
-		/* LOG("<== received command: %d", cmd->cmd); */
-		/* return 0; */
-	/* } */
-	/* return 1; */
-/* } */
-
-
 void
 decoder_thread(void *arg)
 {
 	RendererCtx *rctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", rctx->decoder_tid);
-
 	// Initial renderer state is LOAD only if an url was given as a command line argument
 	// otherwise it defaults to STOP
 	while(!rctx->quit) {
@@ -2052,6 +2043,9 @@ presenter_thread(void *arg)
 		receive_picture(rctx, &videoPicture);
 	}
 	for (;;) {
+		if (rctx->stop_presenter_thread) {
+			return;
+		}
 		LOG("receiving sample from audio queue ...");
 		int recret = recv(rctx->audioq, &audioSample);
 		if (recret != 1) {
