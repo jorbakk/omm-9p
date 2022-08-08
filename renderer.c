@@ -115,6 +115,7 @@ typedef struct RendererCtx
 	// State machine
 	int                renderer_state;
 	int                next_renderer_state;
+	int                quit;
 	// Input file name, plan 9 file reference, os window
 	char              *url;
 	char              *fileservername;
@@ -209,8 +210,8 @@ typedef struct AudioSample
 	double      duration;
 } AudioSample;
 
-// State machine
 
+// State machine
 #define NSTATE 8
 typedef void (*state_func)(RendererCtx*);
 
@@ -262,6 +263,16 @@ typedef struct Command
 } Command;
 
 #define NCMD 8
+typedef void (*cmd_func)(RendererCtx*, char*, int);
+
+void cmd_set(RendererCtx *rctx, char *arg, int narg);
+void cmd_stop(RendererCtx *rctx, char *arg, int narg);
+void cmd_play(RendererCtx *rctx, char *arg, int narg);
+void cmd_pause(RendererCtx *rctx, char *arg, int narg);
+void cmd_quit(RendererCtx *rctx, char *arg, int narg);
+void cmd_seek(RendererCtx *rctx, char *arg, int narg);
+void cmd_vol(RendererCtx *rctx, char *arg, int narg);
+
 enum
 {
 	CMD_SET = 0,   // Set *next* url
@@ -269,10 +280,22 @@ enum
 	CMD_PLAY,
 	CMD_PAUSE,
 	CMD_QUIT,
-	CMD_NONE,
 
 	CMD_SEEK,      // Seek to second from start
 	CMD_VOL,       // Set percent soft volume
+
+	CMD_NONE,
+};
+
+static cmd_func cmds[NCMD - 1] =
+{
+	cmd_set,
+	cmd_stop,
+	cmd_play,
+	cmd_pause,
+	cmd_quit,
+	cmd_seek,
+	cmd_vol,
 };
 
 // Transitions is the State matrix with dimensions [cmds x current state]
@@ -298,8 +321,7 @@ static int transitions[NCMD][NSTATE-1] =
 };
 
 
-// Frame and clock types
-
+// Frame, clock, and sample types
 enum
 {
 	FRAME_FMT_PRISTINE,
@@ -327,13 +349,17 @@ struct sample_fmt_entry {
     { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
 };
 
+
 /* AVPacket flush_pkt; */
 
+// Function declarations
 void display_picture(RendererCtx *rctx, VideoPicture *videoPicture);
 void decoder_thread(void *arg);
 void presenter_thread(void *arg);
 void blank_window(RendererCtx *rctx);
 
+
+// Implementation
 void
 reset_rctx(RendererCtx *rctx)
 {
@@ -349,8 +375,11 @@ reset_rctx(RendererCtx *rctx)
 	rctx->format_ctx = nil;
 	rctx->current_codec_ctx = nil;
 	/* rctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
-	rctx->renderer_state = RSTATE_STOP;
-	rctx->next_renderer_state = RSTATE_STOP;
+	/* rctx->renderer_state = RSTATE_STOP; */
+	/* rctx->next_renderer_state = RSTATE_STOP; */
+	rctx->renderer_state = STOP;
+	rctx->next_renderer_state = STOP;
+	rctx->quit = 0;
 	rctx->cmdq = nil;
 	rctx->screen_width = 0;
 	rctx->screen_height = 0;
@@ -664,84 +693,6 @@ open_9pconnection(RendererCtx *rctx)
 		return -1;
 	}
 	rctx->fileserverfid = fid; 
-	return 0;
-}
-
-
-int
-read_cmd(RendererCtx *rctx)
-{
-	while (rctx->filename == nil || rctx->renderer_state == RSTATE_STOP) {
-		LOG("renderer stopped or no av stream file specified, waiting for command ...");
-		blank_window(rctx);
-		Command cmd;
-		int cmdret = recv(rctx->cmdq, &cmd);
-		if (cmdret == 1) {
-			LOG("<== received command: %d", cmd.cmd);
-			if (cmd.cmd == CMD_SET) {
-				setstr(&rctx->url, cmd.arg, cmd.narg);
-				seturl(rctx, rctx->url);
-				free(cmd.arg);
-				cmd.arg = nil;
-			}
-			else if (cmd.cmd == CMD_PLAY) {
-				rctx->renderer_state = RSTATE_PLAY;
-			}
-			else if (cmd.cmd == CMD_STOP) {
-				rctx->renderer_state = RSTATE_STOP;
-			}
-			else if (cmd.cmd == CMD_QUIT) {
-				return 1;
-			}
-		}
-		else {
-			LOG("failed to receive command");
-		}
-	}
-	return 0;
-}
-
-
-int
-poll_cmd(RendererCtx *rctx)
-{
-	if (rctx->renderer_state == RSTATE_PLAY) {
-		Command cmd;
-		int cmdret = nbrecv(rctx->cmdq, &cmd);
-		if (cmdret == 1) {
-			LOG("<== received command: %d", cmd.cmd);
-			if (cmd.cmd == CMD_PAUSE) {
-				rctx->renderer_state = RSTATE_PAUSE;
-				cmdret = recv(rctx->cmdq, &cmd);
-				while (cmdret != 1 || cmd.cmd != CMD_PAUSE) {
-					LOG("<== received command: %d", cmd.cmd);
-					cmdret = recv(rctx->cmdq, &cmd);
-				}
-				rctx->renderer_state = RSTATE_PLAY;
-			}
-			else if (cmd.cmd == CMD_STOP) {
-				rctx->renderer_state = RSTATE_STOP;
-				reset_filectx(rctx);
-				blank_window(rctx);
-				return -1;
-			}
-			else if (cmd.cmd == CMD_SEEK) {
-				uint64_t seekpos = atoll(cmd.arg);
-				av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0);
-				av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0);
-				/* rctx->renderer_state = RSTATE_SEEK; */
-			}
-			else if (cmd.cmd == CMD_VOL) {
-				int vol = atoi(cmd.arg);
-				if (vol >=0 && vol <= 100) {
-					rctx->audio_vol = vol;
-				}
-			}
-			else if (cmd.cmd == CMD_QUIT) {
-				return 1;
-			}
-		}
-	}
 	return 0;
 }
 
@@ -1540,7 +1491,182 @@ void state_disengage(RendererCtx* rctx)
 
 
 void
+cmd_set(RendererCtx *rctx, char *arg, int narg)
+{
+	setstr(&rctx->url, arg, narg);
+	seturl(rctx, rctx->url);
+}
+
+
+void
+cmd_stop(RendererCtx *rctx, char *arg, int narg)
+{
+	// Do nothing
+}
+
+
+void
+cmd_play(RendererCtx *rctx, char *arg, int narg)
+{
+	// Do nothing
+}
+
+
+void
+cmd_pause(RendererCtx *rctx, char *arg, int narg)
+{
+	// Do nothing
+}
+
+
+void
+cmd_quit(RendererCtx *rctx, char *arg, int narg)
+{
+	rctx->quit = 1;
+}
+
+
+void
+cmd_seek(RendererCtx *rctx, char *arg, int narg)
+{
+	// TODO implement cmd_seek()
+}
+
+
+void
+cmd_vol(RendererCtx *rctx, char *arg, int narg)
+{
+	// TODO implement cmd_vol()
+}
+
+
+int
+read_cmd(RendererCtx *rctx, Command *cmd)
+{
+	int cmdret = recv(rctx->cmdq, cmd);
+	if (cmdret == 1) {
+		LOG("<== received command: %d", cmd->cmd);
+		return 0;
+	}
+	return 1;
+}
+
+
+int
+poll_cmd(RendererCtx *rctx, Command *cmd)
+{
+	int cmdret = nbrecv(rctx->cmdq, cmd);
+	if (cmdret == 1) {
+		LOG("<== received command: %d", cmd->cmd);
+		return 0;
+	}
+	return 1;
+}
+
+
+void
 decoder_thread(void *arg)
+{
+	RendererCtx *rctx = (RendererCtx *)arg;
+	LOG("decoder thread started with id: %d", rctx->decoder_tid);
+
+	// Initial renderer state is RUN only if an url was given as a command line argument
+	// otherwise it defaults to STOP
+	if (rctx->renderer_state == RUN) {
+		states[rctx->renderer_state](rctx);
+	}
+
+	while(!rctx->quit) {
+		Command cmd;
+		read_cmd(rctx, &cmd);
+		cmds[cmd.cmd](rctx, cmd.arg, cmd.narg);
+		free(cmd.arg);
+		rctx->renderer_state = transitions[cmd.cmd][rctx->renderer_state];
+		states[rctx->renderer_state](rctx);
+	}
+}
+
+
+int
+read_cmd0(RendererCtx *rctx)
+{
+	while (rctx->filename == nil || rctx->renderer_state == RSTATE_STOP) {
+		LOG("renderer stopped or no av stream file specified, waiting for command ...");
+		blank_window(rctx);
+		Command cmd;
+		int cmdret = recv(rctx->cmdq, &cmd);
+		if (cmdret == 1) {
+			LOG("<== received command: %d", cmd.cmd);
+			if (cmd.cmd == CMD_SET) {
+				setstr(&rctx->url, cmd.arg, cmd.narg);
+				seturl(rctx, rctx->url);
+				free(cmd.arg);
+				cmd.arg = nil;
+			}
+			else if (cmd.cmd == CMD_PLAY) {
+				rctx->renderer_state = RSTATE_PLAY;
+			}
+			else if (cmd.cmd == CMD_STOP) {
+				rctx->renderer_state = RSTATE_STOP;
+			}
+			else if (cmd.cmd == CMD_QUIT) {
+				return 1;
+			}
+		}
+		else {
+			LOG("failed to receive command");
+		}
+	}
+	return 0;
+}
+
+
+int
+poll_cmd0(RendererCtx *rctx)
+{
+	if (rctx->renderer_state == RSTATE_PLAY) {
+		Command cmd;
+		int cmdret = nbrecv(rctx->cmdq, &cmd);
+		if (cmdret == 1) {
+			LOG("<== received command: %d", cmd.cmd);
+			if (cmd.cmd == CMD_PAUSE) {
+				rctx->renderer_state = RSTATE_PAUSE;
+				cmdret = recv(rctx->cmdq, &cmd);
+				while (cmdret != 1 || cmd.cmd != CMD_PAUSE) {
+					LOG("<== received command: %d", cmd.cmd);
+					cmdret = recv(rctx->cmdq, &cmd);
+				}
+				rctx->renderer_state = RSTATE_PLAY;
+			}
+			else if (cmd.cmd == CMD_STOP) {
+				rctx->renderer_state = RSTATE_STOP;
+				reset_filectx(rctx);
+				blank_window(rctx);
+				return -1;
+			}
+			else if (cmd.cmd == CMD_SEEK) {
+				uint64_t seekpos = atoll(cmd.arg);
+				av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0);
+				av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0);
+				/* rctx->renderer_state = RSTATE_SEEK; */
+			}
+			else if (cmd.cmd == CMD_VOL) {
+				int vol = atoi(cmd.arg);
+				if (vol >=0 && vol <= 100) {
+					rctx->audio_vol = vol;
+				}
+			}
+			else if (cmd.cmd == CMD_QUIT) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+
+void
+decoder_thread0(void *arg)
 {
 	RendererCtx *rctx = (RendererCtx *)arg;
 	LOG("decoder thread started with id: %d", rctx->decoder_tid);
@@ -1548,7 +1674,7 @@ decoder_thread(void *arg)
 start:
 	// FIXME handle renderer state properly in any situation
 	rctx->renderer_state = RSTATE_STOP;
-	if (read_cmd(rctx) == 1) {
+	if (read_cmd0(rctx) == 1) {
 		goto quit;
 	}
 
@@ -1583,7 +1709,7 @@ start:
 
 	// Main decoder loop
 	for (;;) {
-		int jmp = poll_cmd(rctx);
+		int jmp = poll_cmd0(rctx);
 		if (jmp == -1) {
 			goto start;
 		}
@@ -1946,6 +2072,8 @@ threadmain(int argc, char **argv)
 	rctx->cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
 	if (argc >= 2) {
 		seturl(rctx, argv[1]);
+		/* rctx->renderer_state = RSTATE_PLAY; */
+		rctx->renderer_state = RUN;
 	}
 	audio_out = fopen("/tmp/out.pcm", "wb");
 	// start the decoding thread to read data from the AVFormatContext
@@ -1960,7 +2088,7 @@ threadmain(int argc, char **argv)
 	for (;;) {
 		yield();
 		if (rctx->renderer_state == RSTATE_STOP || rctx->renderer_state == RSTATE_PAUSE) {
-			p9sleep(100);
+			sleep(100);
 		}
 		SDL_Event event;
 		ret = SDL_PollEvent(&event);
