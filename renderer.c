@@ -150,6 +150,7 @@ typedef struct RendererCtx
 	unsigned int       audio_buf_size;
 	unsigned int       audio_buf_index;
 	int                audio_idx;
+	double             audio_pts;
 	int                audio_out_channels;
 	double             current_video_time;
 	double             previous_video_time;
@@ -171,6 +172,7 @@ typedef struct RendererCtx
 	struct SwsContext *rgb_ctx;
 	SDL_AudioSpec      specs;
 	int                video_idx;
+	double             video_pts;
 	AVFrame           *frame_rgb;
 	uint8_t           *rgbbuffer;
 	uint8_t           *yuvbuffer;
@@ -418,6 +420,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->audio_buf_size = 0;
 	rctx->audio_buf_index = 0;
 	rctx->audio_idx = 0;
+	rctx->audio_pts = 0.0;
 	rctx->audio_out_channels = 2;
 	rctx->current_video_time = 0.0;
 	rctx->previous_video_time = 0.0;
@@ -439,6 +442,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->yuv_ctx = nil;
 	rctx->rgb_ctx = nil;
 	rctx->video_idx = 0;
+	rctx->video_pts = 0.0;
 	rctx->frame_rgb = nil;
 	rctx->rgbbuffer = nil;
 	rctx->yuvbuffer = nil;
@@ -1205,6 +1209,16 @@ alloc_buffers(RendererCtx *rctx)
 			32
 	    );
 	}
+	rctx->decoder_packet = av_packet_alloc();
+	if (rctx->decoder_packet == nil) {
+		LOG("Could not allocate AVPacket.");
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+	}
+	rctx->decoder_frame = av_frame_alloc();
+	if (rctx->decoder_frame == nil) {
+		printf("Could not allocate AVFrame.\n");
+		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+	}
 	return 0;
 }
 
@@ -1481,19 +1495,6 @@ void state_stop(RendererCtx* rctx)
 
 void state_run(RendererCtx* rctx)
 {
-	rctx->decoder_packet = av_packet_alloc();
-	if (rctx->decoder_packet == nil) {
-		LOG("Could not allocate AVPacket.");
-		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
-	}
-	rctx->decoder_frame = av_frame_alloc();
-	if (rctx->decoder_frame == nil) {
-		printf("Could not allocate AVFrame.\n");
-		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
-	}
-	double audio_pts = 0.0;
-	double video_pts = 0.0;
-
 	// Main decoder loop
 	for (;;) {
 		if (read_cmd(rctx, READCMD_POLL) == CHANGE_STATE) {
@@ -1523,7 +1524,7 @@ void state_run(RendererCtx* rctx)
 				rctx->frame_duration = 1000.0 / rctx->frame_rate;
 				LOG("video frame duration: %.2fms, fps: %.2f",
 					rctx->frame_duration, 1000.0 / rctx->frame_duration);
-				video_pts += rctx->frame_duration;
+				rctx->video_pts += rctx->frame_duration;
 				VideoPicture videoPicture = {
 					.frame = nil,
 					.rgbbuf = nil,
@@ -1531,7 +1532,7 @@ void state_run(RendererCtx* rctx)
 					.width = rctx->aw,
 					.height = rctx->ah,
 					.idx = rctx->video_idx,
-					.pts = video_pts,
+					.pts = rctx->video_pts,
 					};
 				if (rctx->frame_fmt == FRAME_FMT_PRISTINE) {
 					if (create_pristine_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture) == 2) {
@@ -1562,8 +1563,8 @@ void state_run(RendererCtx* rctx)
 				if (create_sample_from_frame(rctx, rctx->decoder_frame, &audioSample) == 0) {
 					break;
 				}
-				audio_pts += audioSample.duration;
-				audioSample.pts = audio_pts;
+				rctx->audio_pts += audioSample.duration;
+				audioSample.pts = rctx->audio_pts;
 				send_sample_to_queue(rctx, &audioSample);
 			}
 			else {
@@ -1639,6 +1640,8 @@ void state_unload(RendererCtx* rctx)
 		swr_free(&rctx->swr_ctx);
 	}
 	fclose(audio_out);
+	av_packet_unref(rctx->decoder_packet);
+	av_frame_unref(rctx->decoder_frame);
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
