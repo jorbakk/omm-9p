@@ -24,7 +24,7 @@
 // TODO:
 // 1. Fixes
 // - state machine
-//   - presenter thread stops on EOF in decoder thread
+//   - actively stopping presenter thread and unload (stopping on EOF works)
 // - dvb life streams need too long to start rendering, service queue on server gets full
 // - memory leaks
 // - seek
@@ -70,7 +70,7 @@
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 static struct timespec curtime;
-static FILE *audio_out;
+/* static FILE *audio_out; */
 
 void printloginfo(void)
 {
@@ -1485,28 +1485,35 @@ send_sample_to_queue(RendererCtx *rctx, AudioSample *audioSample)
 }
 
 
-void state_stop(RendererCtx* rctx)
+void state_stop(RendererCtx *rctx)
 {
 	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
 	}
 }
 
 
-void state_run(RendererCtx* rctx)
+void send_eos_frames(RendererCtx *rctx)
+{
+	VideoPicture videoPicture = {.eos = 1};
+	send_picture_to_queue(rctx, &videoPicture);
+	AudioSample audioSample = {.eos = 1};
+	send_sample_to_queue(rctx, &audioSample);
+}
+
+
+void state_run(RendererCtx *rctx)
 {
 	// Main decoder loop
 	for (;;) {
 		if (read_cmd(rctx, READCMD_POLL) == CHANGE_STATE) {
+			rctx->stop_presenter_thread = 1;
 			return;
 		}
 		if (read_packet(rctx, rctx->decoder_packet) == -1) {
 			// When keeping the state after EOF, we blocking wait for commands in the decoder thread
 			// while the presenter thread is still running. We send an EOS (End-Of-Stream) frame 
 			// to both, audio and video queue, to signal the end of the stream in the presenter thread.
-			VideoPicture videoPicture = {.eos = 1};
-			send_picture_to_queue(rctx, &videoPicture);
-			AudioSample audioSample = {.eos = 1};
-			send_sample_to_queue(rctx, &audioSample);
+			send_eos_frames(rctx);
 			if (read_cmd(rctx, READCMD_BLOCK) == CHANGE_STATE) {
 				return;
 			}
@@ -1588,21 +1595,21 @@ void state_run(RendererCtx* rctx)
 }
 
 
-void state_idle(RendererCtx* rctx)
+void state_idle(RendererCtx *rctx)
 {
 	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
 	}
 }
 
 
-void state_exit(RendererCtx* rctx)
+void state_exit(RendererCtx *rctx)
 {
 	rctx->quit = 1;
 	threadexitsall("");
 }
 
 
-void state_load(RendererCtx* rctx)
+void state_load(RendererCtx *rctx)
 {
 	if (open_9pconnection(rctx) == -1) {
 		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
@@ -1628,9 +1635,14 @@ void state_load(RendererCtx* rctx)
 }
 
 
-void state_unload(RendererCtx* rctx)
+void state_unload(RendererCtx *rctx)
 {
-	rctx->stop_presenter_thread = 1;
+	// Stop presenter thread
+	// This shouldn't be called when reaching EOF and presenter thread sends cmd stop
+	/* send_eos_frames(rctx); */
+	/* rctx->stop_presenter_thread = 1; */
+
+	// Free allocated memory
 	if (rctx->io_ctx) {
 		avio_context_free(&rctx->io_ctx);
 	}
@@ -1638,32 +1650,33 @@ void state_unload(RendererCtx* rctx)
 	if (rctx->format_ctx) {
 		avformat_free_context(rctx->format_ctx);
 	}
-	/* if (rctx->videoq) { */
-		/* chanfree(rctx->videoq); */
-	/* } */
-	if (rctx->audioq) {
-		chanfree(rctx->audioq);
-	}
-	if (rctx->pictq) {
-		chanfree(rctx->pictq);
-	}
 	if (rctx->swr_ctx) {
 		swr_free(&rctx->swr_ctx);
 	}
-	fclose(audio_out);
 	av_packet_unref(rctx->decoder_packet);
 	av_frame_unref(rctx->decoder_frame);
+
+	// Unconditional transition to STOP state
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
+
+	/* if (rctx->audioq) { */
+		/* chanfree(rctx->audioq); */
+	/* } */
+	/* if (rctx->pictq) { */
+		/* chanfree(rctx->pictq); */
+	/* } */
+
+	/* fclose(audio_out); */
 }
 
 
-void state_engage(RendererCtx* rctx)
+void state_engage(RendererCtx *rctx)
 {
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
 
-void state_disengage(RendererCtx* rctx)
+void state_disengage(RendererCtx *rctx)
 {
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
@@ -1773,6 +1786,39 @@ receive_picture(RendererCtx *rctx, VideoPicture *videoPicture)
 
 
 void
+flush_picture_queue(RendererCtx *rctx)
+{
+	if (!rctx->video_ctx) {
+		return;
+	}
+	VideoPicture videoPicture;
+	/* VideoPicture videoPicture = {.eos = 0}; */
+	/* while (videoPicture.eos == 0) { */
+	int ret = nbrecv(rctx->pictq, &videoPicture);
+	while (ret == 1) {
+		/* recv(rctx->pictq, &videoPicture); */
+		ret = nbrecv(rctx->pictq, &videoPicture);
+	}
+}
+
+
+void
+flush_audio_queue(RendererCtx *rctx)
+{
+	if (!rctx->audio_ctx) {
+		return;
+	}
+	AudioSample audioSample;
+	/* AudioSample audioSample = {.eos = 0}; */
+	/* while (audioSample.eos == 0) { */
+	int ret = nbrecv(rctx->audioq, &audioSample);
+	while (ret == 1) {
+		ret = nbrecv(rctx->audioq, &audioSample);
+	}
+}
+
+
+void
 presenter_thread(void *arg)
 {
 	RendererCtx *rctx = arg;
@@ -1786,20 +1832,33 @@ presenter_thread(void *arg)
 		receive_picture(rctx, &videoPicture);
 	}
 	for (;;) {
-		if (rctx->stop_presenter_thread) {
-			return;
-		}
 		LOG("receiving sample from audio queue ...");
 		int recret = recv(rctx->audioq, &audioSample);
 		if (recret != 1) {
-			LOG("<== error when receiving sample from audio queue");
+			LOG("<== error receiving sample from audio queue");
 			continue;
+		}
+		/* if (rctx->video_ctx) { */
+			/* receive_picture(rctx, &videoPicture); */
+		/* } */
+
+		if (rctx->stop_presenter_thread) {
+			LOG("stopping presenter thread ...");
+			/* rctx->stop_presenter_thread = 0; */
+
+			// FIXME flushing the queues smashes the stack:
+			// *** stack smashing detected ***: terminated
+			/* flush_picture_queue(rctx); */
+			/* flush_audio_queue(rctx); */
+			continue;
+			/* return; */
 		}
 		if (audioSample.eos) {
 			Command command = {.cmd = CMD_STOP, .arg = nil, .narg = 0};
 			send(rctx->cmdq, &command);
 			continue;
 		}
+
 		LOG("<== received sample with idx: %d, pts: %.2fms, eos: %d from audio queue.", audioSample.idx, audioSample.pts, audioSample.eos);
 		// write audio sample to file after decoding, after resampling, after sending to queue
 		//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
@@ -1998,7 +2057,7 @@ threadmain(int argc, char **argv)
 		/* rctx->renderer_state = RSTATE_PLAY; */
 		rctx->renderer_state = LOAD;
 	}
-	audio_out = fopen("/tmp/out.pcm", "wb");
+	/* audio_out = fopen("/tmp/out.pcm", "wb"); */
 	// start the decoding thread to read data from the AVFormatContext
 	rctx->decoder_tid = threadcreate(decoder_thread, rctx, THREAD_STACK_SIZE);
 	if (!rctx->decoder_tid) {
