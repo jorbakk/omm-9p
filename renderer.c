@@ -23,8 +23,8 @@
 
 // TODO:
 // 1. Fixes
-// - start / stop different media streams in sequence
-//   - audio only stream doesn't stop first time
+// - state machine
+//   - presenter thread stops on EOF in decoder thread
 // - dvb life streams need too long to start rendering, service queue on server gets full
 // - memory leaks
 // - seek
@@ -249,12 +249,6 @@ enum
 	ENGAGE,
 	DISENG,
 	EXIT,
-
-	RSTATE_STOP,
-	RSTATE_PLAY,
-	RSTATE_PAUSE,
-	RSTATE_SEEK,
-	RSTATE_QUIT,
 };
 
 typedef struct Command
@@ -715,7 +709,6 @@ open_9pconnection(RendererCtx *rctx)
 	LOG("opening 9P file ...");
 	CFid *fid = fsopen(rctx->fileserver, rctx->filename, OREAD);
 	if (fid == nil) {
-		rctx->renderer_state = RSTATE_STOP;
 		blank_window(rctx);
 		return -1;
 	}
@@ -1232,9 +1225,8 @@ read_packet(RendererCtx *rctx, AVPacket *packet)
 		if (demuxer_ret == AVERROR_EOF) {
 			LOG("EOF");
 		}
-		rctx->renderer_state = RSTATE_STOP;
-		reset_filectx(rctx);
-		blank_window(rctx);
+		/* reset_filectx(rctx); */
+		/* blank_window(rctx); */
 		return -1;
 	}
 	if (packet->size == 0) {
@@ -1288,7 +1280,6 @@ write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet)
 	}
 	if (decsend_ret == AVERROR_EOF) {
 		LOG("AVERROR = EOF: decoder has been flushed");
-		rctx->renderer_state = RSTATE_STOP;
 		reset_filectx(rctx);
 		blank_window(rctx);
 	}
@@ -1501,9 +1492,14 @@ void state_run(RendererCtx* rctx)
 			return;
 		}
 		if (read_packet(rctx, rctx->decoder_packet) == -1) {
-			rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+			// FIXME when keeping the state after EOF, we re-enter state_run()
+			// and try to read from the stream, again. The decoder thread should
+			// stop but not the presenter thread.
+			return;
+			/* rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state]; */
 		}
 		if (write_packet_to_decoder(rctx, rctx->decoder_packet) == -1) {
+			av_packet_unref(rctx->decoder_packet);
 			rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
 		}
 		// This loop is only needed when we get more than one decoded frame out
@@ -1741,259 +1737,6 @@ decoder_thread(void *arg)
 		LOG("entering state %d", rctx->renderer_state);
 		states[rctx->renderer_state](rctx);
 	}
-}
-
-
-int
-read_cmd0(RendererCtx *rctx)
-{
-	while (rctx->filename == nil || rctx->renderer_state == RSTATE_STOP) {
-		LOG("renderer stopped or no av stream file specified, waiting for command ...");
-		blank_window(rctx);
-		Command cmd;
-		int cmdret = recv(rctx->cmdq, &cmd);
-		if (cmdret == 1) {
-			LOG("<== received command: %d", cmd.cmd);
-			if (cmd.cmd == CMD_SET) {
-				setstr(&rctx->url, cmd.arg, cmd.narg);
-				seturl(rctx, rctx->url);
-				free(cmd.arg);
-				cmd.arg = nil;
-			}
-			else if (cmd.cmd == CMD_PLAY) {
-				rctx->renderer_state = RSTATE_PLAY;
-			}
-			else if (cmd.cmd == CMD_STOP) {
-				rctx->renderer_state = RSTATE_STOP;
-			}
-			else if (cmd.cmd == CMD_QUIT) {
-				return 1;
-			}
-		}
-		else {
-			LOG("failed to receive command");
-		}
-	}
-	return 0;
-}
-
-
-int
-poll_cmd0(RendererCtx *rctx)
-{
-	if (rctx->renderer_state == RSTATE_PLAY) {
-		Command cmd;
-		int cmdret = nbrecv(rctx->cmdq, &cmd);
-		if (cmdret == 1) {
-			LOG("<== received command: %d", cmd.cmd);
-			if (cmd.cmd == CMD_PAUSE) {
-				rctx->renderer_state = RSTATE_PAUSE;
-				cmdret = recv(rctx->cmdq, &cmd);
-				while (cmdret != 1 || cmd.cmd != CMD_PAUSE) {
-					LOG("<== received command: %d", cmd.cmd);
-					cmdret = recv(rctx->cmdq, &cmd);
-				}
-				rctx->renderer_state = RSTATE_PLAY;
-			}
-			else if (cmd.cmd == CMD_STOP) {
-				rctx->renderer_state = RSTATE_STOP;
-				reset_filectx(rctx);
-				blank_window(rctx);
-				return -1;
-			}
-			else if (cmd.cmd == CMD_SEEK) {
-				uint64_t seekpos = atoll(cmd.arg);
-				av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0);
-				av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0);
-				/* rctx->renderer_state = RSTATE_SEEK; */
-			}
-			else if (cmd.cmd == CMD_VOL) {
-				int vol = atoi(cmd.arg);
-				if (vol >=0 && vol <= 100) {
-					rctx->audio_vol = vol;
-				}
-			}
-			else if (cmd.cmd == CMD_QUIT) {
-				return 1;
-			}
-		}
-	}
-	return 0;
-}
-
-
-void
-decoder_thread0(void *arg)
-{
-	RendererCtx *rctx = (RendererCtx *)arg;
-	LOG("decoder thread started with id: %d", rctx->decoder_tid);
-
-start:
-	// FIXME handle renderer state properly in any situation
-	rctx->renderer_state = RSTATE_STOP;
-	if (read_cmd0(rctx) == 1) {
-		goto quit;
-	}
-
-	if (open_9pconnection(rctx) == -1) {
-		goto start;
-	}
-	if (setup_format_ctx(rctx) == -1) {
-		goto start;
-	}
-	if (open_input_stream(rctx) == -1) {
-		goto start;
-	}
-	if (open_stream_components(rctx) == -1) {
-		goto start;
-	}
-	if (alloc_buffers(rctx) == -1) {
-		goto start;
-	}
-
-	AVPacket *packet = av_packet_alloc();
-	if (packet == nil) {
-		LOG("Could not allocate AVPacket.");
-		goto start;
-	}
-	AVFrame *frame = av_frame_alloc();
-	if (frame == nil) {
-		printf("Could not allocate AVFrame.\n");
-		goto start;
-	}
-	double audio_pts = 0.0;
-	double video_pts = 0.0;
-
-	// Main decoder loop
-	for (;;) {
-		int jmp = poll_cmd0(rctx);
-		if (jmp == -1) {
-			goto start;
-		}
-		if (jmp == 1) {
-			goto quit;
-		}
-		if (read_packet(rctx, packet) == -1) {
-			// FIXME maybe better continue here ...?
-			goto start;
-		}
-		if (write_packet_to_decoder(rctx, packet) == -1) {
-			continue;
-		}
-		// This loop is only needed when we get more than one decoded frame out
-		// of one packet read from the demuxer
-		int decoder_ret = 0;
-		while (decoder_ret == 0) {
-			decoder_ret = read_frame_from_decoder(rctx, frame);
-			if (decoder_ret == -1) {
-				goto start;
-			}
-			if (decoder_ret == 2) {
-				break;
-			}
-			// TODO it would be nicer to check for the frame type instead for the codec context
-			if (rctx->current_codec_ctx == rctx->video_ctx) {
-				rctx->video_idx++;
-				rctx->frame_rate = av_q2d(rctx->video_ctx->framerate);
-				rctx->frame_duration = 1000.0 / rctx->frame_rate;
-				LOG("video frame duration: %.2fms, fps: %.2f",
-					rctx->frame_duration, 1000.0 / rctx->frame_duration);
-				video_pts += rctx->frame_duration;
-				VideoPicture videoPicture = {
-					.frame = nil,
-					.rgbbuf = nil,
-					.planes = nil,
-					.width = rctx->aw,
-					.height = rctx->ah,
-					.idx = rctx->video_idx,
-					.pts = video_pts,
-					};
-				if (rctx->frame_fmt == FRAME_FMT_PRISTINE) {
-					if (create_pristine_picture_from_frame(rctx, frame, &videoPicture) == 2) {
-						break;
-					}
-				}
-				else if (rctx->frame_fmt == FRAME_FMT_RGB) {
-					if (create_rgb_picture_from_frame(rctx, frame, &videoPicture) == 2) {
-						break;
-					}
-			    }
-				else if (rctx->frame_fmt == FRAME_FMT_YUV) {
-					if (create_yuv_picture_from_frame(rctx, frame, &videoPicture) == 2) {
-						break;
-					}
-			    }
-				if (!rctx->audio_only) {
-					send_picture_to_queue(rctx, &videoPicture);
-				}
-			}
-			else if (rctx->current_codec_ctx == rctx->audio_ctx) {
-
-				// write audio sample to file after decoding, before resampling
-				/* LOG("writing pcm sample to file, channels: %d, sample size: %d, sample count: %d", */
-					/* rctx->current_codec_ctx->channels, */
-					/* rctx->current_codec_ctx->bits_per_raw_sample, */
-					/* //rctx->current_codec_ctx->frame_size, */
-					/* frame->nb_samples */
-					/* ); */
-				/* LOG("writing pcm sample of size %d to file", frame->linesize[0]); */
-				/* fwrite(frame->data, */
-					/* //rctx->current_codec_ctx->channels * rctx->current_codec_ctx->bits_per_raw_sample / 8, */
-					/* //rctx->current_codec_ctx->frame_size, */
-					/* 1, */
-					/* frame->linesize[0], */
-					/* //frame->nb_samples, */
-					/* audio_out); */
-
-				rctx->audio_idx++;
-				AudioSample audioSample = {
-					.idx = rctx->audio_idx,
-					/* .sample = malloc(sizeof(rctx->audio_buf)), */
-					};
-				if (create_sample_from_frame(rctx, frame, &audioSample) == 0) {
-					break;
-				}
-				audio_pts += audioSample.duration;
-				audioSample.pts = audio_pts;
-				send_sample_to_queue(rctx, &audioSample);
-
-				// write audio sample to file after decoding, after resampling, before sending to queue
-				//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
-			}
-			else {
-				LOG("non AV packet from demuxer, ignoring");
-			}
-		}
-		av_packet_unref(packet);
-		av_frame_unref(frame);
-	}
-
-quit:
-	rctx->renderer_state = RSTATE_QUIT;
-	// Clean up the decoder thread
-	if (rctx->io_ctx) {
-		avio_context_free(&rctx->io_ctx);
-	}
-	avformat_close_input(&rctx->format_ctx);
-	if (rctx->format_ctx) {
-		avformat_free_context(rctx->format_ctx);
-	}
-	/* if (rctx->videoq) { */
-		/* chanfree(rctx->videoq); */
-	/* } */
-	if (rctx->audioq) {
-		chanfree(rctx->audioq);
-	}
-	if (rctx->pictq) {
-		chanfree(rctx->pictq);
-	}
-	if (rctx->swr_ctx) {
-		swr_free(&rctx->swr_ctx);
-	}
-	fclose(audio_out);
-	// in case of failure, push the FF_QUIT_EVENT and return
-	LOG("quitting decoder thread");
-	threadexitsall("end of file");
 }
 
 
@@ -2247,7 +1990,7 @@ threadmain(int argc, char **argv)
 	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
 	for (;;) {
 		yield();
-		if (rctx->renderer_state == RSTATE_STOP || rctx->renderer_state == RSTATE_PAUSE) {
+		if (rctx->renderer_state == STOP || rctx->renderer_state == IDLE) {
 			sleep(100);
 		}
 		SDL_Event event;
@@ -2331,3 +2074,233 @@ threadmain(int argc, char **argv)
 	av_free(rctx);
 	return;
 }
+
+/* int */
+/* read_cmd0(RendererCtx *rctx) */
+/* { */
+	/* while (rctx->filename == nil || rctx->renderer_state == RSTATE_STOP) { */
+		/* LOG("renderer stopped or no av stream file specified, waiting for command ..."); */
+		/* blank_window(rctx); */
+		/* Command cmd; */
+		/* int cmdret = recv(rctx->cmdq, &cmd); */
+		/* if (cmdret == 1) { */
+			/* LOG("<== received command: %d", cmd.cmd); */
+			/* if (cmd.cmd == CMD_SET) { */
+				/* setstr(&rctx->url, cmd.arg, cmd.narg); */
+				/* seturl(rctx, rctx->url); */
+				/* free(cmd.arg); */
+				/* cmd.arg = nil; */
+			/* } */
+			/* else if (cmd.cmd == CMD_PLAY) { */
+				/* rctx->renderer_state = RSTATE_PLAY; */
+			/* } */
+			/* else if (cmd.cmd == CMD_STOP) { */
+				/* rctx->renderer_state = RSTATE_STOP; */
+			/* } */
+			/* else if (cmd.cmd == CMD_QUIT) { */
+				/* return 1; */
+			/* } */
+		/* } */
+		/* else { */
+			/* LOG("failed to receive command"); */
+		/* } */
+	/* } */
+	/* return 0; */
+/* } */
+
+
+/* int */
+/* poll_cmd0(RendererCtx *rctx) */
+/* { */
+	/* if (rctx->renderer_state == RSTATE_PLAY) { */
+		/* Command cmd; */
+		/* int cmdret = nbrecv(rctx->cmdq, &cmd); */
+		/* if (cmdret == 1) { */
+			/* LOG("<== received command: %d", cmd.cmd); */
+			/* if (cmd.cmd == CMD_PAUSE) { */
+				/* rctx->renderer_state = RSTATE_PAUSE; */
+				/* cmdret = recv(rctx->cmdq, &cmd); */
+				/* while (cmdret != 1 || cmd.cmd != CMD_PAUSE) { */
+					/* LOG("<== received command: %d", cmd.cmd); */
+					/* cmdret = recv(rctx->cmdq, &cmd); */
+				/* } */
+				/* rctx->renderer_state = RSTATE_PLAY; */
+			/* } */
+			/* else if (cmd.cmd == CMD_STOP) { */
+				/* rctx->renderer_state = RSTATE_STOP; */
+				/* reset_filectx(rctx); */
+				/* blank_window(rctx); */
+				/* return -1; */
+			/* } */
+			/* else if (cmd.cmd == CMD_SEEK) { */
+				/* uint64_t seekpos = atoll(cmd.arg); */
+				/* av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0); */
+				/* av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0); */
+			/* } */
+			/* else if (cmd.cmd == CMD_VOL) { */
+				/* int vol = atoi(cmd.arg); */
+				/* if (vol >=0 && vol <= 100) { */
+					/* rctx->audio_vol = vol; */
+				/* } */
+			/* } */
+			/* else if (cmd.cmd == CMD_QUIT) { */
+				/* return 1; */
+			/* } */
+		/* } */
+	/* } */
+	/* return 0; */
+/* } */
+
+
+/* void */
+/* decoder_thread0(void *arg) */
+/* { */
+	/* RendererCtx *rctx = (RendererCtx *)arg; */
+	/* LOG("decoder thread started with id: %d", rctx->decoder_tid); */
+
+/* start: */
+	/* // FIXME handle renderer state properly in any situation */
+	/* rctx->renderer_state = RSTATE_STOP; */
+	/* if (read_cmd0(rctx) == 1) { */
+		/* goto quit; */
+	/* } */
+
+	/* if (open_9pconnection(rctx) == -1) { */
+		/* goto start; */
+	/* } */
+	/* if (setup_format_ctx(rctx) == -1) { */
+		/* goto start; */
+	/* } */
+	/* if (open_input_stream(rctx) == -1) { */
+		/* goto start; */
+	/* } */
+	/* if (open_stream_components(rctx) == -1) { */
+		/* goto start; */
+	/* } */
+	/* if (alloc_buffers(rctx) == -1) { */
+		/* goto start; */
+	/* } */
+
+	/* AVPacket *packet = av_packet_alloc(); */
+	/* if (packet == nil) { */
+		/* LOG("Could not allocate AVPacket."); */
+		/* goto start; */
+	/* } */
+	/* AVFrame *frame = av_frame_alloc(); */
+	/* if (frame == nil) { */
+		/* printf("Could not allocate AVFrame.\n"); */
+		/* goto start; */
+	/* } */
+	/* double audio_pts = 0.0; */
+	/* double video_pts = 0.0; */
+
+	/* // Main decoder loop */
+	/* for (;;) { */
+		/* int jmp = poll_cmd0(rctx); */
+		/* if (jmp == -1) { */
+			/* goto start; */
+		/* } */
+		/* if (jmp == 1) { */
+			/* goto quit; */
+		/* } */
+		/* if (read_packet(rctx, packet) == -1) { */
+			/* // FIXME maybe better continue here ...? */
+			/* goto start; */
+		/* } */
+		/* if (write_packet_to_decoder(rctx, packet) == -1) { */
+			/* continue; */
+		/* } */
+		/* // This loop is only needed when we get more than one decoded frame out */
+		/* // of one packet read from the demuxer */
+		/* int decoder_ret = 0; */
+		/* while (decoder_ret == 0) { */
+			/* decoder_ret = read_frame_from_decoder(rctx, frame); */
+			/* if (decoder_ret == -1) { */
+				/* goto start; */
+			/* } */
+			/* if (decoder_ret == 2) { */
+				/* break; */
+			/* } */
+			/* // TODO it would be nicer to check for the frame type instead for the codec context */
+			/* if (rctx->current_codec_ctx == rctx->video_ctx) { */
+				/* rctx->video_idx++; */
+				/* rctx->frame_rate = av_q2d(rctx->video_ctx->framerate); */
+				/* rctx->frame_duration = 1000.0 / rctx->frame_rate; */
+				/* LOG("video frame duration: %.2fms, fps: %.2f", */
+					/* rctx->frame_duration, 1000.0 / rctx->frame_duration); */
+				/* video_pts += rctx->frame_duration; */
+				/* VideoPicture videoPicture = { */
+					/* .frame = nil, */
+					/* .rgbbuf = nil, */
+					/* .planes = nil, */
+					/* .width = rctx->aw, */
+					/* .height = rctx->ah, */
+					/* .idx = rctx->video_idx, */
+					/* .pts = video_pts, */
+					/* }; */
+				/* if (rctx->frame_fmt == FRAME_FMT_PRISTINE) { */
+					/* if (create_pristine_picture_from_frame(rctx, frame, &videoPicture) == 2) { */
+						/* break; */
+					/* } */
+				/* } */
+				/* else if (rctx->frame_fmt == FRAME_FMT_RGB) { */
+					/* if (create_rgb_picture_from_frame(rctx, frame, &videoPicture) == 2) { */
+						/* break; */
+					/* } */
+			    /* } */
+				/* else if (rctx->frame_fmt == FRAME_FMT_YUV) { */
+					/* if (create_yuv_picture_from_frame(rctx, frame, &videoPicture) == 2) { */
+						/* break; */
+					/* } */
+			    /* } */
+				/* if (!rctx->audio_only) { */
+					/* send_picture_to_queue(rctx, &videoPicture); */
+				/* } */
+			/* } */
+			/* else if (rctx->current_codec_ctx == rctx->audio_ctx) { */
+				/* rctx->audio_idx++; */
+				/* AudioSample audioSample = { */
+					/* .idx = rctx->audio_idx, */
+					/* }; */
+				/* if (create_sample_from_frame(rctx, frame, &audioSample) == 0) { */
+					/* break; */
+				/* } */
+				/* audio_pts += audioSample.duration; */
+				/* audioSample.pts = audio_pts; */
+				/* send_sample_to_queue(rctx, &audioSample); */
+
+				/* // write audio sample to file after decoding, after resampling, before sending to queue */
+				/* //fwrite(audioSample.sample, 1, audioSample.size, audio_out); */
+			/* } */
+			/* else { */
+				/* LOG("non AV packet from demuxer, ignoring"); */
+			/* } */
+		/* } */
+		/* av_packet_unref(packet); */
+		/* av_frame_unref(frame); */
+	/* } */
+
+/* quit: */
+	/* rctx->renderer_state = RSTATE_QUIT; */
+	/* // Clean up the decoder thread */
+	/* if (rctx->io_ctx) { */
+		/* avio_context_free(&rctx->io_ctx); */
+	/* } */
+	/* avformat_close_input(&rctx->format_ctx); */
+	/* if (rctx->format_ctx) { */
+		/* avformat_free_context(rctx->format_ctx); */
+	/* } */
+	/* if (rctx->audioq) { */
+		/* chanfree(rctx->audioq); */
+	/* } */
+	/* if (rctx->pictq) { */
+		/* chanfree(rctx->pictq); */
+	/* } */
+	/* if (rctx->swr_ctx) { */
+		/* swr_free(&rctx->swr_ctx); */
+	/* } */
+	/* fclose(audio_out); */
+	/* // in case of failure, push the FF_QUIT_EVENT and return */
+	/* LOG("quitting decoder thread"); */
+	/* threadexitsall("end of file"); */
+/* } */
