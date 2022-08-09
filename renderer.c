@@ -241,6 +241,18 @@ static state_func states[NSTATE] =
 	state_exit,
 };
 
+static char* statestr[NSTATE] =
+{
+	"stop",
+	"run",
+	"idle",
+	"load",
+	"unload",
+	"engage",
+	"disengage",
+	"exit",
+};
+
 enum
 {
 	STOP = 0,
@@ -307,6 +319,19 @@ static cmd_func cmds[NCMD] =
 	cmd_vol,
 	nil,
 	nil
+};
+
+static char* cmdstr[NCMD] =
+{
+	"set",
+	"stop",
+	"play",
+	"pause",
+	"quit",
+	"seek",
+	"vol",
+	"none",
+	"err",
 };
 
 // Transitions is the State matrix with dimensions [cmds x current state]
@@ -395,8 +420,6 @@ reset_rctx(RendererCtx *rctx)
 	rctx->decoder_frame = nil;
 	rctx->decoder_packet = nil;
 	/* rctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
-	/* rctx->renderer_state = RSTATE_STOP; */
-	/* rctx->next_renderer_state = RSTATE_STOP; */
 	rctx->renderer_state = STOP;
 	rctx->next_renderer_state = STOP;
 	rctx->quit = 0;
@@ -629,48 +652,32 @@ srvwrite(Req *r)
 {
 	LOG("server write");
 	Command command = {.cmd = CMD_NONE, .arg = nil, .narg = 0};
-	char cmdstr[MAX_CMD_STR_LEN];
-	snprint(cmdstr, r->ifcall.count, "%s", r->ifcall.data);
+	char cmdbuf[MAX_CMD_STR_LEN];
+	snprint(cmdbuf, r->ifcall.count, "%s", r->ifcall.data);
 	int cmdlen = r->ifcall.count;
 	int arglen = 0;
-	char* argstr = strchr(cmdstr, ' ');
+	char* argstr = strchr(cmdbuf, ' ');
 	if (argstr != nil) {
-		cmdlen = argstr - cmdstr;
+		cmdlen = argstr - cmdbuf;
 		arglen = r->ifcall.count - cmdlen + 1;
 		*argstr = '\0';
 		argstr++;
-		LOG("server cmd: %s, arg: %s", cmdstr, argstr);
+		LOG("server cmd: %s, arg: %s", cmdbuf, argstr);
 		command.narg = arglen;
 		command.arg = malloc(arglen);
 		memcpy(command.arg, argstr, arglen);
 	}
 	else {
-		LOG("server cmd: %s", cmdstr);
+		LOG("server cmd: %s", cmdbuf);
 	}
-	if (strncmp(cmdstr, "set", 3) == 0) {
-		command.cmd = CMD_SET;
-	}
-	else if (strncmp(cmdstr, "vol", 3) == 0) {
-		command.cmd = CMD_VOL;
-	}
-	else if (strncmp(cmdstr, "stop", 4) == 0) {
-		command.cmd = CMD_STOP;
-	}
-	else if (strncmp(cmdstr, "play", 4) == 0) {
-		command.cmd = CMD_PLAY;
-	}
-	else if (strncmp(cmdstr, "pause", 5) == 0) {
-		command.cmd = CMD_PAUSE;
-	}
-	else if (strncmp(cmdstr, "seek", 4) == 0) {
-		command.cmd = CMD_SEEK;
-	}
-	else if (strncmp(cmdstr, "quit", 4) == 0) {
-		command.cmd = CMD_QUIT;
+	for (int i=0; i<NCMD; ++i) {
+		if (strncmp(cmdbuf, cmdstr[i], strlen(cmdstr[i])) == 0) {
+			command.cmd = i;
+		}
 	}
 	RendererCtx *rctx = r->fid->file->aux;
 	if (rctx) {
-		LOG("sending command: %d ...", command.cmd);
+		LOG("sending command: %d (%s) ...", command.cmd, cmdbuf);
 		send(rctx->cmdq, &command);
 	}
 	else {
@@ -1711,7 +1718,7 @@ read_cmd(RendererCtx *rctx, int mode)
 		return KEEP_STATE;
 	}
 	if (ret == 1) {
-		LOG("<== received command: %d", cmd.cmd);
+		LOG("<== received command: %d (%s)", cmd.cmd, cmdstr[cmd.cmd]);
 		if (cmds[cmd.cmd] == nil) {
 			LOG("command is nil, nothing to execute");
 		}
@@ -1723,7 +1730,7 @@ read_cmd(RendererCtx *rctx, int mode)
 			free(cmd.arg);
 		}
 		int next_renderer_state = transitions[cmd.cmd][rctx->renderer_state];
-		LOG("state: %d -> %d", rctx->renderer_state, next_renderer_state);
+		LOG("state: %d (%s) -> %d (%s)", rctx->renderer_state, statestr[rctx->renderer_state], next_renderer_state, statestr[next_renderer_state]);
 		if (next_renderer_state == rctx->renderer_state) {
 			return KEEP_STATE;
 		}
@@ -1742,7 +1749,7 @@ decoder_thread(void *arg)
 	// Initial renderer state is LOAD only if an url was given as a command line argument
 	// otherwise it defaults to STOP
 	while(!rctx->quit) {
-		LOG("entering state %d", rctx->renderer_state);
+		LOG("entering state %d (%s)", rctx->renderer_state, statestr[rctx->renderer_state]);
 		states[rctx->renderer_state](rctx);
 	}
 }
