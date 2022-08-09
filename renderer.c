@@ -318,23 +318,23 @@ static int transitions[NCMD][NSTATE-1] = // no entry for EXIT state needed
 // Current state:
 //   STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG
 // CMD_SET
-	{STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
+	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
 // CMD_STOP
-	{STOP,    UNLOAD,  UNLOAD,  STOP,    UNLOAD,  UNLOAD,  UNLOAD},
+	{STOP,    UNLOAD,  UNLOAD,  RUN,     STOP,    RUN,     IDLE},
 // CMD_PLAY
-	{LOAD,    RUN,     ENGAGE,  LOAD,    UNLOAD,  ENGAGE,  ENGAGE},
+	{LOAD,    RUN,     ENGAGE,  RUN,     STOP,    RUN,     IDLE},
 // CMD_PAUSE
-	{STOP,    DISENG,  ENGAGE,  DISENG,  UNLOAD,  DISENG,  DISENG},
+	{STOP,    DISENG,  ENGAGE,  RUN,     STOP,    RUN,     IDLE},
 // CMD_QUIT, exiting only in state STOP possible, all others keep the state
-	{EXIT,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
+	{EXIT,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
 // CMD_SEEK
-	{STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
+	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
 // CMD_VOL
-	{STOP,    RUN,     IDLE,    LOAD,    UNLOAD,  ENGAGE,  DISENG},
+	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
 // CMD_NONE, unconditional straight transitions
 	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
 // CMD_ERR, error occured while running the state
-	{STOP,    UNLOAD,  IDLE,    STOP,    STOP,    STOP,    STOP},
+	{STOP,    UNLOAD,  IDLE,    RUN,     STOP,    RUN,     IDLE},
 };
 
 
