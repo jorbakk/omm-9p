@@ -201,6 +201,7 @@ typedef struct VideoPicture
 	int         pix_fmt;
 	double      pts;
 	int         idx;
+	int         eos;
 } VideoPicture;
 
 typedef struct AudioSample
@@ -211,6 +212,7 @@ typedef struct AudioSample
 	int         idx;
 	double      pts;
 	double      duration;
+	int         eos;
 } AudioSample;
 
 
@@ -612,21 +614,21 @@ srvopen(Req *r)
 }
 
 
-void
-srvread(Req *r)
-{
-	LOG("server read");
-	r->ofcall.count = 6;
-	r->ofcall.data = "hello\n";
-	respond(r, nil);
-}
+/* void */
+/* srvread(Req *r) */
+/* { */
+	/* LOG("server read"); */
+	/* r->ofcall.count = 6; */
+	/* r->ofcall.data = "hello\n"; */
+	/* respond(r, nil); */
+/* } */
 
 
 void
 srvwrite(Req *r)
 {
 	LOG("server write");
-	Command command;
+	Command command = {.cmd = CMD_NONE, .arg = nil, .narg = 0};
 	char cmdstr[MAX_CMD_STR_LEN];
 	snprint(cmdstr, r->ifcall.count, "%s", r->ifcall.data);
 	int cmdlen = r->ifcall.count;
@@ -645,7 +647,6 @@ srvwrite(Req *r)
 	else {
 		LOG("server cmd: %s", cmdstr);
 	}
-	command.cmd = CMD_NONE;
 	if (strncmp(cmdstr, "set", 3) == 0) {
 		command.cmd = CMD_SET;
 	}
@@ -719,7 +720,7 @@ open_9pconnection(RendererCtx *rctx)
 
 Srv server = {
 	.open  = srvopen,
-	.read  = srvread,
+	/* .read  = srvread, */
 	.write = srvwrite,
 };
 
@@ -1446,7 +1447,7 @@ create_sample_from_frame(RendererCtx *rctx, AVFrame *frame, AudioSample *audioSa
 void
 send_picture_to_queue(RendererCtx *rctx, VideoPicture *videoPicture)
 {
-	LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue ...", videoPicture->idx, videoPicture->pts);
+	LOG("==> sending picture with idx: %d, pts: %.2fms, eos: %d to picture queue ...", videoPicture->idx, videoPicture->pts, videoPicture->eos);
 	int sendret = send(rctx->pictq, videoPicture);
 	if (sendret == 1) {
 		LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue succeeded.", videoPicture->idx, videoPicture->pts);
@@ -1465,7 +1466,7 @@ send_sample_to_queue(RendererCtx *rctx, AudioSample *audioSample)
 {
 	int sendret = send(rctx->audioq, audioSample);
 	if (sendret == 1) {
-		LOG("==> sending audio sample with idx: %d, pts: %.2fms to audio queue succeeded.", audioSample->idx, audioSample->pts);
+		LOG("==> sending audio sample with idx: %d, pts: %.2fms, eos: %d to audio queue succeeded.", audioSample->idx, audioSample->pts, audioSample->eos);
 		/* LOG("==> sending audio sample to audio queue succeeded."); */
 	}
 	else if (sendret == -1) {
@@ -1492,11 +1493,16 @@ void state_run(RendererCtx* rctx)
 			return;
 		}
 		if (read_packet(rctx, rctx->decoder_packet) == -1) {
-			// FIXME when keeping the state after EOF, we re-enter state_run()
-			// and try to read from the stream, again. The decoder thread should
-			// stop but not the presenter thread.
-			return;
-			/* rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state]; */
+			// When keeping the state after EOF, we blocking wait for commands in the decoder thread
+			// while the presenter thread is still running. We send an EOS (End-Of-Stream) frame 
+			// to both, audio and video queue, to signal the end of the stream in the presenter thread.
+			VideoPicture videoPicture = {.eos = 1};
+			send_picture_to_queue(rctx, &videoPicture);
+			AudioSample audioSample = {.eos = 1};
+			send_sample_to_queue(rctx, &audioSample);
+			if (read_cmd(rctx, READCMD_BLOCK) == CHANGE_STATE) {
+				return;
+			}
 		}
 		if (write_packet_to_decoder(rctx, rctx->decoder_packet) == -1) {
 			av_packet_unref(rctx->decoder_packet);
@@ -1529,6 +1535,7 @@ void state_run(RendererCtx* rctx)
 					.height = rctx->ah,
 					.idx = rctx->video_idx,
 					.pts = rctx->video_pts,
+					.eos = 0,
 					};
 				if (rctx->frame_fmt == FRAME_FMT_PRISTINE) {
 					if (create_pristine_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture) == 2) {
@@ -1555,6 +1562,7 @@ void state_run(RendererCtx* rctx)
 				AudioSample audioSample = {
 					.idx = rctx->audio_idx,
 					/* .sample = malloc(sizeof(rctx->audio_buf)), */
+					.eos = 0,
 					};
 				if (create_sample_from_frame(rctx, rctx->decoder_frame, &audioSample) == 0) {
 					break;
@@ -1746,7 +1754,7 @@ receive_picture(RendererCtx *rctx, VideoPicture *videoPicture)
 	LOG("receiving picture from picture queue ...");
 	int recret = recv(rctx->pictq, videoPicture);
 	if (recret == 1) {
-		LOG("<== received picture with idx: %d, pts: %0.2fms", videoPicture->idx, videoPicture->pts);
+		LOG("<== received picture with idx: %d, pts: %0.2fms, eos: %d", videoPicture->idx, videoPicture->pts, videoPicture->eos);
 	}
 	else if (recret == -1) {
 		LOG("<== reveiving picture from picture queue interrupted");
@@ -1780,7 +1788,12 @@ presenter_thread(void *arg)
 			LOG("<== error when receiving sample from audio queue");
 			continue;
 		}
-		LOG("<== received sample with idx: %d, pts: %.2fms from audio queue.", audioSample.idx, audioSample.pts);
+		if (audioSample.eos) {
+			Command command = {.cmd = CMD_STOP, .arg = nil, .narg = 0};
+			send(rctx->cmdq, &command);
+			continue;
+		}
+		LOG("<== received sample with idx: %d, pts: %.2fms, eos: %d from audio queue.", audioSample.idx, audioSample.pts, audioSample.eos);
 		// write audio sample to file after decoding, after resampling, after sending to queue
 		//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 		SDL_memset(rctx->mixed_audio_buf, 0, audioSample.size);
