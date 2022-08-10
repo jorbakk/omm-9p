@@ -140,6 +140,7 @@ typedef struct RendererCtx
 	int                decoder_tid;
 	int                presenter_tid;
 	int                stop_presenter_thread;
+	int                pause_presenter_thread;
 	// Audio stream
 	int                audio_stream;
 	AVCodecContext    *audio_ctx;
@@ -432,6 +433,7 @@ reset_rctx(RendererCtx *rctx)
 	rctx->decoder_tid = 0;
 	rctx->presenter_tid = 0;
 	rctx->stop_presenter_thread = 0;
+	rctx->pause_presenter_thread = 0;
 	// Audio stream
 	rctx->audio_stream = -1;
 	rctx->audio_ctx = nil;
@@ -1672,12 +1674,16 @@ void state_unload(RendererCtx *rctx)
 
 void state_engage(RendererCtx *rctx)
 {
+	rctx->stop_presenter_thread = 0;
+	rctx->pause_presenter_thread = 0;
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
 
 void state_disengage(RendererCtx *rctx)
 {
+	rctx->stop_presenter_thread = 0;
+	rctx->pause_presenter_thread = 1;
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
@@ -1832,6 +1838,12 @@ presenter_thread(void *arg)
 		receive_picture(rctx, &videoPicture);
 	}
 	for (;;) {
+		if (rctx->pause_presenter_thread) {
+			LOG("pausing presenter thread ...");
+			sleep(100);
+			yield();
+			continue;
+		}
 		LOG("receiving sample from audio queue ...");
 		int recret = recv(rctx->audioq, &audioSample);
 		if (recret != 1) {
