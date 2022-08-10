@@ -1676,6 +1676,7 @@ void state_engage(RendererCtx *rctx)
 {
 	rctx->stop_presenter_thread = 0;
 	rctx->pause_presenter_thread = 0;
+	SDL_PauseAudioDevice(rctx->audio_devid, 0);
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
@@ -1684,6 +1685,7 @@ void state_disengage(RendererCtx *rctx)
 {
 	rctx->stop_presenter_thread = 0;
 	rctx->pause_presenter_thread = 1;
+	SDL_PauseAudioDevice(rctx->audio_devid, 1);
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
