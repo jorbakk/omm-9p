@@ -25,8 +25,10 @@
 // 1. Fixes
 // - state machine
 //   - actively stopping presenter thread and unload (stopping on EOF works)
+//     - crash on last iteration in zap.sh
 // - dvb life streams need too long to start rendering, service queue on server gets full
 // - memory leaks
+//   - play / stop cycle increases memory footprint
 // - seek
 // - blank screen on stop / eof
 // - responsiveness to keyboard input
@@ -1315,7 +1317,7 @@ write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet)
 int
 read_frame_from_decoder(RendererCtx *rctx, AVFrame *frame)
 {
-	LOG("reading decoded frame from decoder ...");
+	LOG("reading decoded frame %p from decoder ...", frame);
 	int ret = avcodec_receive_frame(rctx->current_codec_ctx, frame);
 	// check if entire frame was decoded
 	if (ret == AVERROR(EAGAIN)) {
@@ -1531,8 +1533,8 @@ void state_run(RendererCtx *rctx)
 			}
 		}
 		if (write_packet_to_decoder(rctx, rctx->decoder_packet) == -1) {
-			av_packet_unref(rctx->decoder_packet);
-			rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
+			/* rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state]; */
+			continue;
 		}
 		// This loop is only needed when we get more than one decoded frame out
 		// of one packet read from the demuxer
