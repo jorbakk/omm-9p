@@ -405,32 +405,36 @@ int read_cmd(RendererCtx *rctx, int mode);
 
 // Implementation
 void
-reset_rctx(RendererCtx *rctx)
+reset_rctx(RendererCtx *rctx, int init)
 {
-	rctx->url = nil;
-	rctx->fileservername = nil;
-	rctx->filename = nil;
-	rctx->isfile = 0;
-	rctx->isaddr = 0;
-	rctx->fileserverfd = -1;
-	rctx->fileserverfid = nil;
-	rctx->fileserver = nil;
+	if (init) {
+		rctx->url = nil;
+		rctx->fileservername = nil;
+		rctx->filename = nil;
+		rctx->isfile = 0;
+		rctx->isaddr = 0;
+		rctx->fileserverfd = -1;
+		rctx->fileserverfid = nil;
+		rctx->fileserver = nil;
+	}
 	rctx->io_ctx = nil;
 	rctx->format_ctx = nil;
 	rctx->current_codec_ctx = nil;
 	rctx->decoder_frame = nil;
 	rctx->decoder_packet = nil;
-	/* rctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
-	rctx->renderer_state = STOP;
-	rctx->next_renderer_state = STOP;
-	rctx->quit = 0;
-	rctx->cmdq = nil;
-	rctx->screen_width = 0;
-	rctx->screen_height = 0;
-	rctx->window_width = 0;
-	rctx->window_height = 0;
-	rctx->server_tid = 0;
-	rctx->decoder_tid = 0;
+	if (init) {
+		/* rctx->av_sync_type = DEFAULT_AV_SYNC_TYPE; */
+		rctx->renderer_state = STOP;
+		rctx->next_renderer_state = STOP;
+		rctx->quit = 0;
+		rctx->cmdq = nil;
+		rctx->screen_width = 0;
+		rctx->screen_height = 0;
+		rctx->window_width = 0;
+		rctx->window_height = 0;
+		rctx->server_tid = 0;
+		rctx->decoder_tid = 0;
+	}
 	rctx->presenter_tid = 0;
 	rctx->stop_presenter_thread = 0;
 	rctx->pause_presenter_thread = 0;
@@ -449,12 +453,16 @@ reset_rctx(RendererCtx *rctx)
 	rctx->audio_timebase.num = 0;
 	rctx->audio_timebase.den = 0;
 	rctx->audio_tbd = 0.0;
-	rctx->audio_vol = 100;
+	if (init) {
+		rctx->audio_vol = 100;
+	}
 	rctx->swr_ctx = nil;
 	// Video stream.
-	rctx->sdl_window = nil;
-	rctx->sdl_texture = nil;
-	rctx->sdl_renderer = nil;
+	if (init) {
+		rctx->sdl_window = nil;
+		rctx->sdl_texture = nil;
+		rctx->sdl_renderer = nil;
+	}
 	rctx->video_stream = -1;
 	rctx->frame_rate = 0.0;
 	rctx->frame_duration = 0.0;
@@ -467,10 +475,12 @@ reset_rctx(RendererCtx *rctx)
 	rctx->frame_rgb = nil;
 	rctx->rgbbuffer = nil;
 	rctx->yuvbuffer = nil;
-	rctx->w = 0;
-	rctx->h = 0;
-	rctx->aw = 0;
-	rctx->ah = 0;
+	if (init) {
+		rctx->w = 0;
+		rctx->h = 0;
+		rctx->aw = 0;
+		rctx->ah = 0;
+	}
 	rctx->video_timebase.num = 0;
 	rctx->video_timebase.den = 0;
 	rctx->video_tbd = 0.0;
@@ -1508,7 +1518,7 @@ void state_run(RendererCtx *rctx)
 	// Main decoder loop
 	for (;;) {
 		if (read_cmd(rctx, READCMD_POLL) == CHANGE_STATE) {
-			rctx->stop_presenter_thread = 1;
+			/* rctx->stop_presenter_thread = 1; */
 			return;
 		}
 		if (read_packet(rctx, rctx->decoder_packet) == -1) {
@@ -1642,7 +1652,7 @@ void state_unload(RendererCtx *rctx)
 	// Stop presenter thread
 	// This shouldn't be called when reaching EOF and presenter thread sends cmd stop
 	/* send_eos_frames(rctx); */
-	/* rctx->stop_presenter_thread = 1; */
+	rctx->stop_presenter_thread = 1;
 
 	// Free allocated memory
 	if (rctx->io_ctx) {
@@ -1661,12 +1671,13 @@ void state_unload(RendererCtx *rctx)
 	// Unconditional transition to STOP state
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 
-	/* if (rctx->audioq) { */
-		/* chanfree(rctx->audioq); */
-	/* } */
-	/* if (rctx->pictq) { */
-		/* chanfree(rctx->pictq); */
-	/* } */
+	if (rctx->audioq) {
+		chanfree(rctx->audioq);
+	}
+	if (rctx->pictq) {
+		chanfree(rctx->pictq);
+	}
+	reset_rctx(rctx, 0);
 
 	/* fclose(audio_out); */
 }
@@ -1674,7 +1685,7 @@ void state_unload(RendererCtx *rctx)
 
 void state_engage(RendererCtx *rctx)
 {
-	rctx->stop_presenter_thread = 0;
+	/* rctx->stop_presenter_thread = 1; */
 	rctx->pause_presenter_thread = 0;
 	SDL_PauseAudioDevice(rctx->audio_devid, 0);
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
@@ -1683,7 +1694,7 @@ void state_engage(RendererCtx *rctx)
 
 void state_disengage(RendererCtx *rctx)
 {
-	rctx->stop_presenter_thread = 0;
+	/* rctx->stop_presenter_thread = 0; */
 	rctx->pause_presenter_thread = 1;
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
@@ -1840,6 +1851,18 @@ presenter_thread(void *arg)
 		receive_picture(rctx, &videoPicture);
 	}
 	for (;;) {
+		if (rctx->stop_presenter_thread) {
+			LOG("stopping presenter thread ...");
+			/* rctx->stop_presenter_thread = 0; */
+
+			// FIXME flushing the queues smashes the stack:
+			// *** stack smashing detected ***: terminated
+			/* flush_picture_queue(rctx); */
+			/* flush_audio_queue(rctx); */
+			/* continue; */
+			/* return; */
+			threadexits("stopping presenter thread");
+		}
 		if (rctx->pause_presenter_thread) {
 			LOG("pausing presenter thread ...");
 			sleep(100);
@@ -1856,17 +1879,6 @@ presenter_thread(void *arg)
 			/* receive_picture(rctx, &videoPicture); */
 		/* } */
 
-		if (rctx->stop_presenter_thread) {
-			LOG("stopping presenter thread ...");
-			/* rctx->stop_presenter_thread = 0; */
-
-			// FIXME flushing the queues smashes the stack:
-			// *** stack smashing detected ***: terminated
-			/* flush_picture_queue(rctx); */
-			/* flush_audio_queue(rctx); */
-			continue;
-			/* return; */
-		}
 		if (audioSample.eos) {
 			Command command = {.cmd = CMD_STOP, .arg = nil, .narg = 0};
 			send(rctx->cmdq, &command);
@@ -2052,7 +2064,7 @@ threadmain(int argc, char **argv)
 		/* chattyfuse = 1; */
 	}
 	RendererCtx *rctx = av_mallocz(sizeof(RendererCtx));
-	reset_rctx(rctx);
+	reset_rctx(rctx, 1);
 	start_server(rctx);
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
