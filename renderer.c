@@ -23,8 +23,6 @@
 
 // TODO:
 // 1. Fixes
-// - state machine
-//   - crash on last iteration in zap.sh
 // - dvb life streams need too long to start rendering, service queue on server gets full
 // - memory leaks
 //   - play / stop cycle increases memory footprint
