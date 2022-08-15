@@ -1065,7 +1065,7 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 			LOG("timebase of audio stream: %d/%d = %f",
 				rctx->audio_timebase.num, rctx->audio_timebase.den, rctx->audio_tbd);
 			LOG("presenter thread created with id: %i", rctx->presenter_tid);
-			LOG("setting up audio device with requested specs - sample_rate: %d, channels: %d ...",
+			LOG("setting up audio device with requested specs, sample_rate: %d, channels: %d ...",
 				codecCtx->sample_rate, rctx->audio_out_channels);
 			SDL_AudioSpec wanted_specs;
 			wanted_specs.freq = codecCtx->sample_rate;
@@ -1665,6 +1665,19 @@ void state_unload(RendererCtx *rctx)
 	if (rctx->swr_ctx) {
 		swr_free(&rctx->swr_ctx);
 	}
+	if (rctx->audio_ctx) {
+		avcodec_free_context(&rctx->audio_ctx);
+	}
+	if (rctx->video_ctx) {
+		avcodec_free_context(&rctx->video_ctx);
+	}
+	if (rctx->yuv_ctx) {
+		av_free(rctx->yuv_ctx);
+	}
+	SDL_CloseAudioDevice(rctx->audio_devid);
+	/* if (rctx->yuvbuffer) { */
+		/* avfree(rctx->yuvbuffer); */
+	/* } */
 	av_packet_unref(rctx->decoder_packet);
 	av_frame_unref(rctx->decoder_frame);
 
