@@ -24,8 +24,7 @@
 // TODO:
 // 1. Fixes
 // - state machine
-//   - actively stopping presenter thread and unload (stopping on EOF works)
-//     - crash on last iteration in zap.sh
+//   - crash on last iteration in zap.sh
 // - dvb life streams need too long to start rendering, service queue on server gets full
 // - memory leaks
 //   - play / stop cycle increases memory footprint
