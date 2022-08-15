@@ -23,9 +23,10 @@
 
 // TODO:
 // 1. Fixes
-// - dvb life streams need too long to start rendering, service queue on server gets full
 // - memory leaks
 //   - play / stop cycle increases memory footprint
+//   - crash on five full iterations of all test streams
+// - dvb life streams need too long to start rendering, service queue on server gets full
 // - seek
 // - blank screen on stop / eof
 // - responsiveness to keyboard input
