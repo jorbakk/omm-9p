@@ -153,8 +153,6 @@ typedef struct RendererCtx
 	int                audio_idx;
 	double             audio_pts;
 	int                audio_out_channels;
-	/* double             current_video_time; */
-	/* double             previous_video_time; */
 	int64_t            audio_start_rt;
 	AVRational         audio_timebase;
 	double             audio_tbd;
@@ -364,14 +362,7 @@ static int transitions[NCMD][NSTATE-1] = // no entry for EXIT state needed
 };
 
 
-// Frame, clock, and sample types
-enum
-{
-	FRAME_FMT_PRISTINE,
-	FRAME_FMT_RGB,
-	FRAME_FMT_YUV,
-};
-
+// Clock and sample types
 enum
 {
 	// Sync to audio clock.
@@ -449,8 +440,6 @@ reset_rctx(RendererCtx *rctx, int init)
 	rctx->audio_idx = 0;
 	rctx->audio_pts = 0.0;
 	rctx->audio_out_channels = 2;
-	/* rctx->current_video_time = 0.0; */
-	/* rctx->previous_video_time = 0.0; */
 	rctx->audio_start_rt = 0;
 	rctx->audio_timebase.num = 0;
 	rctx->audio_timebase.den = 0;
@@ -490,8 +479,6 @@ reset_rctx(RendererCtx *rctx, int init)
 	rctx->seek_req = 0;
 	rctx->seek_flags = 0;
 	rctx->seek_pos = 0;
-	/* rctx->frame_fmt = FRAME_FMT_RGB; */
-	/* rctx->frame_fmt = FRAME_FMT_YUV; */
 	rctx->audio_devid = -1;
 	rctx->audio_only = 0;
 }
@@ -1546,21 +1533,6 @@ void state_run(RendererCtx *rctx)
 					.pts = rctx->video_pts,
 					.eos = 0,
 					};
-				/* if (rctx->frame_fmt == FRAME_FMT_PRISTINE) { */
-					/* if (create_pristine_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture) == 2) { */
-						/* break; */
-					/* } */
-				/* } */
-				/* else if (rctx->frame_fmt == FRAME_FMT_RGB) { */
-					/* if (create_rgb_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture) == 2) { */
-						/* break; */
-					/* } */
-			    /* } */
-				/* else if (rctx->frame_fmt == FRAME_FMT_YUV) { */
-					/* if (create_yuv_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture) == 2) { */
-						/* break; */
-					/* } */
-			    /* } */
 			    create_yuv_picture_from_frame(rctx, rctx->decoder_frame, &videoPicture);
 				if (!rctx->audio_only) {
 					send_picture_to_queue(rctx, &videoPicture);
@@ -1719,6 +1691,9 @@ void
 cmd_seek(RendererCtx *rctx, char *arg, int narg)
 {
 	// TODO implement cmd_seek()
+	/* uint64_t seekpos = atoll(cmd.arg); */
+	/* av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0); */
+	/* av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0); */
 }
 
 
@@ -1726,6 +1701,10 @@ void
 cmd_vol(RendererCtx *rctx, char *arg, int narg)
 {
 	// TODO implement cmd_vol()
+	/* int vol = atoi(cmd.arg); */
+	/* if (vol >=0 && vol <= 100) { */
+		/* rctx->audio_vol = vol; */
+	/* } */
 }
 
 
@@ -1807,9 +1786,6 @@ presenter_thread(void *arg)
 	rctx->audio_start_rt = av_gettime();
 	rctx->stop_presenter_thread = 0;
 	nextpic = 1;
-	/* rctx->current_video_time = rctx->audio_start_rt; */
-	/* rctx->previous_video_time = rctx->audio_start_rt; */
-
 	for (;;) {
 		// Check if presenter thread should continue
 		if (rctx->pause_presenter_thread) {
@@ -2098,401 +2074,3 @@ threadmain(int argc, char **argv)
 	av_free(rctx);
 	return;
 }
-
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/* int */
-/* receive_picture(RendererCtx *rctx, VideoPicture *videoPicture) */
-/* { */
-	/* LOG("receiving picture from picture queue ..."); */
-	/* int recret = recv(rctx->pictq, videoPicture); */
-	/* if (recret == 1) { */
-		/* LOG("<== received picture with idx: %d, pts: %0.2fms, eos: %d", videoPicture->idx, videoPicture->pts, videoPicture->eos); */
-	/* } */
-	/* else if (recret == -1) { */
-		/* LOG("<== reveiving picture from picture queue interrupted"); */
-	/* } */
-	/* else { */
-		/* LOG("<== unforseen error when receiving picture from picture queue"); */
-	/* } */
-	/* return recret; */
-/* } */
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/* void */
-/* savePicture(RendererCtx* rctx, VideoPicture *videoPicture, int frameIndex) */
-/* { */
-	/* AVFrame *frame_rgb = nil; */
-	/* uint8_t *buffer = nil; */
-	/* if (rctx->frame_fmt == FRAME_FMT_PRISTINE) { */
-		/* // Convert the video picture to the target format for saving to disk */
-	    /* frame_rgb = av_frame_alloc(); */
-	    /* int rgb_num_bytes; */
-	    /* const int align = 32; */
-	    /* rgb_num_bytes = av_image_get_buffer_size( */
-			/* AV_PIX_FMT_RGB24, */
-			/* videoPicture->width, */
-			/* videoPicture->height, */
-			/* align */
-			/* ); */
-	    /* buffer = (uint8_t *) av_malloc(rgb_num_bytes * sizeof(uint8_t)); */
-	    /* av_image_fill_arrays( */
-			/* frame_rgb->data, */
-			/* frame_rgb->linesize, */
-			/* buffer, */
-			/* AV_PIX_FMT_RGB24, */
-			/* videoPicture->width, */
-			/* videoPicture->height, */
-			/* align */
-	    /* ); */
-		/* struct SwsContext *rgb_ctx = sws_getContext( */
-											/* videoPicture->width, */
-											/* videoPicture->height, */
-											/* videoPicture->pix_fmt, */
-											/* videoPicture->width, */
-											/* videoPicture->height, */
-											/* AV_PIX_FMT_RGB24, */
-											/* SWS_BILINEAR, */
-											/* nil, */
-											/* nil, */
-											/* nil */
-											/* ); */
-	    /* sws_scale( */
-	        /* rgb_ctx, */
-	        /* (uint8_t const * const *)videoPicture->planes, */
-	        /* videoPicture->linesizes, */
-	        /* 0, */
-	        /* videoPicture->height, */
-	        /* frame_rgb->data, */
-	        /* frame_rgb->linesize */
-	    /* ); */
-	/* } */
-	/* LOG("saving video picture to file ..."); */
-	/* FILE * pFile; */
-	/* char szFilename[32]; */
-	/* int  y; */
-	/* // Open file */
-	/* sprintf(szFilename, "/tmp/%06d.ppm", frameIndex); */
-	/* pFile = fopen(szFilename, "wb"); */
-	/* if (pFile == nil) { */
-	    /* return; */
-	/* } */
-	/* fprintf(pFile, "P6\n%d %d\n255\n", videoPicture->width, videoPicture->height); */
-	/* if (rctx->frame_fmt == FRAME_FMT_PRISTINE) { */
-	    /* for (y = 0; y < frame_rgb->height; y++) { */
-	        /* fwrite(frame_rgb->data[0] + y * frame_rgb->linesize[0], 1, videoPicture->width * 3, pFile); */
-	    /* } */
-	/* } */
-	/* else if (rctx->frame_fmt == FRAME_FMT_RGB) { */
-	    /* for (y = 0; y < videoPicture->height; y++) { */
-	        /* fwrite(videoPicture->rgbbuf + y * videoPicture->linesize, 1, videoPicture->width * 3, pFile); */
-	    /* } */
-	/* } */
-	/* fclose(pFile); */
-	/*// av_free_frame(frame_rgb); */
-	/* if (buffer) { */
-	    /* av_free(buffer); */
-	/* } */
-	/* LOG("saved video picture."); */
-/* } */
-
-
-/* int */
-/* create_pristine_picture_from_frame(RendererCtx *rctx, AVFrame *frame, VideoPicture *videoPicture) */
-/* { */
-	/* // FIXME sending pristine frames over the video picture channel doesn't work */
-	/* videoPicture->pix_fmt = rctx->current_codec_ctx->pix_fmt; */
-	/* LOG("AV_NUM_DATA_POINTERS: %d", AV_NUM_DATA_POINTERS); */
-	/* //memcpy(videoPicture->linesizes, frame->linesize, 4 * sizeof(uint8_t*) / 8); */
-	/* //memcpy(videoPicture->linesizes, frame->linesize, AV_NUM_DATA_POINTERS); */
-	/* //memcpy(videoPicture->linesizes, frame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
-	/* //memcpy(videoPicture->linesizes, frame->linesize, AV_NUM_DATA_POINTERS * sizeof(uint8_t*) / 8); */
-	/* //memcpy(videoPicture->planes, frame->data, AV_NUM_DATA_POINTERS * sizeof(uint8_t*)); */
-	/* //memcpy(videoPicture->planes, frame->data, 4 * sizeof(uint8_t*) / 8); */
-	/* // FIXME avoid hardcoding parameter align to 32 ... */
-	/* LOG("allocating video picture for queueing ..."); */
-	/* int frame_size = av_image_alloc( */
-		/* videoPicture->planes, */
-		/* frame->linesize, */
-		/* rctx->current_codec_ctx->width, */
-		/* rctx->current_codec_ctx->height, */
-		/* rctx->current_codec_ctx->pix_fmt, */
-		/* 32 */
-	/* ); */
-	/* USED(frame_size); */
-	/* LOG("copying video picture for queueing ..."); */
-	/* av_image_copy( */
-		/* videoPicture->planes, */
-		/* //videoPicture->linesizes, */
-	          /* frame->linesize, */
-	          /* (uint8_t const**)frame->data, */
-	          /* frame->linesize, */
-		/* rctx->current_codec_ctx->pix_fmt, */
-		/* rctx->current_codec_ctx->width, */
-		/* rctx->current_codec_ctx->height */
-	/* ); */
-	/* //av_frame_copy(); */
-	/* return 0; */
-/* } */
-
-
-/* int */
-/* create_rgb_picture_from_frame(RendererCtx *rctx, AVFrame *frame, VideoPicture *videoPicture) */
-/* { */
-	/* sws_scale( */
-	    /* rctx->rgb_ctx, */
-	    /* (uint8_t const * const *)frame->data, */
-	    /* frame->linesize, */
-	    /* 0, */
-	    /* rctx->current_codec_ctx->height, */
-	    /* rctx->frame_rgb->data, */
-	    /* rctx->frame_rgb->linesize */
-	/* ); */
-	/* // av_frame_unref(frame); */
-	/* videoPicture->linesize = rctx->frame_rgb->linesize[0]; */
-	/* int rgb_num_bytes = av_image_get_buffer_size( */
-		/* AV_PIX_FMT_RGB24, */
-		/* rctx->current_codec_ctx->width, */
-		/* rctx->current_codec_ctx->height, */
-		/* 32 */
-		/* ); */
-	/* videoPicture->rgbbuf = (uint8_t *) av_malloc(rgb_num_bytes * sizeof(uint8_t)); */
-	/* memcpy(videoPicture->rgbbuf, rctx->frame_rgb->data[0], rgb_num_bytes); */
-	/* return 0; */
-/* } */
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/* int */
-/* read_cmd0(RendererCtx *rctx) */
-/* { */
-	/* while (rctx->filename == nil || rctx->renderer_state == RSTATE_STOP) { */
-		/* LOG("renderer stopped or no av stream file specified, waiting for command ..."); */
-		/* blank_window(rctx); */
-		/* Command cmd; */
-		/* int cmdret = recv(rctx->cmdq, &cmd); */
-		/* if (cmdret == 1) { */
-			/* LOG("<== received command: %d", cmd.cmd); */
-			/* if (cmd.cmd == CMD_SET) { */
-				/* setstr(&rctx->url, cmd.arg, cmd.narg); */
-				/* seturl(rctx, rctx->url); */
-				/* free(cmd.arg); */
-				/* cmd.arg = nil; */
-			/* } */
-			/* else if (cmd.cmd == CMD_PLAY) { */
-				/* rctx->renderer_state = RSTATE_PLAY; */
-			/* } */
-			/* else if (cmd.cmd == CMD_STOP) { */
-				/* rctx->renderer_state = RSTATE_STOP; */
-			/* } */
-			/* else if (cmd.cmd == CMD_QUIT) { */
-				/* return 1; */
-			/* } */
-		/* } */
-		/* else { */
-			/* LOG("failed to receive command"); */
-		/* } */
-	/* } */
-	/* return 0; */
-/* } */
-
-
-/* int */
-/* poll_cmd0(RendererCtx *rctx) */
-/* { */
-	/* if (rctx->renderer_state == RSTATE_PLAY) { */
-		/* Command cmd; */
-		/* int cmdret = nbrecv(rctx->cmdq, &cmd); */
-		/* if (cmdret == 1) { */
-			/* LOG("<== received command: %d", cmd.cmd); */
-			/* if (cmd.cmd == CMD_PAUSE) { */
-				/* rctx->renderer_state = RSTATE_PAUSE; */
-				/* cmdret = recv(rctx->cmdq, &cmd); */
-				/* while (cmdret != 1 || cmd.cmd != CMD_PAUSE) { */
-					/* LOG("<== received command: %d", cmd.cmd); */
-					/* cmdret = recv(rctx->cmdq, &cmd); */
-				/* } */
-				/* rctx->renderer_state = RSTATE_PLAY; */
-			/* } */
-			/* else if (cmd.cmd == CMD_STOP) { */
-				/* rctx->renderer_state = RSTATE_STOP; */
-				/* reset_filectx(rctx); */
-				/* blank_window(rctx); */
-				/* return -1; */
-			/* } */
-			/* else if (cmd.cmd == CMD_SEEK) { */
-				/* uint64_t seekpos = atoll(cmd.arg); */
-				/* av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0); */
-				/* av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0); */
-			/* } */
-			/* else if (cmd.cmd == CMD_VOL) { */
-				/* int vol = atoi(cmd.arg); */
-				/* if (vol >=0 && vol <= 100) { */
-					/* rctx->audio_vol = vol; */
-				/* } */
-			/* } */
-			/* else if (cmd.cmd == CMD_QUIT) { */
-				/* return 1; */
-			/* } */
-		/* } */
-	/* } */
-	/* return 0; */
-/* } */
-
-
-/* void */
-/* decoder_thread0(void *arg) */
-/* { */
-	/* RendererCtx *rctx = (RendererCtx *)arg; */
-	/* LOG("decoder thread started with id: %d", rctx->decoder_tid); */
-
-/* start: */
-	/* // FIXME handle renderer state properly in any situation */
-	/* rctx->renderer_state = RSTATE_STOP; */
-	/* if (read_cmd0(rctx) == 1) { */
-		/* goto quit; */
-	/* } */
-
-	/* if (open_9pconnection(rctx) == -1) { */
-		/* goto start; */
-	/* } */
-	/* if (setup_format_ctx(rctx) == -1) { */
-		/* goto start; */
-	/* } */
-	/* if (open_input_stream(rctx) == -1) { */
-		/* goto start; */
-	/* } */
-	/* if (open_stream_components(rctx) == -1) { */
-		/* goto start; */
-	/* } */
-	/* if (alloc_buffers(rctx) == -1) { */
-		/* goto start; */
-	/* } */
-
-	/* AVPacket *packet = av_packet_alloc(); */
-	/* if (packet == nil) { */
-		/* LOG("Could not allocate AVPacket."); */
-		/* goto start; */
-	/* } */
-	/* AVFrame *frame = av_frame_alloc(); */
-	/* if (frame == nil) { */
-		/* printf("Could not allocate AVFrame.\n"); */
-		/* goto start; */
-	/* } */
-	/* double audio_pts = 0.0; */
-	/* double video_pts = 0.0; */
-
-	/* // Main decoder loop */
-	/* for (;;) { */
-		/* int jmp = poll_cmd0(rctx); */
-		/* if (jmp == -1) { */
-			/* goto start; */
-		/* } */
-		/* if (jmp == 1) { */
-			/* goto quit; */
-		/* } */
-		/* if (read_packet(rctx, packet) == -1) { */
-			/* // FIXME maybe better continue here ...? */
-			/* goto start; */
-		/* } */
-		/* if (write_packet_to_decoder(rctx, packet) == -1) { */
-			/* continue; */
-		/* } */
-		/* // This loop is only needed when we get more than one decoded frame out */
-		/* // of one packet read from the demuxer */
-		/* int decoder_ret = 0; */
-		/* while (decoder_ret == 0) { */
-			/* decoder_ret = read_frame_from_decoder(rctx, frame); */
-			/* if (decoder_ret == -1) { */
-				/* goto start; */
-			/* } */
-			/* if (decoder_ret == 2) { */
-				/* break; */
-			/* } */
-			/* // TODO it would be nicer to check for the frame type instead for the codec context */
-			/* if (rctx->current_codec_ctx == rctx->video_ctx) { */
-				/* rctx->video_idx++; */
-				/* rctx->frame_rate = av_q2d(rctx->video_ctx->framerate); */
-				/* rctx->frame_duration = 1000.0 / rctx->frame_rate; */
-				/* LOG("video frame duration: %.2fms, fps: %.2f", */
-					/* rctx->frame_duration, 1000.0 / rctx->frame_duration); */
-				/* video_pts += rctx->frame_duration; */
-				/* VideoPicture videoPicture = { */
-					/* .frame = nil, */
-					/* .rgbbuf = nil, */
-					/* .planes = nil, */
-					/* .width = rctx->aw, */
-					/* .height = rctx->ah, */
-					/* .idx = rctx->video_idx, */
-					/* .pts = video_pts, */
-					/* }; */
-				/* if (rctx->frame_fmt == FRAME_FMT_PRISTINE) { */
-					/* if (create_pristine_picture_from_frame(rctx, frame, &videoPicture) == 2) { */
-						/* break; */
-					/* } */
-				/* } */
-				/* else if (rctx->frame_fmt == FRAME_FMT_RGB) { */
-					/* if (create_rgb_picture_from_frame(rctx, frame, &videoPicture) == 2) { */
-						/* break; */
-					/* } */
-			    /* } */
-				/* else if (rctx->frame_fmt == FRAME_FMT_YUV) { */
-					/* if (create_yuv_picture_from_frame(rctx, frame, &videoPicture) == 2) { */
-						/* break; */
-					/* } */
-			    /* } */
-				/* if (!rctx->audio_only) { */
-					/* send_picture_to_queue(rctx, &videoPicture); */
-				/* } */
-			/* } */
-			/* else if (rctx->current_codec_ctx == rctx->audio_ctx) { */
-				/* rctx->audio_idx++; */
-				/* AudioSample audioSample = { */
-					/* .idx = rctx->audio_idx, */
-					/* }; */
-				/* if (create_sample_from_frame(rctx, frame, &audioSample) == 0) { */
-					/* break; */
-				/* } */
-				/* audio_pts += audioSample.duration; */
-				/* audioSample.pts = audio_pts; */
-				/* send_sample_to_queue(rctx, &audioSample); */
-
-				/* // write audio sample to file after decoding, after resampling, before sending to queue */
-				/* //fwrite(audioSample.sample, 1, audioSample.size, audio_out); */
-			/* } */
-			/* else { */
-				/* LOG("non AV packet from demuxer, ignoring"); */
-			/* } */
-		/* } */
-		/* av_packet_unref(packet); */
-		/* av_frame_unref(frame); */
-	/* } */
-
-/* quit: */
-	/* rctx->renderer_state = RSTATE_QUIT; */
-	/* // Clean up the decoder thread */
-	/* if (rctx->io_ctx) { */
-		/* avio_context_free(&rctx->io_ctx); */
-	/* } */
-	/* avformat_close_input(&rctx->format_ctx); */
-	/* if (rctx->format_ctx) { */
-		/* avformat_free_context(rctx->format_ctx); */
-	/* } */
-	/* if (rctx->audioq) { */
-		/* chanfree(rctx->audioq); */
-	/* } */
-	/* if (rctx->pictq) { */
-		/* chanfree(rctx->pictq); */
-	/* } */
-	/* if (rctx->swr_ctx) { */
-		/* swr_free(&rctx->swr_ctx); */
-	/* } */
-	/* fclose(audio_out); */
-	/* // in case of failure, push the FF_QUIT_EVENT and return */
-	/* LOG("quitting decoder thread"); */
-	/* threadexitsall("end of file"); */
-/* } */
