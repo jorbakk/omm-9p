@@ -25,7 +25,7 @@
 // 1. Fixes
 // - memory leaks
 //   - play / stop cycle increases memory footprint
-//     - need to free all AudioSamples/VideoPictures when flushing the audio/video queues
+//     - presenter thread is not stopped always
 // - dvb life streams need too long to start rendering, service queue on server gets full
 // - seek
 // - blank screen on stop / eof
@@ -1792,6 +1792,15 @@ static VideoPicture videoPicture;
 static int nextpic = 1;
 
 void
+stopt(RendererCtx *rctx, int at)
+{
+	if (rctx->stop_presenter_thread) {
+		LOG("stopping presenter thread at %d ...", at);
+		threadexits("stopping presenter thread");
+	}
+}
+
+void
 presenter_thread(void *arg)
 {
 	RendererCtx *rctx = arg;
@@ -1803,21 +1812,20 @@ presenter_thread(void *arg)
 
 	for (;;) {
 		// Check if presenter thread should continue
-		if (rctx->stop_presenter_thread) {
-			LOG("stopping presenter thread ...");
-			threadexits("stopping presenter thread");
-		}
 		if (rctx->pause_presenter_thread) {
 			LOG("pausing presenter thread ...");
 			sleep(100);
+			LOG("P1>");
 			yield();
+			LOG("P1<");
 			continue;
 		}
-
 		// Read audio and video frames from their queues
 		// Receive video sample
 		if (nextpic && rctx->video_ctx) {
 			LOG("receiving picture from picture queue ...");
+			LOG("P2>");
+			stopt(rctx, 1);
 			if (recv(rctx->pictq, &videoPicture) != 1) {
 				LOG("<== error receiving picture from video queue");
 				continue;
@@ -1826,20 +1834,34 @@ presenter_thread(void *arg)
 				LOG("<== received picture with idx: %d, pts: %0.2fms, eos: %d", videoPicture.idx, videoPicture.pts, videoPicture.eos);
 				nextpic = 0;
 			}
+			stopt(rctx, 2);
+			LOG("P2<");
 		}
 		LOG("PTS 1 %f", videoPicture.pts);
 		// Receive audio sample
 		LOG("receiving sample from audio queue ...");
+		LOG("P3>");
+		stopt(rctx, 3);
 		if (recv(rctx->audioq, &audioSample) != 1) {
 			LOG("<== error receiving sample from audio queue");
 			continue;
 		}
+		stopt(rctx, 4);
+		LOG("P3<");
 		LOG("PTS 2 %f", videoPicture.pts);
 		if (audioSample.eos) {
 			Command command = {.cmd = CMD_STOP, .arg = nil, .narg = 0};
+			LOG("P4>");
+			stopt(rctx, 5);
 			send(rctx->cmdq, &command);
+			stopt(rctx, 6);
+			LOG("P4<");
 			continue;
 		}
+		/* if (rctx->stop_presenter_thread) { */
+			/* LOG("stopping presenter thread 3 ..."); */
+			/* threadexits("stopping presenter thread"); */
+		/* } */
 		LOG("<== received sample with idx: %d, pts: %.2fms, eos: %d from audio queue.", audioSample.idx, audioSample.pts, audioSample.eos);
 
 		// Mix audio sample soft volume and write it to sdl audio buffer
@@ -1883,6 +1905,7 @@ presenter_thread(void *arg)
 		if (rctx->video_ctx &&
 			fabs(avdist) <= 0.5 * audioSample.duration)
 		{
+			LOG("display pic dist: %.2fms", avdist);
 			display_picture(rctx, &videoPicture);
 			nextpic = 1;
 			if (videoPicture.frame) {
@@ -1898,9 +1921,21 @@ presenter_thread(void *arg)
 		// Delay the presenter thread so that video is presented in sync with audio
 		double time_diff = audio_queue_time - real_time;
 		if (time_diff > 0) {
+			LOG("P5>");
+			stopt(rctx, 7);
 			yield();
+			stopt(rctx, 8);
+			LOG("P5<");
+			if (rctx->stop_presenter_thread) {
+				LOG("stopping presenter thread at 3 ...");
+				threadexits("stopping presenter thread");
+			}
 			LOG("sleeping %.2fms", time_diff);
+			LOG("P6>");
+			stopt(rctx, 9);
 			sleep(time_diff);
+			stopt(rctx, 10);
+			LOG("P6<");
 		}
 		free(audioSample.sample);
 	}
