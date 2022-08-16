@@ -138,7 +138,6 @@ typedef struct RendererCtx
 	int                server_tid;
 	int                decoder_tid;
 	int                presenter_tid;
-	int                stop_presenter_thread;
 	int                pause_presenter_thread;
 	// Audio stream
 	int                audio_stream;
@@ -175,6 +174,8 @@ typedef struct RendererCtx
 	SDL_Rect           blit_copy_rect;
 	AVRational         video_timebase;
 	double             video_tbd;
+	// Presentation
+	Channel           *presq;
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
@@ -419,9 +420,6 @@ reset_rctx(RendererCtx *rctx, int init)
 		rctx->decoder_tid = 0;
 	}
 	rctx->presenter_tid = 0;
-	if (init) {
-		rctx->stop_presenter_thread = 0;
-	}
 	rctx->pause_presenter_thread = 0;
 	// Audio stream
 	rctx->audio_stream = -1;
@@ -464,6 +462,8 @@ reset_rctx(RendererCtx *rctx, int init)
 	rctx->video_timebase.num = 0;
 	rctx->video_timebase.den = 0;
 	rctx->video_tbd = 0.0;
+	// Presenting
+	rctx->presq = nil;
 	// Seeking
 	rctx->seek_req = 0;
 	rctx->seek_flags = 0;
@@ -1023,6 +1023,7 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 			rctx->audio_buf_index = 0;
 			rctx->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
 			rctx->presenter_tid = threadcreate(presenter_thread, rctx, THREAD_STACK_SIZE);
+			rctx->presq = chancreate(sizeof(ulong), 0);  // blocking channel with one element size
 			rctx->audio_timebase = rctx->format_ctx->streams[stream_index]->time_base;
 			rctx->audio_tbd = av_q2d(rctx->audio_timebase);
 			LOG("timebase of audio stream: %d/%d = %f",
@@ -1552,7 +1553,11 @@ void state_load(RendererCtx *rctx)
 void state_unload(RendererCtx *rctx)
 {
 	// Stop presenter thread
-	rctx->stop_presenter_thread = 1;
+	LOG("sending stop to presenter thread ...");
+	// Send flush frames to the queues to avoid blocking in recv() in the presenter thread
+	send_eos_frames(rctx);
+	sendul(rctx->presq, 1);
+	LOG("stop sent to presenter thread.");
 
 	// Free allocated memory
 	if (rctx->io_ctx) {
@@ -1589,6 +1594,7 @@ void state_unload(RendererCtx *rctx)
 	if (rctx->pictq) {
 		chanfree(rctx->pictq);
 	}
+	chanfree(rctx->presq);
 
 	// Reset the renderer context to a defined initial state
 	reset_rctx(rctx, 0);
@@ -1713,23 +1719,18 @@ static VideoPicture videoPicture;
 static int nextpic = 1;
 
 void
-stopt(RendererCtx *rctx, int at)
-{
-	if (rctx->stop_presenter_thread) {
-		LOG("stopping presenter thread at %d ...", at);
-		threadexits("stopping presenter thread");
-	}
-}
-
-void
 presenter_thread(void *arg)
 {
 	RendererCtx *rctx = arg;
 	rctx->audio_start_rt = av_gettime();
-	rctx->stop_presenter_thread = 0;
 	nextpic = 1;
 	for (;;) {
 		// Check if presenter thread should continue
+		ulong stop_presenter_thread = nbrecvul(rctx->presq);
+		if (stop_presenter_thread == 1) {
+			LOG("stopping presenter thread ...");
+			threadexits("stopping presenter thread");
+		}
 		if (rctx->pause_presenter_thread) {
 			LOG("pausing presenter thread ...");
 			sleep(100);
@@ -1743,7 +1744,6 @@ presenter_thread(void *arg)
 		if (nextpic && rctx->video_ctx) {
 			LOG("receiving picture from picture queue ...");
 			LOG("P2>");
-			stopt(rctx, 1);
 			if (recv(rctx->pictq, &videoPicture) != 1) {
 				LOG("<== error receiving picture from video queue");
 				continue;
@@ -1752,34 +1752,25 @@ presenter_thread(void *arg)
 				LOG("<== received picture with idx: %d, pts: %0.2fms, eos: %d", videoPicture.idx, videoPicture.pts, videoPicture.eos);
 				nextpic = 0;
 			}
-			stopt(rctx, 2);
 			LOG("P2<");
 		}
 		LOG("PTS 1 %f", videoPicture.pts);
 		// Receive audio sample
 		LOG("receiving sample from audio queue ...");
 		LOG("P3>");
-		stopt(rctx, 3);
 		if (recv(rctx->audioq, &audioSample) != 1) {
 			LOG("<== error receiving sample from audio queue");
 			continue;
 		}
-		stopt(rctx, 4);
 		LOG("P3<");
 		LOG("PTS 2 %f", videoPicture.pts);
 		if (audioSample.eos) {
 			Command command = {.cmd = CMD_STOP, .arg = nil, .narg = 0};
 			LOG("P4>");
-			stopt(rctx, 5);
 			send(rctx->cmdq, &command);
-			stopt(rctx, 6);
 			LOG("P4<");
 			continue;
 		}
-		/* if (rctx->stop_presenter_thread) { */
-			/* LOG("stopping presenter thread 3 ..."); */
-			/* threadexits("stopping presenter thread"); */
-		/* } */
 		LOG("<== received sample with idx: %d, pts: %.2fms, eos: %d from audio queue.", audioSample.idx, audioSample.pts, audioSample.eos);
 
 		// Mix audio sample soft volume and write it to sdl audio buffer
@@ -1838,19 +1829,11 @@ presenter_thread(void *arg)
 		double time_diff = audio_queue_time - real_time;
 		if (time_diff > 0) {
 			LOG("P5>");
-			stopt(rctx, 7);
 			yield();
-			stopt(rctx, 8);
 			LOG("P5<");
-			if (rctx->stop_presenter_thread) {
-				LOG("stopping presenter thread at 3 ...");
-				threadexits("stopping presenter thread");
-			}
 			LOG("sleeping %.2fms", time_diff);
 			LOG("P6>");
-			stopt(rctx, 9);
 			sleep(time_diff);
-			stopt(rctx, 10);
 			LOG("P6<");
 		}
 		free(audioSample.sample);
