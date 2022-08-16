@@ -44,8 +44,10 @@
 // Thread layout:
 //   main_thread (event loop)
 //   -> 9P command server thread/proc
-//   -> decoder_thread
-//      -> presenter_thread reads from audio and video channel
+//   -> decoder_thread (and state machine)
+//      -> presenter_thread
+//         reads from audio and video channel
+//         only runs in states RUN and IDLE
 
 
 #include <u.h>
