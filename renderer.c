@@ -70,7 +70,6 @@
 #define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 static struct timespec curtime;
-/* static FILE *audio_out; */
 
 void printloginfo(void)
 {
@@ -168,12 +167,9 @@ typedef struct RendererCtx
 	AVCodecContext    *video_ctx;
 	Channel           *pictq;
 	struct SwsContext *yuv_ctx;
-	struct SwsContext *rgb_ctx;
 	SDL_AudioSpec      specs;
 	int                video_idx;
 	double             video_pts;
-	AVFrame           *frame_rgb;
-	/* uint8_t           *rgbbuffer; */
 	uint8_t           *yuvbuffer;
 	int                w, h, aw, ah;
 	SDL_Rect           blit_copy_rect;
@@ -183,13 +179,11 @@ typedef struct RendererCtx
 	int	               seek_req;
 	int	               seek_flags;
 	int64_t            seek_pos;
-	/* int                frame_fmt; */
 } RendererCtx;
 
 typedef struct VideoPicture
 {
 	AVFrame    *frame;
-	/* uint8_t    *rgbbuf; */
 	int         linesize;
 	/* uint8_t     *planes[AV_NUM_DATA_POINTERS]; */
 	/* int         linesizes[AV_NUM_DATA_POINTERS]; */
@@ -384,8 +378,6 @@ struct sample_fmt_entry {
 };
 
 
-/* AVPacket flush_pkt; */
-
 // Function declarations
 void display_picture(RendererCtx *rctx, VideoPicture *videoPicture);
 void decoder_thread(void *arg);
@@ -460,11 +452,8 @@ reset_rctx(RendererCtx *rctx, int init)
 	rctx->video_ctx = nil;
 	rctx->pictq = nil;
 	rctx->yuv_ctx = nil;
-	rctx->rgb_ctx = nil;
 	rctx->video_idx = 0;
 	rctx->video_pts = 0.0;
-	rctx->frame_rgb = nil;
-	/* rctx->rgbbuffer = nil; */
 	rctx->yuvbuffer = nil;
 	if (init) {
 		rctx->w = 0;
@@ -882,21 +871,6 @@ resize_video(RendererCtx *rctx)
 		rctx->aw,
 		rctx->ah
 		);
-	if (rctx->rgb_ctx != nil) {
-		av_free(rctx->rgb_ctx);
-	}
-	rctx->rgb_ctx = sws_getContext(
-		rctx->video_ctx->width,
-		rctx->video_ctx->height,
-		rctx->video_ctx->pix_fmt,
-		rctx->video_ctx->width,
-		rctx->video_ctx->height,
-		AV_PIX_FMT_RGB24,
-		SWS_BILINEAR,
-		nil,
-		nil,
-		nil
-	);
 	return 0;
 }
 
@@ -1183,33 +1157,9 @@ alloc_buffers(RendererCtx *rctx)
 			AV_PIX_FMT_YUV420P,
 			rctx->w,
 			rctx->h,
-			/* rctx->aw, */
-			/* rctx->ah, */
-			// crash on bunny with buffer size below
-			/* rctx->video_ctx->width, */
-			/* rctx->video_ctx->height, */
 			32
 			);
 		rctx->yuvbuffer = (uint8_t *) av_malloc(yuv_num_bytes * sizeof(uint8_t));
-		// rgb buffer for saving to disc
-	    /* rctx->frame_rgb = av_frame_alloc(); */
-	    /* int rgb_num_bytes; */
-	    /* rgb_num_bytes = av_image_get_buffer_size( */
-			/* AV_PIX_FMT_RGB24, */
-			/* rctx->video_ctx->width, */
-			/* rctx->video_ctx->height, */
-			/* 32 */
-			/* ); */
-	    /* rctx->rgbbuffer = (uint8_t *) av_malloc(rgb_num_bytes * sizeof(uint8_t)); */
-	    /* av_image_fill_arrays( */
-			/* rctx->frame_rgb->data, */
-			/* rctx->frame_rgb->linesize, */
-			/* rctx->rgbbuffer, */
-			/* AV_PIX_FMT_RGB24, */
-			/* rctx->video_ctx->width, */
-			/* rctx->video_ctx->height, */
-			/* 32 */
-	    /* ); */
 	}
 	rctx->decoder_packet = av_packet_alloc();
 	if (rctx->decoder_packet == nil) {
@@ -1234,8 +1184,6 @@ read_packet(RendererCtx *rctx, AVPacket *packet)
 		if (demuxer_ret == AVERROR_EOF) {
 			LOG("EOF");
 		}
-		/* reset_filectx(rctx); */
-		/* blank_window(rctx); */
 		return -1;
 	}
 	if (packet->size == 0) {
@@ -1525,8 +1473,6 @@ void state_run(RendererCtx *rctx)
 				rctx->video_pts += rctx->frame_duration;
 				VideoPicture videoPicture = {
 					.frame = nil,
-					/* .rgbbuf = nil, */
-					/* .planes = nil, */
 					.width = rctx->aw,
 					.height = rctx->ah,
 					.idx = rctx->video_idx,
@@ -1632,9 +1578,6 @@ void state_unload(RendererCtx *rctx)
 	if (rctx->yuvbuffer) {
 		av_free(rctx->yuvbuffer);
 	}
-	/* if (rctx->rgbbuffer) { */
-		/* av_free(rctx->rgbbuffer); */
-	/* } */
 	av_packet_unref(rctx->decoder_packet);
 	av_frame_unref(rctx->decoder_frame);
 
@@ -1650,7 +1593,6 @@ void state_unload(RendererCtx *rctx)
 	// Reset the renderer context to a defined initial state
 	reset_rctx(rctx, 0);
 
-	/* fclose(audio_out); */
 	// Unconditional transition to STOP state
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
@@ -1851,8 +1793,6 @@ presenter_thread(void *arg)
 			continue;
 		}
 		LOG("queued audio sample to sdl device");
-		// Write audio sample to file after decoding, after resampling, after sending to queue
-		//fwrite(audioSample.sample, 1, audioSample.size, audio_out);
 
 		// Calculate times and metrics
 		int audioq_size = SDL_GetQueuedAudioSize(rctx->audio_devid);
@@ -1978,7 +1918,6 @@ threadmain(int argc, char **argv)
 		/* rctx->renderer_state = RSTATE_PLAY; */
 		rctx->renderer_state = LOAD;
 	}
-	/* audio_out = fopen("/tmp/out.pcm", "wb"); */
 	// start the decoding thread to read data from the AVFormatContext
 	rctx->decoder_tid = threadcreate(decoder_thread, rctx, THREAD_STACK_SIZE);
 	if (!rctx->decoder_tid) {
@@ -1986,8 +1925,6 @@ threadmain(int argc, char **argv)
 		av_free(rctx);
 		return;
 	}
-	/* av_init_packet(&flush_pkt); */
-	/* flush_pkt.data = (uint8_t*)"FLUSH"; */
 	for (;;) {
 		yield();
 		if (rctx->renderer_state == STOP || rctx->renderer_state == IDLE) {
