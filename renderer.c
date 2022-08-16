@@ -1666,11 +1666,11 @@ void state_unload(RendererCtx *rctx)
 	av_packet_unref(rctx->decoder_packet);
 	av_frame_unref(rctx->decoder_frame);
 
-	/* flush_audio_queue(rctx); */
+	flush_audio_queue(rctx);
 	if (rctx->audioq) {
 		chanfree(rctx->audioq);
 	}
-	/* flush_picture_queue(rctx); */
+	flush_picture_queue(rctx);
 	if (rctx->pictq) {
 		chanfree(rctx->pictq);
 	}
