@@ -25,7 +25,6 @@
 // 1. Fixes
 // - memory leaks
 //   - play / stop cycle increases memory footprint
-//     - presenter thread is not stopped always
 // - dvb life streams need too long to start rendering, service queue on server gets full
 // - seek
 // - blank screen on stop / eof
