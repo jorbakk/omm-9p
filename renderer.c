@@ -26,7 +26,7 @@
 // - memory leaks
 //   - play / stop cycle increases memory footprint
 // - dvb life streams need too long to start rendering, service queue on server gets full
-// - keyboard commands lead to crashes (e.g. stop with 's')
+// - keyboard commands occasionally lead to random crashes (e.g. stop with 's')
 // - seek
 // - blank screen on stop / eof
 // - responsiveness to keyboard input
@@ -101,6 +101,12 @@ void printloginfo(void)
 #define MAX_COMMANDQ_SIZE (5)
 #define MAX_AUDIOQ_SIZE (5 * 16 * 1024)
 #define MAX_VIDEOQ_SIZE (5 * 256 * 1024)
+// Maximum size of the data read from input for determining the input container format.
+#define AV_FORMAT_MAX_PROBE_SIZE 500000
+// Maximum duration (in AV_TIME_BASE units) of the data read from input in avformat_find_stream_info().
+// Demuxing only, set by the caller before avformat_find_stream_info().
+// Can be set to 0 to let avformat choose using a heuristic.
+#define AV_FORMAT_MAX_ANALYZE_DURATION 500000
 #define AV_SYNC_THRESHOLD 0.01
 #define AV_NOSYNC_THRESHOLD 1.0
 #define SAMPLE_CORRECTION_PERCENT_MAX 10
@@ -924,6 +930,8 @@ open_input_stream(RendererCtx *rctx)
 	if (rctx->isfile) {
 		ret = avformat_open_input(&rctx->format_ctx, rctx->filename, nil, nil);
 	} else {
+		rctx->format_ctx->probesize = AV_FORMAT_MAX_PROBE_SIZE;
+		/* rctx->format_ctx->max_analyze_duration = AV_FORMAT_MAX_ANALYZE_DURATION; */
 		ret = avformat_open_input(&rctx->format_ctx, nil, nil, nil);
 	}
 	if (ret < 0) {
