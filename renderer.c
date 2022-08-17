@@ -26,9 +26,11 @@
 // - memory leaks
 //   - play / stop cycle increases memory footprint
 // - dvb life streams need too long to start rendering, service queue on server gets full
+// - keyboard commands lead to crashes (e.g. stop with 's')
 // - seek
 // - blank screen on stop / eof
 // - responsiveness to keyboard input
+// - check if initial resizing works with floating windows or if it blocks
 // 2. AV sync
 // - decrease video picture display rate variation further
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
@@ -1896,7 +1898,6 @@ threadmain(int argc, char **argv)
 	}
 	blank_window(&rctx);
 	// Wait for sdl window to be created (restored) and resized
-	// FIXME check if initial resizing works with floating windows or does it block ...
 	ret = SDL_WaitEvent(&event);
 	while (ret)
 	{
