@@ -560,6 +560,7 @@ seturl(RendererCtx *rctx, char *url)
 		rctx->filename = nil;
 		return;
 	}
+	/* setstr(&rctx->fileservername, DEFAULT_SERVER_NAME, 0); */
 	setstr(&rctx->fileservername, s, 0);
 	setstr(&rctx->filename, f, 0);
 }
@@ -757,13 +758,13 @@ start_server(RendererCtx *rctx)
 int
 create_sdl_window(RendererCtx *rctx)
 {
-	SDL_DisplayMode DM;
-	if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
+	SDL_DisplayMode displaymode;
+	if (SDL_GetCurrentDisplayMode(0, &displaymode) != 0) {
 		LOG("failed to get sdl display mode");
 		return -1;
 	}
-	rctx->screen_width  = DM.w;
-	rctx->screen_height = DM.h;
+	rctx->screen_width  = displaymode.w;
+	rctx->screen_height = displaymode.h;
 	int requested_window_width  = 800;
 	int requested_window_height = 600;
 	if (rctx->sdl_window == nil) {
@@ -790,14 +791,9 @@ create_sdl_window(RendererCtx *rctx)
 			-1,
 			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
 	}
-	return 0;
-}
-
-
-void
-get_sdl_window_size(RendererCtx *rctx)
-{
 	SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
+	LOG("SDL window with size %dx%d created", rctx->w, rctx->h);
+	return 0;
 }
 
 
@@ -830,11 +826,12 @@ calc_videoscale(RendererCtx *rctx)
 int
 resize_video(RendererCtx *rctx)
 {
+	SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
+	LOG("resized sdl window to: %dx%d", rctx->w, rctx->h);
 	if (rctx->video_ctx == nil) {
 		LOG("cannot resize video picture, no video context");
 		return -1;
 	}
-	get_sdl_window_size(rctx);
 	calc_videoscale(rctx);
 	rctx->blit_copy_rect.x = 0.5 * (rctx->w - rctx->aw);
 	rctx->blit_copy_rect.y = 0.5 * (rctx->h - rctx->ah);
@@ -1072,7 +1069,6 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 			rctx->video_stream = stream_index;
 			rctx->video_ctx = codecCtx;
 			rctx->pictq = chancreate(sizeof(VideoPicture), VIDEO_PICTURE_QUEUE_SIZE);
-			resize_video(rctx);
 			rctx->video_timebase = rctx->format_ctx->streams[stream_index]->time_base;
 			rctx->video_tbd = av_q2d(rctx->video_timebase);
 			LOG("timebase of video stream: %d/%d = %f",
@@ -1080,6 +1076,7 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 			LOG("sample aspect ratio: %d/%d",
 				codecCtx->sample_aspect_ratio.num,
 				codecCtx->sample_aspect_ratio.den);
+			resize_video(rctx);
 		}
 		break;
 		default:
@@ -1877,7 +1874,8 @@ threadmain(int argc, char **argv)
 		/* chattyfuse = 1; */
 	}
 	reset_rctx(&rctx, 1);
-	start_server(&rctx);
+	// Create OS window
+	SDL_Event event;
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (ret != 0) {
@@ -1887,13 +1885,31 @@ threadmain(int argc, char **argv)
 	if (create_sdl_window(&rctx) == -1) {
 		return;
 	}
-	/* setstr(&rctx.fileservername, DEFAULT_SERVER_NAME, 0); */
 	blank_window(&rctx);
+	// Wait for sdl window to be created (restored) and resized
+	ret = SDL_WaitEvent(&event);
+	while (ret && event.type != SDL_WINDOWEVENT)
+	{
+		LOG("waiting for sdl window resize ...");
+		int e = event.window.event;
+		if (e == SDL_WINDOWEVENT_RESIZED ||
+			e == SDL_WINDOWEVENT_SIZE_CHANGED ||
+			e == SDL_WINDOWEVENT_MAXIMIZED) {
+				break;
+		}
+		ret = SDL_WaitEvent(&event);
+	}
+	SDL_GetWindowSize(rctx.sdl_window, &rctx.w, &rctx.h);
+	LOG("resized sdl window to %dx%d", rctx.w, rctx.h);
+	// Start command server
 	rctx.cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
+	start_server(&rctx);
+	// Load file if url is given on command line
 	if (argc >= 2) {
 		seturl(&rctx, argv[1]);
 		rctx.renderer_state = LOAD;
 	}
+	// Start decoder / state machine thread
 	rctx.decoder_tid = threadcreate(decoder_thread, &rctx, THREAD_STACK_SIZE);
 	if (!rctx.decoder_tid) {
 		printf("could not start decoder thread: %s.\n", SDL_GetError());
@@ -1904,7 +1920,6 @@ threadmain(int argc, char **argv)
 		if (rctx.renderer_state == STOP || rctx.renderer_state == IDLE) {
 			sleep(100);
 		}
-		SDL_Event event;
 		ret = SDL_PollEvent(&event);
 		if (ret) {
 			LOG("received sdl event");
