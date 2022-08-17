@@ -22,9 +22,7 @@
 
 // TODO
 // 1. Fixes
-// - server crashes on quitting the renderer when remote streaming live dvb
-//   - closing dvb data handle, double free detected in tcache 2
-// - opening a dvb stream after closing it crashes the server
+// ... currently none
 // 2. Queries
 // 3. Avoid 9pserve overhead
 // 4. Test multiple clients
