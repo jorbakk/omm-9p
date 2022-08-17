@@ -206,6 +206,8 @@ typedef struct RendererCtx
 	int64_t            seek_pos;
 } RendererCtx;
 
+static RendererCtx rctx;
+
 // State machine
 #define NSTATE 8
 typedef void (*state_func)(RendererCtx*);
@@ -1875,36 +1877,33 @@ threadmain(int argc, char **argv)
 		chatty9pclient = 1;
 		/* chattyfuse = 1; */
 	}
-	RendererCtx *rctx = av_mallocz(sizeof(RendererCtx));
-	reset_rctx(rctx, 1);
-	start_server(rctx);
+	reset_rctx(&rctx, 1);
+	start_server(&rctx);
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (ret != 0) {
 		LOG("Could not initialize SDL - %s", SDL_GetError());
 		return;
 	}
-	if (create_sdl_window(rctx) == -1) {
+	if (create_sdl_window(&rctx) == -1) {
 		return;
 	}
-	/* setstr(&rctx->fileservername, DEFAULT_SERVER_NAME, 0); */
-	blank_window(rctx);
-	rctx->cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
+	/* setstr(&rctx.fileservername, DEFAULT_SERVER_NAME, 0); */
+	blank_window(&rctx);
+	rctx.cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
 	if (argc >= 2) {
-		seturl(rctx, argv[1]);
-		/* rctx->renderer_state = RSTATE_PLAY; */
-		rctx->renderer_state = LOAD;
+		seturl(&rctx, argv[1]);
+		rctx.renderer_state = LOAD;
 	}
 	// start the decoding thread to read data from the AVFormatContext
-	rctx->decoder_tid = threadcreate(decoder_thread, rctx, THREAD_STACK_SIZE);
-	if (!rctx->decoder_tid) {
+	rctx.decoder_tid = threadcreate(decoder_thread, &rctx, THREAD_STACK_SIZE);
+	if (!rctx.decoder_tid) {
 		printf("could not start decoder thread: %s.\n", SDL_GetError());
-		av_free(rctx);
 		return;
 	}
 	for (;;) {
 		yield();
-		if (rctx->renderer_state == STOP || rctx->renderer_state == IDLE) {
+		if (rctx.renderer_state == STOP || rctx.renderer_state == IDLE) {
 			sleep(100);
 		}
 		SDL_Event event;
@@ -1948,7 +1947,7 @@ threadmain(int argc, char **argv)
 						break;
 					}
 					if (cmd.cmd != CMD_NONE) {
-						send(rctx->cmdq, &cmd);
+						send(rctx.cmdq, &cmd);
 					}
 
 				}
@@ -1962,14 +1961,14 @@ threadmain(int argc, char **argv)
 						case SDL_WINDOWEVENT_MAXIMIZED:
 						{
 							LOG("window resized");
-							resize_video(rctx);
+							resize_video(&rctx);
 						}
 						break;
 						case SDL_WINDOWEVENT_SHOWN:
 						case SDL_WINDOWEVENT_RESTORED:
 						{
 							LOG("window restored");
-							blank_window(rctx);
+							blank_window(&rctx);
 						}
 					}
 				}
@@ -1977,7 +1976,7 @@ threadmain(int argc, char **argv)
 				case SDL_QUIT:
 				{
 					cmd.cmd = CMD_QUIT;
-					send(rctx->cmdq, &cmd);
+					send(rctx.cmdq, &cmd);
 				}
 				break;
 			}
@@ -1985,6 +1984,5 @@ threadmain(int argc, char **argv)
 	}
 	// FIXME never reached ... need to shut down the renderer properly
 	LOG("freeing video state");
-	av_free(rctx);
 	return;
 }
