@@ -548,7 +548,7 @@ void
 seturl(RendererCtx *rctx, char *url)
 {
 	char *s, *f;
-	int ret = parseurl(rctx->url, &s, &f, &rctx->isaddr, &rctx->isfile);
+	int ret = parseurl(url, &s, &f, &rctx->isaddr, &rctx->isfile);
 	if (rctx->isfile) {
 		LOG("input is file, setting url to %s", url);
 		setstr(&rctx->filename, url, 0);
@@ -1821,7 +1821,7 @@ presenter_thread(void *arg)
 			LOG("video picture not ready to display");
 		}
 
-		// Delay the presenter thread so that video is presented in sync with audio
+		// Delay the presenter thread so that the audio pts reflects real time
 		double time_diff = audio_queue_time - real_time;
 		if (time_diff > 0) {
 			LOG("P5>");
@@ -1895,7 +1895,6 @@ threadmain(int argc, char **argv)
 		seturl(&rctx, argv[1]);
 		rctx.renderer_state = LOAD;
 	}
-	// start the decoding thread to read data from the AVFormatContext
 	rctx.decoder_tid = threadcreate(decoder_thread, &rctx, THREAD_STACK_SIZE);
 	if (!rctx.decoder_tid) {
 		printf("could not start decoder thread: %s.\n", SDL_GetError());
