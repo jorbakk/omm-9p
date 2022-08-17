@@ -110,13 +110,36 @@ void printloginfo(void)
 #define avctxBufferSize 8192 * 10
 
 
+typedef struct VideoPicture
+{
+	AVFrame    *frame;
+	int         linesize;
+	int         width;
+	int         height;
+	int         pix_fmt;
+	double      pts;
+	int         idx;
+	int         eos;
+} VideoPicture;
+
+typedef struct AudioSample
+{
+	uint8_t	   *sample;
+	int         size;
+	int         idx;
+	double      pts;
+	double      duration;
+	int         eos;
+} AudioSample;
+
 typedef struct RendererCtx
 {
 	// State machine
 	int                renderer_state;
 	int                next_renderer_state;
 	int                quit;
-	// Input file name, plan 9 file reference, os window
+	Channel           *cmdq;
+	// Input file name, plan 9 file reference
 	char              *url;
 	char              *fileservername;
 	char              *filename;
@@ -125,12 +148,13 @@ typedef struct RendererCtx
 	int                fileserverfd;
 	CFid              *fileserverfid;
 	CFsys             *fileserver;
+	// Decoder context
 	AVIOContext       *io_ctx;
 	AVFormatContext   *format_ctx;
 	AVCodecContext    *current_codec_ctx;
 	AVFrame           *decoder_frame;
 	AVPacket          *decoder_packet;
-	Channel           *cmdq;
+	// OS window
 	int                screen_width;
 	int                screen_height;
 	int                window_width;
@@ -140,6 +164,7 @@ typedef struct RendererCtx
 	int                decoder_tid;
 	int                presenter_tid;
 	int                pause_presenter_thread;
+	Channel           *presq;
 	// Audio stream
 	int                audio_stream;
 	AVCodecContext    *audio_ctx;
@@ -175,41 +200,11 @@ typedef struct RendererCtx
 	SDL_Rect           blit_copy_rect;
 	AVRational         video_timebase;
 	double             video_tbd;
-	// Presentation
-	Channel           *presq;
 	// Seeking
 	int	               seek_req;
 	int	               seek_flags;
 	int64_t            seek_pos;
 } RendererCtx;
-
-typedef struct VideoPicture
-{
-	AVFrame    *frame;
-	int         linesize;
-	/* uint8_t     *planes[AV_NUM_DATA_POINTERS]; */
-	/* int         linesizes[AV_NUM_DATA_POINTERS]; */
-	/* uint8_t    *planes[4]; */
-	/* int         linesizes[4]; */
-	int         width;
-	int         height;
-	int         pix_fmt;
-	double      pts;
-	int         idx;
-	int         eos;
-} VideoPicture;
-
-typedef struct AudioSample
-{
-	/* uint8_t			 sample[MAX_AUDIO_FRAME_SIZE]; */
-	uint8_t	   *sample;
-	int         size;
-	int         idx;
-	double      pts;
-	double      duration;
-	int         eos;
-} AudioSample;
-
 
 // State machine
 #define NSTATE 8
@@ -1022,7 +1017,7 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 			rctx->audio_ctx = codecCtx;
 			rctx->audio_buf_size = 0;
 			rctx->audio_buf_index = 0;
-			rctx->audioq = chancreate(sizeof(AVPacket), MAX_AUDIOQ_SIZE);
+			rctx->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE);
 			rctx->presenter_tid = threadcreate(presenter_thread, rctx, THREAD_STACK_SIZE);
 			rctx->presq = chancreate(sizeof(ulong), 0);  // blocking channel with one element size
 			rctx->audio_timebase = rctx->format_ctx->streams[stream_index]->time_base;
@@ -1714,17 +1709,15 @@ decoder_thread(void *arg)
 }
 
 
-// FIXME putting these on the stack frame of presenter_thread yields some strange results, lately
-static AudioSample audioSample;
-static VideoPicture videoPicture;
-static int nextpic = 1;
 
 void
 presenter_thread(void *arg)
 {
 	RendererCtx *rctx = arg;
 	rctx->audio_start_rt = av_gettime();
-	nextpic = 1;
+	AudioSample audioSample;
+	VideoPicture videoPicture;
+	int nextpic = 1;
 	for (;;) {
 		// Check if presenter thread should continue
 		ulong stop_presenter_thread = nbrecvul(rctx->presq);
