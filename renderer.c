@@ -1337,10 +1337,9 @@ create_sample_from_frame(RendererCtx *rctx, AVFrame *frame, AudioSample *audioSa
 void
 send_picture_to_queue(RendererCtx *rctx, VideoPicture *videoPicture)
 {
-	LOG("==> sending picture with idx: %d, pts: %.2fms, eos: %d to picture queue ...", videoPicture->idx, videoPicture->pts, videoPicture->eos);
 	int sendret = send(rctx->pictq, videoPicture);
 	if (sendret == 1) {
-		LOG("==> sending picture with idx: %d, pts: %.2fms to picture queue succeeded.", videoPicture->idx, videoPicture->pts);
+		LOG("==> sending picture with idx: %d, pts: %.2fms, eos: %d to picture queue succeeded.", videoPicture->idx, videoPicture->pts, videoPicture->eos);
 	}
 	else if (sendret == -1) {
 		LOG("==> sending picture to picture queue interrupted");
