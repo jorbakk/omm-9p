@@ -1707,7 +1707,6 @@ decoder_thread(void *arg)
 }
 
 
-
 void
 presenter_thread(void *arg)
 {
@@ -1721,6 +1720,16 @@ presenter_thread(void *arg)
 		ulong stop_presenter_thread = nbrecvul(rctx->presq);
 		if (stop_presenter_thread == 1) {
 			LOG("stopping presenter thread ...");
+			/* if (audioSample.sample) { */
+				/* LOG("free audio sample ..."); */
+				/* free(audioSample.sample); */
+			/* } */
+			/* if (videoPicture.frame) { */
+				/* LOG("free video picture ..."); */
+				/* av_frame_unref(videoPicture.frame); */
+				/* av_frame_free(&videoPicture.frame); */
+				/* videoPicture.frame = nil; */
+			/* } */
 			threadexits("stopping presenter thread");
 		}
 		if (rctx->pause_presenter_thread) {
@@ -1887,15 +1896,18 @@ threadmain(int argc, char **argv)
 	}
 	blank_window(&rctx);
 	// Wait for sdl window to be created (restored) and resized
+	// FIXME check if initial resizing works with floating windows or does it block ...
 	ret = SDL_WaitEvent(&event);
-	while (ret && event.type != SDL_WINDOWEVENT)
+	while (ret)
 	{
 		LOG("waiting for sdl window resize ...");
-		int e = event.window.event;
-		if (e == SDL_WINDOWEVENT_RESIZED ||
-			e == SDL_WINDOWEVENT_SIZE_CHANGED ||
-			e == SDL_WINDOWEVENT_MAXIMIZED) {
-				break;
+		if (event.type == SDL_WINDOWEVENT) {
+			int e = event.window.event;
+			if (e == SDL_WINDOWEVENT_RESIZED ||
+				e == SDL_WINDOWEVENT_SIZE_CHANGED ||
+				e == SDL_WINDOWEVENT_MAXIMIZED) {
+					break;
+			}
 		}
 		ret = SDL_WaitEvent(&event);
 	}
