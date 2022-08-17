@@ -235,14 +235,14 @@ static state_func states[NSTATE] =
 
 static char* statestr[NSTATE] =
 {
-	"stop",
-	"run",
-	"idle",
-	"load",
-	"unload",
-	"engage",
-	"disengage",
-	"exit",
+	"STOP",
+	"RUN",
+	"IDLE",
+	"LOAD",
+	"UNLOAD",
+	"ENGAGE",
+	"DISENGAGE",
+	"EXIT",
 };
 
 enum
@@ -887,7 +887,7 @@ setup_format_ctx(RendererCtx *rctx)
 {
 	LOG("setting up IO context ...");
 	if (rctx->isfile) {
-		LOG("input is a file, nothing to setup");
+		LOG("input is a file, nothing to set up");
 		return 0;
 	}
 	unsigned char *avctxBuffer;
