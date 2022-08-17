@@ -25,7 +25,6 @@
 // 1. Fixes
 // - memory leaks
 //   - play / stop cycle increases memory footprint
-// - dvb life streams need too long to start rendering, service queue on server gets full
 // - keyboard commands occasionally lead to random crashes (e.g. stop with 's')
 // - seek
 // - blank screen on stop / eof
@@ -719,6 +718,19 @@ open_9pconnection(RendererCtx *rctx)
 	}
 	rctx->fileserverfid = fid; 
 	return 0;
+}
+
+
+void
+close_9pconnection(RendererCtx *rctx)
+{
+	LOG("closing 9P connection ...");
+	if (rctx->isfile) {
+		LOG("input is a file, nothing to do");
+	}
+	if (rctx->fileserverfid) {
+		fsclose(rctx->fileserverfid);
+	}
 }
 
 
@@ -1602,6 +1614,8 @@ void state_unload(RendererCtx *rctx)
 
 	// Reset the renderer context to a defined initial state
 	reset_rctx(rctx, 0);
+
+	close_9pconnection(rctx);
 
 	// Unconditional transition to STOP state
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];

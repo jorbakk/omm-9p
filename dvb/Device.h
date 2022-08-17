@@ -129,6 +129,7 @@ public:
     AvStream::ByteQueue* getByteQueue(const std::string& serviceName);
     void freeStream(std::istream* pIstream);
     void freeByteQueue(AvStream::ByteQueue* pIstream);
+    void stopService(Service* pService);
 
 private:
     Device();
@@ -140,7 +141,6 @@ private:
     void clearAdapters();
     Transponder* tuneToService(const std::string& serviceName, bool unscrambledOnly = true);
     Service* startService(Service* pService);
-    void stopService(Service* pService);
     void stopServiceStreamsOnTransponder(Transponder* pTransponder);
 
     static Device*                                      _pInstance;

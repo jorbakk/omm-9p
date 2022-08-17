@@ -22,6 +22,8 @@
 
 // TODO
 // 1. Fixes
+// - server crashes on quitting the renderer when remote streaming live dvb
+//   - closing dvb data handle, double free detected in tcache 2
 // - opening a dvb stream after closing it crashes the server
 // 2. Queries
 // 3. Avoid 9pserve overhead
@@ -455,6 +457,7 @@ srvdestroyfid(Fid *fid)
 		break;
 	case OTdvb:
 		LOG("closing dvb data handle");
+		// FIXME this cause a double free
 		dvb_free_stream(ao->od.st);
 		break;
 	}

@@ -61,7 +61,6 @@ dvb_stream(const char *service_name)
 		free(stream);
 		return NULL;
 	}
-
 	stream->pByteQueue = Omm::Dvb::Device::instance()->getByteQueue(service_name);
 	if (!stream->pByteQueue) {
 		delete stream->pTransponder;
@@ -89,7 +88,8 @@ dvb_free_stream(DvbStream *stream)
 	if (!stream) {
 		return;
 	}
-	delete stream->pTransponder;
-	delete stream->pService;
+	// delete stream->pTransponder;
+	// delete stream->pService;
+	Omm::Dvb::Device::instance()->stopService(stream->pService);
 	free(stream);
 }
