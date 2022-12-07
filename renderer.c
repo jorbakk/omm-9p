@@ -31,6 +31,7 @@
 // - responsiveness to keyboard input
 // - check if initial resizing works with floating windows or if it blocks
 // 2. AV sync
+// - pause / unpause introduces big av sync gap
 // - decrease video picture display rate variation further
 // - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
 // - add video-only (for videos with or w/o audio) and fix audio-only video playback

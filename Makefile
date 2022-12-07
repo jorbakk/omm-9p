@@ -7,7 +7,7 @@ SDL2CFLAGS   := $(shell pkg-config --cflags sdl2)
 SQLITE3LIBS  := $(shell pkg-config --libs sqlite3)
 
 LIBS   += $(9PLIBS) $(AVLIBS) $(SDL2LIBS)
-CFLAGS += $(SDL2CFLAGS)
+CFLAGS += -g $(SDL2CFLAGS)
 
 .PHONY: libommdvb clean
 

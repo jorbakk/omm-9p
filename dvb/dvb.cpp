@@ -5,9 +5,7 @@
 #include "TransportStream.h"
 #include "AvStream.h"
 
-extern "C" {
 #include "dvb.h"
-}
 
 const int dvb_transport_stream_packet_size = Omm::Dvb::TransportStreamPacket::Size;
 
