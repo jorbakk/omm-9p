@@ -36,10 +36,10 @@
 #include <9p.h>
 #include <sqlite3.h>
 
+#include "log.h"
 #include "dvb/dvb.h"
 
 #define _DEBUG_ 1
-#define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
 
 #define QTYPE(p) ((p) & 0xF)
 #define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
@@ -106,26 +106,6 @@ static vlong
 qpath(int type, int obj)
 {
 	return type | (obj << 4);
-}
-
-
-static struct timespec curtime;
-
-static void
-printloginfo(void)
-{
-    long ms; // Milliseconds
-    time_t s;  // Seconds
-	pid_t tid;
-	tid = threadid();
-	timespec_get(&curtime, TIME_UTC);
-    s  = curtime.tv_sec;
-    ms = round(curtime.tv_nsec / 1.0e6); // Convert nanoseconds to milliseconds
-    if (ms > 999) {
-        s++;
-        ms = 0;
-    }
-	fprintf(stderr, "%"PRIdMAX".%03ld %d│ ", (intmax_t)s, ms, tid);
 }
 
 
