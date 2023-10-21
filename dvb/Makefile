@@ -3,7 +3,10 @@ CFLAGS := -Wno-format-security
 
 .PHONY: libommdvb clean
 
-all: build/resgen libommdvb build/tunedvbcpp build/scandvbcpp build/tunedvb
+all: build build/resgen libommdvb build/tunedvbcpp build/scandvbcpp build/tunedvb
+
+build:
+	mkdir -p build
 
 clean:
 	rm -r build/*

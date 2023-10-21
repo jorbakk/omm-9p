@@ -11,7 +11,10 @@ CFLAGS += -g $(SDL2CFLAGS)
 
 .PHONY: libommdvb clean
 
-all: build/ommrender build/ommserve
+all: build build/ommrender build/ommserve
+
+build:
+	mkdir -p build
 
 clean:
 	rm -r build/*
