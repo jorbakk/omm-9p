@@ -26,7 +26,19 @@ Play file from disk:
 $ ommrender <filename>
 ```
 
-Start server:
+Start renderer:
+```
+$ ommrender &
+```
+
+Control renderer from command line:
+```
+$ echo set <filename> | 9p write ommrenderer/ctl
+$ echo play | 9p write ommrenderer/ctl
+$ echo stop | 9p write ommrenderer/ctl
+```
+
+Start local server:
 ```
 $ ommserve media.db &
 ```
@@ -38,21 +50,16 @@ $ 9p ls ommserver/1
 $ 9p read ommserver/1/meta
 ```
 
-Start renderer:
+Play media from local server:
 ```
-$ ommrender &
-```
-
-Play file from disk through server:
-```
-$ echo set <filename> | 9p write ommrenderer/ctl
+$ echo set ommserver/1/data | 9p write ommrenderer/ctl
 $ echo play | 9p write ommrenderer/ctl
 $ echo stop | 9p write ommrenderer/ctl
 ```
 
-Play file from server:
+Play media from remote server running on 192.168.1.83, port 4567:
 ```
-$ echo set ommserver/1/data | 9p write ommrenderer/ctl
+$ echo set tcp!192.168.1.83!4567/1/data | 9p write ommrenderer/ctl
 $ echo play | 9p write ommrenderer/ctl
 $ echo stop | 9p write ommrenderer/ctl
 ```
