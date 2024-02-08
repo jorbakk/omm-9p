@@ -21,6 +21,42 @@ Run `make`. Currently, no dependencies are checked.
 
 ## Usage
 
+Play file from disk:
+```bash
+$ ommrender <filename>
+```
+
+Start server:
+```bash
+$ ommserve media.db &
+```
+
+```bash
+Show contents of server:
+$ 9p ls ommserver
+$ 9p ls ommserver/1
+$ 9p read ommserver/1/meta
+```
+
+Start renderer:
+```bash
+$ ommrender &
+```
+
+Play file from disk through server:
+```bash
+$ echo set <filename> | 9p write ommrenderer/ctl
+$ echo play | 9p write ommrenderer/ctl
+$ echo stop | 9p write ommrenderer/ctl
+```
+
+Play file from server:
+```bash
+$ echo set ommserver/1/data | 9p write ommrenderer/ctl
+$ echo play | 9p write ommrenderer/ctl
+$ echo stop | 9p write ommrenderer/ctl
+```
+
 ## References
 
 1. [Plan 9 from user space](https://9fans.github.io/plan9port)
