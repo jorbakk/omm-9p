@@ -94,6 +94,10 @@
 /* #define DEFAULT_AV_SYNC_TYPE AV_SYNC_AUDIO_MASTER */
 #define DEFAULT_AV_SYNC_TYPE AV_SYNC_EXTERNAL_MASTER
 #define THREAD_STACK_SIZE 1024 * 1024 * 10
+/// Blocking (synchronous) threads
+// #define THREAD_CREATE threadcreate
+/// OS pre-emptive threads
+#define THREAD_CREATE proccreate
 #define avctxBufferSize 8192 * 10
 
 
@@ -1019,7 +1023,7 @@ open_stream_component(RendererCtx *rctx, int stream_index)
 			rctx->audio_buf_size = 0;
 			rctx->audio_buf_index = 0;
 			rctx->audioq = chancreate(sizeof(AudioSample), MAX_AUDIOQ_SIZE);
-			rctx->presenter_tid = threadcreate(presenter_thread, rctx, THREAD_STACK_SIZE);
+			rctx->presenter_tid = THREAD_CREATE(presenter_thread, rctx, THREAD_STACK_SIZE);
 			rctx->presq = chancreate(sizeof(ulong), 0);  // blocking channel with one element size
 			rctx->audio_timebase = rctx->format_ctx->streams[stream_index]->time_base;
 			rctx->audio_tbd = av_q2d(rctx->audio_timebase);
@@ -1925,7 +1929,7 @@ threadmain(int argc, char **argv)
 		rctx.renderer_state = LOAD;
 	}
 	// Start decoder / state machine thread
-	rctx.decoder_tid = threadcreate(decoder_thread, &rctx, THREAD_STACK_SIZE);
+	rctx.decoder_tid = THREAD_CREATE(decoder_thread, &rctx, THREAD_STACK_SIZE);
 	if (!rctx.decoder_tid) {
 		printf("could not start decoder thread: %s.\n", SDL_GetError());
 		return;
