@@ -1,29 +1,37 @@
-LIBS := -lm -lPocoUtil -lPocoFoundation
-CFLAGS := -Wno-format-security -Wno-return-type
+CXXFLAGS = -Wno-format-security -Wno-return-type
+LIBS     = -lPocoUtil -lPocoFoundation -lm
+B        = build
+
+## Honor locally set include and linker paths
+export $(CPATH)
+export $(LIBRARY_PATH)
 
 .PHONY: libommdvb clean
 
-all: build build/resgen libommdvb build/tunedvbcpp build/scandvbcpp build/tunedvb
+all: $(B) $(B)/resgen $(B)/TransponderData.h libommdvb $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb
 
-build:
-	mkdir -p build
+$(B):
+	mkdir -p $(B)
 
 clean:
-	rm -r build/*
+	rm -r $(B)/*
 
-build/resgen: resgen.cpp
-	$(CXX) -g -o build/resgen -Wl,--copy-dt-needed-entries $(CFLAGS) $(LIBS) resgen.cpp
+$(B)/resgen: resgen.cpp
+	$(CXX) -g -o $(B)/resgen resgen.cpp $(CXXFLAGS) $(LIBS)
 
-libommdvb: CMakeLists.txt build/resgen
-	cmake -S . -B build
-	make -C build
+$(B)/TransponderData.h: $(B)/resgen transponder.zip
+	$(B)/resgen --output-directory=$(B) --resource-name=TransponderData transponder.zip
 
-build/tunedvbcpp: TuneDvb.cpp libommdvb
-	$(CXX) -g -o build/tunedvbcpp -Wl,--copy-dt-needed-entries $(CFLAGS) $(LIBS) -Lbuild -lommdvb TuneDvb.cpp
+libommdvb: CMakeLists.txt $(B)/resgen
+	cmake -S . -B $(B)
+	make -C $(B)
 
-build/scandvbcpp: ScanDvb.cpp libommdvb
-	$(CXX) -g -o build/scandvbcpp -Wl,--copy-dt-needed-entries $(CFLAGS) $(LIBS) -Lbuild -lommdvb ScanDvb.cpp
+$(B)/tunedvbcpp: TuneDvb.cpp libommdvb
+	$(CXX) -g -o $(B)/tunedvbcpp TuneDvb.cpp -Wl,--copy-dt-needed-entries $(CXXFLAGS) $(LIBS) -Lbuild -lommdvb
 
-build/tunedvb: tunedvb.c libommdvb
-	9c -g -o build/tunedvb.o tunedvb.c
-	9l -g -o build/tunedvb build/tunedvb.o -Lbuild -lommdvb
+$(B)/scandvbcpp: ScanDvb.cpp libommdvb
+	$(CXX) -g -o $(B)/scandvbcpp ScanDvb.cpp -Wl,--copy-dt-needed-entries $(CXXFLAGS) $(LIBS) -Lbuild -lommdvb
+
+$(B)/tunedvb: tunedvb.c libommdvb
+	9c -g -o $(B)/tunedvb.o tunedvb.c
+	9l -g -o $(B)/tunedvb build/tunedvb.o -Lbuild -lommdvb
