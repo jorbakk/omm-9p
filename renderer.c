@@ -252,19 +252,19 @@ typedef struct Command
 {
 	int         cmd;
 	char       *arg;
-	int         narg;
+	int         argn;
 } Command;
 
 #define NCMD 9
 typedef void (*cmd_func)(RendererCtx*, char*, int);
 
-void cmd_set(RendererCtx *rctx, char *arg, int narg);
-void cmd_stop(RendererCtx *rctx, char *arg, int narg);
-void cmd_play(RendererCtx *rctx, char *arg, int narg);
-void cmd_pause(RendererCtx *rctx, char *arg, int narg);
-void cmd_quit(RendererCtx *rctx, char *arg, int narg);
-void cmd_seek(RendererCtx *rctx, char *arg, int narg);
-void cmd_vol(RendererCtx *rctx, char *arg, int narg);
+void cmd_set(RendererCtx *rctx, char *arg, int argn);
+void cmd_stop(RendererCtx *rctx, char *arg, int argn);
+void cmd_play(RendererCtx *rctx, char *arg, int argn);
+void cmd_pause(RendererCtx *rctx, char *arg, int argn);
+void cmd_quit(RendererCtx *rctx, char *arg, int argn);
+void cmd_seek(RendererCtx *rctx, char *arg, int argn);
+void cmd_vol(RendererCtx *rctx, char *arg, int argn);
 
 enum
 {
@@ -631,8 +631,9 @@ void
 srvwrite(Req *r)
 {
 	LOG("server write");
-	Command command = {.cmd = CMD_NONE, .arg = nil, .narg = 0};
+	Command command = {.cmd = CMD_NONE, .arg = nil, .argn = 0};
 	char cmdbuf[MAX_CMD_STR_LEN];
+	if (r->ifcall.count > MAX_CMD_STR_LEN - 1) LOG("error: received command too long");
 	snprint(cmdbuf, r->ifcall.count, "%s", r->ifcall.data);
 	int cmdlen = r->ifcall.count;
 	int arglen = 0;
@@ -642,10 +643,12 @@ srvwrite(Req *r)
 		arglen = r->ifcall.count - cmdlen + 1;
 		*argstr = '\0';
 		argstr++;
-		LOG("server cmd: %s, arg: %s", cmdbuf, argstr);
-		command.narg = arglen;
+		LOG("server cmd: %s [%d], arg: %s [%d]", cmdbuf, cmdlen, argstr, arglen);
+		command.argn = arglen;
+		// command.arg = calloc(arglen, sizeof(char));
 		command.arg = malloc(arglen);
 		memcpy(command.arg, argstr, arglen);
+		// command.arg[arglen] = '\0';
 	}
 	else {
 		LOG("server cmd: %s", cmdbuf);
@@ -657,7 +660,7 @@ srvwrite(Req *r)
 	}
 	RendererCtx *rctx = r->fid->file->aux;
 	if (rctx) {
-		LOG("sending command: %d (%s) ...", command.cmd, cmdbuf);
+		LOG("queueing command: %d (%s) ...", command.cmd, cmdbuf);
 		send(rctx->cmdq, &command);
 	}
 	else {
@@ -1623,25 +1626,25 @@ void state_disengage(RendererCtx *rctx)
 
 
 void
-cmd_set(RendererCtx *rctx, char *arg, int narg)
+cmd_set(RendererCtx *rctx, char *arg, int argn)
 {
-	setstr(&rctx->url, arg, narg);
+	setstr(&rctx->url, arg, argn);
 	seturl(rctx, rctx->url);
 }
 
 
 void
-cmd_quit(RendererCtx *rctx, char *arg, int narg)
+cmd_quit(RendererCtx *rctx, char *arg, int argn)
 {
-	(void)rctx; (void)arg; (void)narg;
+	(void)rctx; (void)arg; (void)argn;
 	// currently nothing planned here ...
 }
 
 
 void
-cmd_seek(RendererCtx *rctx, char *arg, int narg)
+cmd_seek(RendererCtx *rctx, char *arg, int argn)
 {
-	(void)rctx; (void)arg; (void)narg;
+	(void)rctx; (void)arg; (void)argn;
 	// TODO implement cmd_seek()
 	/* uint64_t seekpos = atoll(cmd.arg); */
 	/* av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0); */
@@ -1650,9 +1653,9 @@ cmd_seek(RendererCtx *rctx, char *arg, int narg)
 
 
 void
-cmd_vol(RendererCtx *rctx, char *arg, int narg)
+cmd_vol(RendererCtx *rctx, char *arg, int argn)
 {
-	(void)rctx; (void)arg; (void)narg;
+	(void)rctx; (void)arg; (void)argn;
 	// TODO implement cmd_vol()
 	/* int vol = atoi(cmd.arg); */
 	/* if (vol >=0 && vol <= 100) { */
@@ -1665,7 +1668,7 @@ int
 read_cmd(RendererCtx *rctx, int mode)
 {
 	int ret;
-	Command cmd = {.cmd = -1, .arg = nil, .narg = 0};
+	Command cmd = {.cmd = -1, .arg = nil, .argn = 0};
 	if (mode == READCMD_BLOCK) {
 		ret = recv(rctx->cmdq, &cmd);
 	}
@@ -1681,16 +1684,20 @@ read_cmd(RendererCtx *rctx, int mode)
 		return KEEP_STATE;
 	}
 	if (ret == 1) {
-		LOG("<== received command: %d (%s)", cmd.cmd, cmdstr[cmd.cmd]);
+		LOG("<== received command: %d (%s) with arg: %s", cmd.cmd, cmdstr[cmd.cmd], cmd.arg);
 		if (cmds[cmd.cmd] == nil) {
 			LOG("command is nil, nothing to execute");
 		}
 		else {
-			cmds[cmd.cmd](rctx, cmd.arg, cmd.narg);
+			cmds[cmd.cmd](rctx, cmd.arg, cmd.argn);
 		}
-		// FIXME find a better check for allocated cmd arg
-		if (cmd.arg != nil && cmd.narg > 0) {
+		/// FIXME find a better check for allocated cmd arg
+		/// ... memory leak or if not free'ing corruption
+		// if (cmd.arg != nil && cmd.argn > 0) {
+		if (cmd.arg != nil) {
 			free(cmd.arg);
+			cmd.arg = nil;
+			// cmd.argn = 0;
 		}
 		int next_renderer_state = transitions[cmd.cmd][rctx->renderer_state];
 		LOG("state: %d (%s) -> %d (%s)", rctx->renderer_state, statestr[rctx->renderer_state], next_renderer_state, statestr[next_renderer_state]);
@@ -1777,7 +1784,7 @@ presenter_thread(void *arg)
 		LOG("P3<");
 		LOG("PTS 2 %f", videoPicture.pts);
 		if (audioSample.eos) {
-			Command command = {.cmd = CMD_STOP, .arg = nil, .narg = 0};
+			Command command = {.cmd = CMD_STOP, .arg = nil, .argn = 0};
 			LOG("P4>");
 			send(rctx->cmdq, &command);
 			LOG("P4<");
@@ -1945,8 +1952,7 @@ threadmain(int argc, char **argv)
 		ret = SDL_PollEvent(&event);
 		if (ret) {
 			LOG("received sdl event");
-			Command cmd;
-			cmd.cmd = CMD_NONE;
+			Command command = { CMD_NONE, nil, 0 };
 			switch(event.type)
 			{
 				case SDL_KEYDOWN:
@@ -1955,34 +1961,34 @@ threadmain(int argc, char **argv)
 					{
 						case SDLK_q:
 						{
-							cmd.cmd = CMD_QUIT;
+							command.cmd = CMD_QUIT;
 						}
 						break;
 						case SDLK_SPACE:
 						{
-							cmd.cmd = CMD_PAUSE;
+							command.cmd = CMD_PAUSE;
 						}
 						break;
 						case SDLK_s:
 						case SDLK_ESCAPE:
 						{
-							cmd.cmd = CMD_STOP;
+							command.cmd = CMD_STOP;
 						}
 						break;
 						case SDLK_p:
 						case SDLK_RETURN:
 						{
-							cmd.cmd = CMD_PLAY;
+							command.cmd = CMD_PLAY;
 						}
 						break;
 						case SDLK_RIGHT:
 						{
-							cmd.cmd = CMD_SEEK;
+							command.cmd = CMD_SEEK;
 						}
 						break;
 					}
-					if (cmd.cmd != CMD_NONE) {
-						send(rctx.cmdq, &cmd);
+					if (command.cmd != CMD_NONE) {
+						send(rctx.cmdq, &command);
 					}
 
 				}
@@ -2010,8 +2016,8 @@ threadmain(int argc, char **argv)
 				break;
 				case SDL_QUIT:
 				{
-					cmd.cmd = CMD_QUIT;
-					send(rctx.cmdq, &cmd);
+					command.cmd = CMD_QUIT;
+					send(rctx.cmdq, &command);
 				}
 				break;
 			}

@@ -7,7 +7,7 @@
 #include <libc.h>
 #include <thread.h>
 
-#define LOG(...) printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");
+#define LOG(...) {printloginfo(); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");};
 static struct timespec curtime;
 
 void printloginfo(void)
@@ -16,9 +16,6 @@ void printloginfo(void)
 	time_t s; // Seconds
 	pid_t tid;
 	tid = threadid();
-	/// FIXME time header is not recognized for some reason
-	/// timespec_get() is C11
-	// timespec_get(&curtime, TIME_UTC);
 	clock_gettime(CLOCK_REALTIME, &curtime);
 	s  = curtime.tv_sec;
 	ms = round(curtime.tv_nsec / 1.0e6); // Convert nanoseconds to milliseconds
