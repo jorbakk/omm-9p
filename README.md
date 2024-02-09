@@ -23,7 +23,7 @@ For Linux DVB server:
 
 1. Linux DVB headers
 2. Linux udev
-3. POCO libraries
+3. POCO libraries: Foundation, Util, XML, Zip
 
 ## Building from Source
 
