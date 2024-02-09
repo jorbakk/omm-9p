@@ -43,28 +43,28 @@ $ ommrender &
 
 Control renderer from command line:
 ```
-$ echo set <filename> | 9p write ommrenderer/ctl
-$ echo play | 9p write ommrenderer/ctl
-$ echo stop | 9p write ommrenderer/ctl
+$ echo set <filename> | 9p write ommrender/ctl
+$ echo play | 9p write ommrender/ctl
+$ echo stop | 9p write ommrender/ctl
 ```
 
-Start local server:
+Start local server, where media.db is an SQLite database containing the meta data of the media objects:
 ```
 $ ommserve media.db &
 ```
 
 ```
 Show content of server:
-$ 9p ls ommserver
-$ 9p ls ommserver/1
-$ 9p read ommserver/1/meta
+$ 9p ls ommserve
+$ 9p ls ommserve/1
+$ 9p read ommserve/1/meta
 ```
 
 Play media from local server:
 ```
-$ echo set ommserver/1/data | 9p write ommrenderer/ctl
-$ echo play | 9p write ommrenderer/ctl
-$ echo stop | 9p write ommrenderer/ctl
+$ echo set ommserve/1/data | 9p write ommrender/ctl
+$ echo play | 9p write ommrender/ctl
+$ echo stop | 9p write ommrender/ctl
 ```
 
 Show content of remote server running on 192.168.1.83, port 4567:
@@ -74,9 +74,9 @@ Show content of remote server running on 192.168.1.83, port 4567:
 
 Play media from remote server:
 ```
-$ echo set tcp!192.168.1.83!4567/1/data | 9p write ommrenderer/ctl
-$ echo play | 9p write ommrenderer/ctl
-$ echo stop | 9p write ommrenderer/ctl
+$ echo set tcp!192.168.1.83!4567/1/data | 9p write ommrender/ctl
+$ echo play | 9p write ommrender/ctl
+$ echo stop | 9p write ommrender/ctl
 ```
 
 ## References

@@ -73,7 +73,7 @@
 
 
 #define _DEBUG_ 1
-#define DEFAULT_SERVER_NAME ("ommserver")
+#define DEFAULT_SERVER_NAME ("ommserve")
 #define SDL_AUDIO_BUFFER_SIZE 1024
 #define MAX_AUDIO_FRAME_SIZE 192000
 #define MAX_CMD_STR_LEN 256
@@ -739,7 +739,7 @@ void
 start_server(RendererCtx *rctx)
 {
 	LOG("starting 9P server ...");
-	char *srvname = "ommrenderer";
+	char *srvname = "ommrender";
 	/* char *mtpt = "/srv"; */
 	char *mtpt = nil;
 	server.tree = alloctree(nil, nil, DMDIR|0777, nil);

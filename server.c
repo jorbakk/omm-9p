@@ -45,7 +45,7 @@
 #define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
 #define IDSTR_MAXLEN 10
 
-static char *srvname           = "ommserver";
+static char *srvname           = "ommserve";
 static char *uname             = "omm";
 static char *gname             = "omm";
 static char *datafname         = "data";
