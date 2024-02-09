@@ -53,6 +53,11 @@ Start local server, where media.db is an SQLite database containing the meta dat
 $ ommserve media.db &
 ```
 
+Serving DVB streams currently needs an XML file from a transponder scan:
+```
+$ ommserve media.db dvb.xml &
+```
+
 ```
 Show content of server:
 $ 9p ls ommserve
@@ -67,9 +72,14 @@ $ echo play | 9p write ommrender/ctl
 $ echo stop | 9p write ommrender/ctl
 ```
 
+Stream media from local server to other media player, e.g. mpv:
+```
+$ 9p read ommserve/1/data | mpv -
+```
+
 Show content of remote server running on 192.168.1.83, port 4567:
 ```
-9p -a tcp!192.168.1.83!4567 ls
+$ 9p -a tcp!192.168.1.83!4567 ls
 ```
 
 Play media from remote server:
