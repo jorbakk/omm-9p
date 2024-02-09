@@ -6,9 +6,13 @@
 #include "dvb.h"
 
 
-void
+int
 main(int argc, char **argv)
 {
+	if (argc < 3) {
+		fprintf(stderr, "usage: tunedvb <config.xml> <service>\n");
+		return EXIT_FAILURE;
+	}
 	const char *config_xml = argv[1];
 	const char *service_name = argv[2];
 	struct DvbStream *stream = nil;
@@ -40,4 +44,5 @@ quit:
 	dvb_free_stream(stream);
 	close(outf);
 	dvb_close();
+	return EXIT_SUCCESS;
 }

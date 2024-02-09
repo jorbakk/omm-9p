@@ -133,8 +133,6 @@ dostat(vlong path, Qid *qid, Dir *dir)
 	name = "???";
 
 	switch(QTYPE(path)) {
-	default:
-		sysfatal("dostat %#llux", path);
 	case Qroot:
 		q.type = QTDIR;
 		name = "/";
@@ -159,6 +157,8 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		mode = 0666;
 		length = strlen(queryres);
 		break;
+	default:
+		sysfatal("dostat %#llux", path);
 	}
 
 	if(qid)
@@ -181,6 +181,7 @@ dostat(vlong path, Qid *qid, Dir *dir)
 static int
 rootgen(int i, Dir *d, void *v)
 {
+	(void)v;
 	if(i >= objcount + 1)
 		// End of root directory with objcount obj dirs and one query file
 		return -1;
@@ -206,6 +207,7 @@ rootgen(int i, Dir *d, void *v)
 static int
 objgen(int i, Dir *d, void *v)
 {
+	(void)v;
 	if(i >= nobjdir)
 		// End of directory entries
 		return -1;
@@ -465,6 +467,7 @@ threadmaybackground(void)
 static void
 startserver(void *arg)
 {
+	(void)arg;
 	LOG("starting 9P server ...");
 	char *mtpt = nil;
 	server.foreground = 1;
