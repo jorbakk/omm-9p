@@ -51,7 +51,7 @@ $ ommserve media.db &
 ```
 
 ```
-Show contents of server:
+Show content of server:
 $ 9p ls ommserver
 $ 9p ls ommserver/1
 $ 9p read ommserver/1/meta
@@ -64,7 +64,12 @@ $ echo play | 9p write ommrenderer/ctl
 $ echo stop | 9p write ommrenderer/ctl
 ```
 
-Play media from remote server running on 192.168.1.83, port 4567:
+Show content of remote server running on 192.168.1.83, port 4567:
+```
+9p -a tcp!192.168.1.83!4567 ls
+```
+
+Play media from remote server:
 ```
 $ echo set tcp!192.168.1.83!4567/1/data | 9p write ommrenderer/ctl
 $ echo play | 9p write ommrenderer/ctl
