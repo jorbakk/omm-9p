@@ -12,8 +12,15 @@ OMM is a set of applications for playing multimedia streams in a distributed env
 
 ## Dependencies
 
+For basic renderer and server:
 1. Plan 9 from user space
 2. FFmpeg
+
+For Linux DVB server:
+3. Linux DVB headers
+4. Linux udev
+5. POCO libraries
+
 
 ## Building from Source
 

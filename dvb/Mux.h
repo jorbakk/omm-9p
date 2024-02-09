@@ -16,7 +16,7 @@
 #include <Poco/Thread.h>
 
 #include "Stream.h"
-#include "../AvStream.h"
+#include "AvStream.h"
 
 
 namespace Omm {
