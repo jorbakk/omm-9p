@@ -58,8 +58,8 @@ Serving DVB streams currently needs an XML file from a transponder scan:
 $ ommserve media.db dvb.xml &
 ```
 
-```
 Show content of server:
+```
 $ 9p ls ommserve
 $ 9p ls ommserve/1
 $ 9p read ommserve/1/meta
