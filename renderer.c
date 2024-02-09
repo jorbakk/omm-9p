@@ -1668,12 +1668,12 @@ int
 read_cmd(RendererCtx *rctx, int mode)
 {
 	int ret;
-	Command cmd = {.cmd = -1, .arg = nil, .argn = 0};
+	Command command = {.cmd = -1, .arg = nil, .argn = 0};
 	if (mode == READCMD_BLOCK) {
-		ret = recv(rctx->cmdq, &cmd);
+		ret = recv(rctx->cmdq, &command);
 	}
 	else if (mode == READCMD_POLL) {
-		ret = nbrecv(rctx->cmdq, &cmd);
+		ret = nbrecv(rctx->cmdq, &command);
 	}
 	else {
 		LOG("unsupported read command mode");
@@ -1684,23 +1684,24 @@ read_cmd(RendererCtx *rctx, int mode)
 		return KEEP_STATE;
 	}
 	if (ret == 1) {
-		LOG("<== received command: %d (%s) with arg: %s", cmd.cmd, cmdstr[cmd.cmd], cmd.arg);
-		if (cmds[cmd.cmd] == nil) {
+		LOG("<== received command: %d (%s) with arg: %s",
+			command.cmd, cmdstr[command.cmd], command.arg);
+		if (cmds[command.cmd] == nil) {
 			LOG("command is nil, nothing to execute");
 		}
 		else {
-			cmds[cmd.cmd](rctx, cmd.arg, cmd.argn);
+			cmds[command.cmd](rctx, command.arg, command.argn);
 		}
-		/// FIXME find a better check for allocated cmd arg
-		/// ... memory leak or if not free'ing corruption
-		// if (cmd.arg != nil && cmd.argn > 0) {
-		if (cmd.arg != nil) {
-			free(cmd.arg);
-			cmd.arg = nil;
-			// cmd.argn = 0;
+		if (command.arg != nil) {
+			free(command.arg);
+			command.arg = nil;
 		}
-		int next_renderer_state = transitions[cmd.cmd][rctx->renderer_state];
-		LOG("state: %d (%s) -> %d (%s)", rctx->renderer_state, statestr[rctx->renderer_state], next_renderer_state, statestr[next_renderer_state]);
+		int next_renderer_state = transitions[command.cmd][rctx->renderer_state];
+		LOG("state: %d (%s) -> %d (%s)",
+			rctx->renderer_state,
+			statestr[rctx->renderer_state],
+			next_renderer_state,
+			statestr[next_renderer_state]);
 		if (next_renderer_state == rctx->renderer_state) {
 			return KEEP_STATE;
 		}
