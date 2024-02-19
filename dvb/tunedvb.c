@@ -1,7 +1,9 @@
-#include <u.h>
+#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <time.h>
-#include <libc.h>
 
 #include "dvb.h"
 
@@ -15,7 +17,7 @@ main(int argc, char **argv)
 	}
 	const char *config_xml = argv[1];
 	const char *service_name = argv[2];
-	struct DvbStream *stream = nil;
+	struct DvbStream *stream = NULL;
 	int bytes_read = 0;
 	int nbuf = 100 * dvb_transport_stream_packet_size;
 	char buf[nbuf];
@@ -27,13 +29,14 @@ main(int argc, char **argv)
 	dvb_init(config_xml);
 	dvb_open();
 	stream = dvb_stream(service_name);
-	if (stream == nil) {
+	if (stream == NULL) {
 		goto quit;
 	}
 	noutf_name = strlen(service_name) + 4;
-	snprint(outf_name, noutf_name, "%s.ts", service_name);
+	snprintf(outf_name, noutf_name, "%s.ts", service_name);
 	outf_name[noutf_name] = '\0';
-	outf = create(outf_name, OWRITE, 0664);
+	// outf = create(outf_name, OWRITE, 0664);
+	outf = open(outf_name, O_WRONLY | O_CREAT | O_TRUNC, 0664);
 	while (telapsed < tmax) {
 		bytes_read = dvb_read_stream(stream, buf, dvb_transport_stream_packet_size);
 		fprintf(stderr, "dvb bytes read: %d\n", bytes_read);

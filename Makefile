@@ -3,8 +3,8 @@ RELEASE=0
 B=build
 DVB=dvb
 
-9PLIBS       = -l9 -l9p
-9PCLIENTLIBS = $(9PLIBS) -l9pclient
+9PLIBS       = -l9 -l9p -l9pclient -lthread -lsec -lmp -lauth -lbio
+9PCLIENTLIBS = -l9 -l9pclient -lbio -lsec -lauth -lthread
 AVLIBS       = -lavutil -lavformat -lavcodec -lswscale -lswresample
 POCOCFLAGS   = -DPOCO_VERSION_HEADER_FOUND
 POCOLIBS     = -lPocoFoundation -lPocoUtil -lPocoXML -lPocoZip
@@ -12,24 +12,28 @@ SDL2LIBS     = $(shell pkg-config --libs sdl2)
 SDL2CFLAGS   = $(shell pkg-config --cflags sdl2)
 SQLITE3LIBS  = $(shell pkg-config --libs sqlite3)
 
-CFLAGS       = -std=c99 -Wall -Wextra -Wpedantic -Wno-sizeof-array-div
-LDFLAGS      = -Wl,-rpath,$(B)
+# CFLAGS       = -std=c99 -Wall -Wextra -Wpedantic -Wno-sizeof-array-div
 DVBCXXFLAGS  = -g -Wno-format-security -Wno-return-type
 DVBLIBS      = $(POCOLIBS) -ludev
+PKG_CONFIG   = pkg-config
+VLC_PLUGIN_CFLAGS = $(shell $(PKG_CONFIG) --cflags vlc-plugin)
+VLC_PLUGIN_LIBS   = $(shell $(PKG_CONFIG) --libs vlc-plugin)
 
 ifeq ($(RELEASE), 1)
 CFLAGS       = -O2 -DNDEBUG
-LDFLAGS      = -static
+LDFLAGS      = # -static
 else
 CFLAGS      +=  -g -D__DEBUG__ -fsanitize=address -fsanitize=undefined # -fsanitize=thread
-LDFLAGS      = -lasan -lubsan # -fsanitize=thread
+LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH) -lasan -lubsan # -fsanitize=thread
 endif
 
 ## Honor local include and linker paths
 export $(CPATH)
 export $(LIBRARY_PATH)
+## If -rpath is not used as a linker flag, LD_RUN_PATH is honored (we use -rpath for $(B))
+# export $(LD_RUN_PATH)
 
-.PHONY: clean cscope sloc transponder.zip
+.PHONY: clean sloc transponder.zip
 
 DVBOBJS = \
 $(B)/dvb.o \
@@ -53,7 +57,7 @@ $(B)/TransponderData.o
 $(B)/%.o: $(DVB)/%.cpp
 	$(CXX) -c -o $@ -I$(B) $(POCOCFLAGS) $(CPPFLAGS) -fPIC $(DVBCXXFLAGS) $<
 
-all: cscope $(B) $(B)/ommrender $(B)/ommserve $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb
+all: cscope.out $(B) $(B)/ommrender $(B)/ommserve $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_plugin.so
 
 $(B):
 	mkdir -p $(B)
@@ -62,12 +66,10 @@ clean:
 	rm -rf $(B)
 
 $(B)/ommrender: renderer.c
-	9c $(CFLAGS) $(SDL2CFLAGS) -o $(B)/renderer.o renderer.c
-	9l $(LDFLAGS) -o $(B)/ommrender $(B)/renderer.o $(LDFLAGS) $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
+	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $(B)/ommrender $< $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
 
 $(B)/ommserve: server.c $(B)/libommdvb.so # $(B)/libommdvb.a
-	9c $(CFLAGS) -o $(B)/server.o server.c
-	9l $(LDFLAGS) -o $(B)/ommserve $(B)/server.o $(LDFLAGS) $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb
+	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $(B)/ommserve $< $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb -lm
 
 $(B)/resgen: $(B)/resgen.o
 	$(CXX) -o $(B)/resgen $< $(POCOLIBS) -lm
@@ -87,12 +89,14 @@ $(B)/tunedvbcpp: $(B)/TuneDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
 $(B)/scandvbcpp: $(B)/ScanDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CXX) -o $(B)/scandvbcpp $< -Wl,--copy-dt-needed-entries $(DVBLIBS) -L$(B) -lommdvb -lm
 
-$(B)/tunedvb: $(B)/libommdvb.so # $(B)/libommdvb.a
-	9c $(CFLAGS) -o $(B)/tunedvb.o $(DVB)/tunedvb.c
-	9l $(LDFLAGS) -o $(B)/tunedvb $(B)/tunedvb.o $(LDFLAGS) -L$(B) -lommdvb -lm
+$(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -L$(B) -lommdvb -lm
+
+$(B)/libvlc_plugin.so: vlc_plugin.c
+	$(CC) $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC -o $@ $^ $(9PCLIENTLIBS) $(VLC_PLUGIN_LIBS)
 
 sloc:
 	cloc *.c *.h $(DVB)/*.cpp $(DVB)/*.h
 
-cscope:
+cscope.out: *.c *.h $(DVB)/*.cpp $(DVB)/*.h
 	cscope -b *.c *.h $(DVB)/*.cpp $(DVB)/*.h
