@@ -1,7 +1,16 @@
-RELEASE=0
+RELEASE      = 0
 
-B=build
-DVB=dvb
+WD           = $(shell pwd)
+# B            = $(WD)/build
+# EXT          = $(WD)/ext
+SYS          = $(WD)/sys
+# P            = $(SYS)/pkg
+# DVB          = $(WD)/dvb
+B            = build
+DVB          = dvb
+EXT          = ext
+# SYS          = sys
+P            = $(SYS)/pkg
 
 9PLIBS       = -l9 -l9p -l9pclient -lthread -lsec -lmp -lauth -lbio
 9PCLIENTLIBS = -l9 -l9pclient -lbio -lsec -lauth -lthread
@@ -23,8 +32,8 @@ ifeq ($(RELEASE), 1)
 CFLAGS       = -O2 -DNDEBUG
 LDFLAGS      = # -static
 else
-CFLAGS      +=  -g -D__DEBUG__ -fsanitize=address -fsanitize=undefined # -fsanitize=thread
-LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH) -lasan -lubsan # -fsanitize=thread
+CFLAGS      +=  -g -D__DEBUG__ # -fsanitize=address -fsanitize=undefined # -fsanitize=thread
+LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH) # -lasan -lubsan # -fsanitize=thread
 endif
 
 ## Honor local include and linker paths
@@ -34,6 +43,16 @@ export $(LIBRARY_PATH)
 # export $(LD_RUN_PATH)
 
 .PHONY: clean sloc transponder.zip
+
+$(EXT)/%: $(B)
+	cd $(EXT) && git clone $($*_url)
+
+$(P)/%.make: # $(EXT)/%
+	cd $(EXT)/$* && make # CFLAGS=-fPIC
+	cd $(EXT)/$* && make PREFIX=$(SYS) install && make clean
+	touch $@
+
+libixp_url = https://github.com/0intro/libixp.git
 
 DVBOBJS = \
 $(B)/dvb.o \
@@ -60,7 +79,7 @@ $(B)/%.o: $(DVB)/%.cpp
 all: cscope.out $(B) $(B)/ommrender $(B)/ommserve $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_plugin.so
 
 $(B):
-	mkdir -p $(B)
+	mkdir -p $(B) $(EXT) $(SYS) $(P)
 
 clean:
 	rm -rf $(B)
@@ -92,8 +111,8 @@ $(B)/scandvbcpp: $(B)/ScanDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
 $(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -L$(B) -lommdvb -lm
 
-$(B)/libvlc_plugin.so: vlc_plugin.c
-	$(CC) $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC -o $@ $^ $(9PCLIENTLIBS) $(VLC_PLUGIN_LIBS)
+$(B)/libvlc_plugin.so: vlc_plugin.c $(P)/libixp.make
+	$(CC) -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC -o $@ $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
 
 sloc:
 	cloc *.c *.h $(DVB)/*.cpp $(DVB)/*.h

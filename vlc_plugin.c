@@ -1,6 +1,6 @@
 /**
- * @file hello.c
- * @brief Hello world interface VLC module example
+ * @file vlc_plugin.c
+ * @brief VLC access module for 9P protocol
  */
 #define MODULE_STRING "access9P"
 
@@ -8,14 +8,9 @@
 #include "config.h"
 #endif
 
-#include <u.h>
-#include <time.h>  // posix std headers should be included between u.h and libc.h
-#include <stdlib.h>
-#include <libc.h>
-#include <fcall.h>
-#include <thread.h>
-#include <9p.h>
-#include <9pclient.h>
+#define IXP_NO_P9_
+#define IXP_P9_STRUCTS
+#include <ixp.h>
 
 /* VLC core API headers */
 #include <vlc_common.h>
@@ -31,14 +26,16 @@ struct access_sys_t {
 	int                isfile;
 	int                isaddr;
 	int                fileserverfd;
-	CFid              *fileserverfid;
-	CFsys             *fileserver;
+	IxpClient         *client;
+	IxpCFid           *fileserverfid;
 };
 
 static ssize_t Read(stream_t *, void *, size_t);
 static int Seek(stream_t *, uint64_t);
 static int Control(stream_t *, int, va_list);
 void seturl(stream_t *, char *);
+int open_9pconnection(stream_t *p_access);
+void close_9pconnection(stream_t *p_access);
 
 /**
  * Init the input module
@@ -74,11 +71,13 @@ Close(vlc_object_t *obj)
 {
 	stream_t *p_access = (stream_t *) obj;
 	struct access_sys_t *sys = p_access->p_sys;
+	close_9pconnection(p_access);
 	/* Free internal state */
 	free(sys->url);
 	free(sys);
 	msg_Info(p_access, "closed %s!", sys->url);
 }
+
 
 ssize_t
 Read(stream_t *p_access, void *p_buffer, size_t i_len)
@@ -86,8 +85,9 @@ Read(stream_t *p_access, void *p_buffer, size_t i_len)
 	access_sys_t *p_sys = p_access->p_sys;
 	// if (p_sys->stream == NULL)
 	// return 0;
-
+	return ixp_read(p_sys->fileserverfid, p_buffer, i_len);
 }
+
 
 int
 Seek(stream_t *p_access, uint64_t i_pos)
@@ -96,6 +96,7 @@ Seek(stream_t *p_access, uint64_t i_pos)
 	(void)i_pos;
 	return VLC_EGENERIC;
 }
+
 
 int
 Control(stream_t *p_access, int i_query, va_list args)
@@ -137,14 +138,14 @@ vlc_module_end()
 int
 parseurl(char *url, char **fileservername, char **filename, int *isaddr, int *isfile)
 {
-	char *pfileservername = nil;
-	char *pfilename = nil;
+	char *pfileservername = NULL;
+	char *pfilename = NULL;
 	char *pbang = strchr(url, '!');
 	char *pslash = strchr(url, '/');
 	int fisaddr = 0;
 	int fisfile = 0;
-	if (pslash == nil) {
-		if (pbang != nil) {
+	if (pslash == NULL) {
+		if (pbang != NULL) {
 			return -1;
 		}
 		pfilename = url;
@@ -158,7 +159,7 @@ parseurl(char *url, char **fileservername, char **filename, int *isaddr, int *is
 		*pslash = '\0';
 		pfileservername = url;
 		pfilename = pslash + 1;
-		if (pbang != nil) {
+		if (pbang != NULL) {
 			fisaddr = 1;
 		}
 	}
@@ -195,44 +196,18 @@ seturl(stream_t *p_access, char *url)
 		msg_Info(p_access, "input is file, setting url to %s", url);
 		setstr(&p_sys->filename, url, 0);
 		return;
+	} else {
+		msg_Info(p_access, "server address is: %s", s);
 	}
 	if (ret == -1) {
 		msg_Err(p_access, "failed to parse url %s", url);
-		p_sys->fileservername = nil;
-		p_sys->filename = nil;
+		p_sys->fileservername = NULL;
+		p_sys->filename = NULL;
 		return;
 	}
 	/* setstr(&p_sys->fileservername, DEFAULT_SERVER_NAME, 0); */
 	setstr(&p_sys->fileservername, s, 0);
 	setstr(&p_sys->filename, f, 0);
-}
-
-
-int
-clientdial(stream_t *p_access)
-{
-	access_sys_t *p_sys = p_access->p_sys;
-	msg_Info(p_access, "dialing address: %s ...", p_sys->fileservername);
-	if ((p_sys->fileserverfd = dial(p_sys->fileservername, nil, nil, nil)) < 0)
-		return -1;
-		/* sysfatal("dial: %r"); */
-	msg_Info(p_access, "mounting file descriptor ...");
-	if ((p_sys->fileserver = fsmount(p_sys->fileserverfd, nil)) == nil)
-		return -1;
-		/* sysfatal("fsmount: %r"); */
-	return 0;
-}
-
-
-int
-clientmount(stream_t *p_access)
-{
-	access_sys_t *p_sys = p_access->p_sys;
-	msg_Info(p_access, "mounting address: %s ...", p_sys->fileservername);
-	if ((p_sys->fileserver = nsmount(p_sys->fileservername, nil)) == nil)
-		return -1;
-	msg_Info(p_access, "mounting address: %s success.", p_sys->fileservername);
-	return 0;
 }
 
 
@@ -245,30 +220,17 @@ open_9pconnection(stream_t *p_access)
 		msg_Info(p_access, "input is a file, nothing to do");
 		return 0;
 	}
-	int ret;
-	if (!p_sys->fileserver) {
-		if (p_sys->isaddr) {
-			/* p_sys->fileserver = clientdial(p_sys->fileservername); */
-			ret = clientdial(p_access);
-		}
-		else {
-			/* p_sys->fileserver = clientmount(p_sys->fileservername); */
-			ret = clientmount(p_access);
-		}
-		/* p_sys->fileserver = clientdial("tcp!localhost!5640"); */
-		/* p_sys->fileserver = clientdial("tcp!192.168.1.85!5640"); */
-		if (ret == -1) {
-			msg_Err(p_access, "failed to open 9P connection");
-			return ret;
-		}
+	p_sys->client = ixp_mount(p_sys->fileservername);
+	if (!p_sys->client) {
+		msg_Err(p_access, "failed to open 9P connection");
+		return 1;
 	}
 	msg_Info(p_access, "opening 9P file: %s ...", p_sys->filename);
-	CFid *fid = fsopen(p_sys->fileserver, p_sys->filename, OREAD);
-	if (fid == nil) {
-		// blank_window(p_access);
-		return -1;
+	p_sys->fileserverfid = ixp_open(p_sys->client, p_sys->filename, P9_OREAD);
+	if (!p_sys->fileserverfid) {
+		msg_Err(p_access, "failed to open file");
+		return 1;
 	}
-	p_sys->fileserverfid = fid; 
 	return 0;
 }
 
@@ -279,8 +241,10 @@ close_9pconnection(stream_t *p_access)
 	access_sys_t *p_sys = p_access->p_sys;
 	if (p_sys->isfile) {
 		msg_Info(p_access, "input is a file, nothing to do");
+	} else {
+		ixp_unmount(p_sys->client);
 	}
 	if (p_sys->fileserverfid) {
-		fsclose(p_sys->fileserverfid);
+		ixp_close(p_sys->fileserverfid);
 	}
 }
