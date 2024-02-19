@@ -92,9 +92,9 @@ Read(stream_t *p_access, void *p_buffer, size_t i_len)
 int
 Seek(stream_t *p_access, uint64_t i_pos)
 {
-	(void)p_access;
-	(void)i_pos;
-	return VLC_EGENERIC;
+	access_sys_t *p_sys = p_access->p_sys;
+	p_sys->fileserverfid->offset = i_pos;
+	return VLC_SUCCESS;
 }
 
 
@@ -107,7 +107,7 @@ Control(stream_t *p_access, int i_query, va_list args)
 	case STREAM_CAN_SEEK:
 	case STREAM_CAN_FASTSEEK:
 		// pb_bool = va_arg(args, bool *);
-		// *pb_bool = false;
+		// *pb_bool = true;
 		break;
 	case STREAM_CAN_PAUSE:
 	case STREAM_CAN_CONTROL_PACE:
