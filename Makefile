@@ -27,6 +27,8 @@ DVBLIBS      = $(POCOLIBS) -ludev
 PKG_CONFIG   = pkg-config
 VLC_PLUGIN_CFLAGS = $(shell $(PKG_CONFIG) --cflags vlc-plugin)
 VLC_PLUGIN_LIBS   = $(shell $(PKG_CONFIG) --libs vlc-plugin)
+VLCFLAGS     = $(shell $(PKG_CONFIG) --cflags libvlc)
+VLCLIBS      = $(shell $(PKG_CONFIG) --libs libvlc)
 
 ifeq ($(RELEASE), 1)
 CFLAGS       = -O2 -DNDEBUG
@@ -76,7 +78,7 @@ $(B)/TransponderData.o
 $(B)/%.o: $(DVB)/%.cpp
 	$(CXX) -c -o $@ -I$(B) $(POCOCFLAGS) $(CPPFLAGS) -fPIC $(DVBCXXFLAGS) $<
 
-all: cscope.out $(B) $(B)/ommrender $(B)/ommserve $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_access9P_plugin.so $(B)/libvlc_control9P_plugin.so
+all: cscope.out $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_access9P_plugin.so $(B)/libvlc_control9P_plugin.so
 
 $(B):
 	mkdir -p $(B) $(EXT) $(SYS) $(P)
@@ -85,7 +87,10 @@ clean:
 	rm -rf $(B)
 
 $(B)/ommrender: renderer.c
-	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $(B)/ommrender $< $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
+	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $@ $< $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
+
+$(B)/render: render.c
+	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) -o $@ $< $(SDL2LIBS) $(VLCLIBS) -lz -lm
 
 $(B)/ommserve: server.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $(B)/ommserve $< $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb -lm
