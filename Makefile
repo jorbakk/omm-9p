@@ -1,4 +1,6 @@
 RELEASE      = 0
+RENDER_BACK  = RENDER_FFMPEG
+# RENDER_BACK  = RENDER_VLC
 
 WD           = $(shell pwd)
 # B            = $(WD)/build
@@ -37,6 +39,8 @@ else
 CFLAGS       = -std=c99 -Wall -g -D__DEBUG__ -Wno-sizeof-array-div # -fsanitize=address -fsanitize=undefined # -fsanitize=thread
 LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH) # -lasan -lubsan # -fsanitize=thread
 endif
+
+CFLAGS      += -D$(RENDER_BACK)
 
 ## Honor local include and linker paths
 export $(CPATH)
@@ -86,8 +90,8 @@ $(B):
 clean:
 	rm -rf $(B)
 
-$(B)/ommrender: renderer.c
-	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $@ $< $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
+$(B)/ommrender: renderer.c # renderer_ffmpeg.c
+	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $@ $^ $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
 
 $(B)/render: render.c
 	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) -o $@ $< $(SDL2LIBS) $(VLCLIBS) -lz -lm
