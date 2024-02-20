@@ -90,11 +90,11 @@ $(B):
 clean:
 	rm -rf $(B)
 
-$(B)/ommrender: renderer.c # renderer_ffmpeg.c
-	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $@ $^ $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
+$(B)/ommrender: renderer.c renderer_ffmpeg.c renderer_vlc.c
+	$(CC) -o $@ $< $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
 
 $(B)/render: render.c
-	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) -o $@ $< $(SDL2LIBS) $(VLCLIBS) -lz -lm
+	$(CC) -o $@ $< $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) $(SDL2LIBS) $(VLCLIBS) -lz -lm
 
 $(B)/ommserve: server.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $(B)/ommserve $< $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb -lm
@@ -121,10 +121,10 @@ $(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -L$(B) -lommdvb -lm
 
 $(B)/libvlc_access9P_plugin.so: vlc_access9P_plugin.c $(P)/libixp.make
-	$(CC) -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC -o $@ $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
+	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
 
 $(B)/libvlc_control9P_plugin.so: vlc_control9P_plugin.c $(P)/libixp.make
-	$(CC) -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC -o $@ $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
+	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
 
 sloc:
 	cloc *.c *.h $(DVB)/*.cpp $(DVB)/*.h

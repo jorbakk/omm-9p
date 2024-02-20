@@ -1,6 +1,7 @@
 void state_run(RendererCtx *rctx)
 {
-	(void)rctx;
+	rctx->quit = 1;
+	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
 
