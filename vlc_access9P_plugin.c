@@ -1,6 +1,6 @@
 /**
- * @file vlc_plugin.c
- * @brief VLC access module for 9P protocol
+ * @file vlc_access9P_plugin.c
+ * @brief VLC access module for the 9P protocol
  */
 #define MODULE_STRING "access9P"
 
