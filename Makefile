@@ -34,7 +34,7 @@ ifeq ($(RELEASE), 1)
 CFLAGS       = -O2 -DNDEBUG
 LDFLAGS      = # -static
 else
-CFLAGS      +=  -g -D__DEBUG__ # -fsanitize=address -fsanitize=undefined # -fsanitize=thread
+CFLAGS       = -std=c99 -Wall -g -D__DEBUG__ -Wno-sizeof-array-div # -fsanitize=address -fsanitize=undefined # -fsanitize=thread
 LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH) # -lasan -lubsan # -fsanitize=thread
 endif
 

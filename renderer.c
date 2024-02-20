@@ -139,12 +139,10 @@ typedef struct RendererCtx
 	int                fileserverfd;
 	CFid              *fileserverfid;
 	CFsys             *fileserver;
-	// Decoder context
-	AVIOContext       *io_ctx;
-	AVFormatContext   *format_ctx;
-	AVCodecContext    *current_codec_ctx;
-	AVFrame           *decoder_frame;
-	AVPacket          *decoder_packet;
+	// Seeking
+	int	               seek_req;
+	int	               seek_flags;
+	int64_t            seek_pos;
 	// OS window
 	int                screen_width;
 	int                screen_height;
@@ -156,6 +154,12 @@ typedef struct RendererCtx
 	int                presenter_tid;
 	int                pause_presenter_thread;
 	Channel           *presq;
+	// Decoder context
+	AVIOContext       *io_ctx;
+	AVFormatContext   *format_ctx;
+	AVCodecContext    *current_codec_ctx;
+	AVFrame           *decoder_frame;
+	AVPacket          *decoder_packet;
 	// Audio stream
 	int                audio_stream;
 	AVCodecContext    *audio_ctx;
@@ -191,10 +195,6 @@ typedef struct RendererCtx
 	SDL_Rect           blit_copy_rect;
 	AVRational         video_timebase;
 	double             video_tbd;
-	// Seeking
-	int	               seek_req;
-	int	               seek_flags;
-	int64_t            seek_pos;
 } RendererCtx;
 
 static RendererCtx rctx;
