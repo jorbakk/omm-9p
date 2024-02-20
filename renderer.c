@@ -160,10 +160,12 @@ typedef struct RendererCtx
 	Channel           *presq;
 	// Audio output
 	SDL_AudioDeviceID  audio_devid;
+	int                audio_only;
 	// Video output
 	SDL_Window        *sdl_window;
 	SDL_Texture       *sdl_texture;
 	SDL_Renderer      *sdl_renderer;
+	int                w, h, aw, ah;
 #ifdef RENDER_FFMPEG
 	// Decoder context
 	AVIOContext       *io_ctx;
@@ -175,7 +177,6 @@ typedef struct RendererCtx
 	int                audio_stream;
 	AVCodecContext    *audio_ctx;
 	Channel           *audioq;
-	int                audio_only;
 	uint8_t            mixed_audio_buf[MAX_AUDIO_FRAME_SIZE];
 	unsigned int       audio_buf_size;
 	unsigned int       audio_buf_index;
@@ -198,7 +199,6 @@ typedef struct RendererCtx
 	int                video_idx;
 	double             video_pts;
 	uint8_t           *yuvbuffer;
-	int                w, h, aw, ah;
 	SDL_Rect           blit_copy_rect;
 	AVRational         video_timebase;
 	double             video_tbd;
@@ -374,23 +374,9 @@ struct sample_fmt_entry {
     { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
 };
 
-/// Function declarations for backend implementation
-int open_9pconnection(RendererCtx *rctx);
-void close_9pconnection(RendererCtx *rctx);
-void send_picture_to_queue(RendererCtx *rctx, VideoPicture *videoPicture);
-void send_sample_to_queue(RendererCtx *rctx, AudioSample *audioSample);
-int  read_packet(RendererCtx *rctx, AVPacket *packet);
-int  write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet);
-int  read_frame_from_decoder(RendererCtx *rctx, AVFrame *frame);
-int  create_yuv_picture_from_frame(RendererCtx *rctx, AVFrame *frame, VideoPicture *videoPicture);
-int  create_sample_from_frame(RendererCtx *rctx, AVFrame *frame, AudioSample *audioSample);
-void flush_audio_queue(RendererCtx *rctx);
-void flush_picture_queue(RendererCtx *rctx);
+/// Function declarations
 void decoder_thread(void *arg);
-void presenter_thread(void *arg);
-void display_picture(RendererCtx *rctx, VideoPicture *videoPicture);
 int  resize_video(RendererCtx *rctx);
-
 void blank_window(RendererCtx *rctx);
 int  read_cmd(RendererCtx *rctx, int mode);
 
@@ -779,42 +765,6 @@ void state_exit(RendererCtx *rctx)
 }
 
 
-#ifdef RENDER_VLC
-void state_run(RendererCtx *rctx)
-{
-	(void)rctx;
-}
-
-
-void state_load(RendererCtx *rctx)
-{
-	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
-}
-
-
-void state_unload(RendererCtx *rctx)
-{
-	SDL_CloseAudioDevice(rctx->audio_devid);
-	// Unconditional transition to STOP state
-	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
-}
-
-
-void state_engage(RendererCtx *rctx)
-{
-	SDL_PauseAudioDevice(rctx->audio_devid, 0);
-	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
-}
-
-
-void state_disengage(RendererCtx *rctx)
-{
-	SDL_PauseAudioDevice(rctx->audio_devid, 1);
-	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
-}
-#endif
-
-
 void
 cmd_set(RendererCtx *rctx, char *arg, int argn)
 {
@@ -1053,4 +1003,6 @@ threadmain(int argc, char **argv)
 
 #ifdef RENDER_FFMPEG
 #include "renderer_ffmpeg.c"
+#elif RENDER_VLC
+#include "renderer_vlc.c"
 #endif   /// RENDER_FFMPEG

@@ -1,6 +1,20 @@
 // #include "renderer.h"
 #include "log.h"
 
+void send_picture_to_queue(RendererCtx *rctx, VideoPicture *videoPicture);
+void send_sample_to_queue(RendererCtx *rctx, AudioSample *audioSample);
+int  create_yuv_picture_from_frame(RendererCtx *rctx, AVFrame *frame, VideoPicture *videoPicture);
+int  create_sample_from_frame(RendererCtx *rctx, AVFrame *frame, AudioSample *audioSample);
+int  read_packet(RendererCtx *rctx, AVPacket *packet);
+int  write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet);
+int  read_frame_from_decoder(RendererCtx *rctx, AVFrame *frame);
+void flush_audio_queue(RendererCtx *rctx);
+void flush_picture_queue(RendererCtx *rctx);
+void display_picture(RendererCtx *rctx, VideoPicture *videoPicture);
+int  open_9pconnection(RendererCtx *rctx);
+void close_9pconnection(RendererCtx *rctx);
+void presenter_thread(void *arg);
+
 
 int
 clientdial(RendererCtx *rctx)

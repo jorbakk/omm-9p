@@ -1,6 +1,6 @@
 RELEASE      = 0
-RENDER_BACK  = RENDER_FFMPEG
-# RENDER_BACK  = RENDER_VLC
+# RENDER_BACK  = RENDER_FFMPEG
+RENDER_BACK  = RENDER_VLC
 
 WD           = $(shell pwd)
 # B            = $(WD)/build
