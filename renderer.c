@@ -405,28 +405,6 @@ setstr(char **str, char *instr, int ninstr)
 }
 
 
-int
-demuxerPacketRead(void *fid, uint8_t *buf, int count)
-{
-	LOG("demuxer reading %d bytes from fid: %p into buf: %p ...", count, fid, buf);
-	CFid *cfid = (CFid*)fid;
-	int ret = fsread(cfid, buf, count);
-	LOG("demuxer read %d bytes", ret);
-	return ret;
-}
-
-
-int64_t
-demuxerPacketSeek(void *fid, int64_t offset, int whence)
-{
-	LOG("demuxer seeking fid: %p offset: %ld", fid, offset);
-	CFid *cfid = (CFid*)fid;
-	int64_t ret = fsseek(cfid, offset, whence);
-	LOG("demuxer seek found offset %ld", ret);
-	return ret;
-}
-
-
 void
 reset_filectx(RendererCtx *rctx)
 {

@@ -104,10 +104,10 @@ wait_for_window_resize(RendererCtx *rctx)
 void
 state_run(RendererCtx *rctx)
 {
-	unsigned int video_w, video_h;
-	if (libvlc_video_get_size(rctx->player, 0, &video_w, &video_h) == -1) {
-		LOG("failed to retrieve video size");
-	}
+	// unsigned int video_w, video_h;
+	// if (libvlc_video_get_size(rctx->player, 0, &video_w, &video_h) == -1) {
+		// LOG("failed to retrieve video size");
+	// }
 	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
 	}
 }
