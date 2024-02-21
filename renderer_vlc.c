@@ -73,16 +73,30 @@ state_load(RendererCtx *rctx)
 	rctx->sdl_mutex = SDL_CreateMutex();
 	LOG("libvlc loading url: %s", rctx->url);
 	rctx->media = libvlc_media_new_location(rctx->libvlc, rctx->url);
-	// LOG("libvlc loading url: %s", rctx->fileservername);
-	// rctx->media = libvlc_media_new_location(rctx->libvlc, rctx->fileservername);
 	rctx->player = libvlc_media_player_new_from_media(rctx->media);
 	libvlc_media_release(rctx->media);
 	/// Attach SDL to the VLC player
 	/// image format is RV16, which means BGR565 (5 bits blue, 6 bits green, 5 bits red)
 	/// which uses 16 bit per pixel
 	/// The SDL texture is created in the same format
+	unsigned int video_w, video_h;
+	// libvlc_video_get_size(rctx->player, 0, &video_w, &video_h);
+	video_w = 1920;
+	video_h = 816;
+	LOG("video size: %ux%u", video_w, video_h);
+	rctx->sdl_texture = SDL_CreateTexture(
+		rctx->sdl_renderer,
+		SDL_PIXELFORMAT_BGR565,
+		// SDL_PIXELFORMAT_YV12,
+		/// FIXME is there a way to use SDL_TEXTUREACCESS_TARGET with libvlc?
+		SDL_TEXTUREACCESS_STREAMING,
+		// SDL_TEXTUREACCESS_TARGET,  // fast update w/o locking, can be used as a render target
+		// set texture size as the dimensions of the video
+		video_w,
+		video_h
+		);
 	libvlc_video_set_callbacks(rctx->player, vlc_lock, vlc_unlock, display, rctx);
-	libvlc_video_set_format(rctx->player, "RV16", rctx->w, rctx->h, rctx->w * 2);
+	libvlc_video_set_format(rctx->player, "RV16", video_w, video_h, video_w * 2);
 	/// Start to play ...
 	libvlc_media_player_play(rctx->player);
 exit:
@@ -98,6 +112,7 @@ state_unload(RendererCtx *rctx)
 	libvlc_release(rctx->libvlc);
 	SDL_DestroyMutex(rctx->sdl_mutex);
 	SDL_DestroyRenderer(rctx->sdl_renderer);
+	SDL_DestroyTexture(rctx->sdl_texture);
 	SDL_CloseAudioDevice(rctx->audio_devid);
 	// Unconditional transition to STOP state
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
@@ -123,26 +138,7 @@ state_disengage(RendererCtx *rctx)
 int
 resize_video(RendererCtx *rctx)
 {
-	// SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
-	/// FIXME find the rigth size of the texture, it needs to be the same as of the video ...
-	// rctx->w = 640;
-	// rctx->h = 480;
-	rctx->w = 1920;
-	rctx->h = 816;
+	SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
 	LOG("resized sdl window to: %dx%d", rctx->w, rctx->h);
-	if (rctx->sdl_texture != nil) {
-		SDL_DestroyTexture(rctx->sdl_texture);
-	}
-	rctx->sdl_texture = SDL_CreateTexture(
-		rctx->sdl_renderer,
-		SDL_PIXELFORMAT_BGR565,
-		// SDL_PIXELFORMAT_YV12,
-		/// FIXME is there a way to use SDL_TEXTUREACCESS_TARGET with libvlc?
-		SDL_TEXTUREACCESS_STREAMING,
-		// SDL_TEXTUREACCESS_TARGET,  // fast update w/o locking, can be used as a render target
-		// set texture size as the dimensions of the video
-		rctx->w,
-		rctx->h
-		);
 	return 0;
 }
