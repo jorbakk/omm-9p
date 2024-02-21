@@ -73,7 +73,8 @@ exit:
 void
 close_window(RendererCtx *rctx)
 {
-	(void)rctx;
+	libvlc_media_player_release(rctx->player);
+	libvlc_release(rctx->libvlc);
 }
 
 
@@ -164,8 +165,6 @@ void
 state_unload(RendererCtx *rctx)
 {
     libvlc_media_player_stop(rctx->player);
-	libvlc_media_player_release(rctx->player);
-	libvlc_release(rctx->libvlc);
 #if 0
 	SDL_DestroyMutex(rctx->sdl_mutex);
 	SDL_DestroyRenderer(rctx->sdl_renderer);

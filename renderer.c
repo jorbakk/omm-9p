@@ -133,10 +133,14 @@ typedef struct RendererCtx
 	SDL_Texture       *sdl_texture;
 	SDL_Renderer      *sdl_renderer;
 #elif defined RENDER_VLC
-	SDL_mutex             *sdl_mutex;
 	libvlc_instance_t     *libvlc;
 	libvlc_media_t        *media;
 	libvlc_media_player_t *player;
+	// Video output
+	SDL_Window            *sdl_window;
+	SDL_Texture           *sdl_texture;
+	SDL_Renderer          *sdl_renderer;
+	SDL_mutex             *sdl_mutex;
 #endif   /// RENDER_FFMPEG
 } RendererCtx;
 

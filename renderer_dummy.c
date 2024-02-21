@@ -1,3 +1,48 @@
+void
+seturl(RendererCtx *rctx, char *url)
+{
+	(void)rctx;
+	LOG("setting url to %s", url);
+}
+
+
+int
+create_window(RendererCtx *rctx)
+{
+	(void)rctx;
+	return 1;
+}
+
+
+void
+close_window(RendererCtx *rctx)
+{
+	(void)rctx;
+}
+
+
+void
+blank_window(RendererCtx *rctx)
+{
+	(void)rctx;
+}
+
+
+int
+resize_video(RendererCtx *rctx)
+{
+	(void)rctx;
+	return 0;
+}
+
+
+void
+wait_for_window_resize(RendererCtx *rctx)
+{
+	(void)rctx;
+}
+
+
 void state_run(RendererCtx *rctx)
 {
 	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
@@ -30,13 +75,4 @@ void state_disengage(RendererCtx *rctx)
 {
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
-}
-
-
-int
-resize_video(RendererCtx *rctx)
-{
-	SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
-	LOG("resized sdl window to: %dx%d", rctx->w, rctx->h);
-	return 0;
 }
