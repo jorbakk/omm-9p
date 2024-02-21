@@ -1,7 +1,7 @@
 void state_run(RendererCtx *rctx)
 {
-	rctx->quit = 1;
-	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
+	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
+	}
 }
 
 
