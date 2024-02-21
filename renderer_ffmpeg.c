@@ -1,20 +1,6 @@
 // #include "renderer.h"
 #include "log.h"
 
-void send_picture_to_queue(RendererCtx *rctx, VideoPicture *videoPicture);
-void send_sample_to_queue(RendererCtx *rctx, AudioSample *audioSample);
-int  create_yuv_picture_from_frame(RendererCtx *rctx, AVFrame *frame, VideoPicture *videoPicture);
-int  create_sample_from_frame(RendererCtx *rctx, AVFrame *frame, AudioSample *audioSample);
-int  read_packet(RendererCtx *rctx, AVPacket *packet);
-int  write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet);
-int  read_frame_from_decoder(RendererCtx *rctx, AVFrame *frame);
-void flush_audio_queue(RendererCtx *rctx);
-void flush_picture_queue(RendererCtx *rctx);
-void display_picture(RendererCtx *rctx, VideoPicture *videoPicture);
-int  open_9pconnection(RendererCtx *rctx);
-void close_9pconnection(RendererCtx *rctx);
-void presenter_thread(void *arg);
-
 #define SDL_AUDIO_BUFFER_SIZE 1024
 #define MAX_AUDIOQ_SIZE (5 * 16 * 1024)
 #define MAX_VIDEOQ_SIZE (5 * 256 * 1024)
@@ -75,6 +61,20 @@ struct sample_fmt_entry {
     { AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
     { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
 };
+
+void send_picture_to_queue(RendererCtx *rctx, VideoPicture *videoPicture);
+void send_sample_to_queue(RendererCtx *rctx, AudioSample *audioSample);
+int  create_yuv_picture_from_frame(RendererCtx *rctx, AVFrame *frame, VideoPicture *videoPicture);
+int  create_sample_from_frame(RendererCtx *rctx, AVFrame *frame, AudioSample *audioSample);
+int  read_packet(RendererCtx *rctx, AVPacket *packet);
+int  write_packet_to_decoder(RendererCtx *rctx, AVPacket* packet);
+int  read_frame_from_decoder(RendererCtx *rctx, AVFrame *frame);
+void flush_audio_queue(RendererCtx *rctx);
+void flush_picture_queue(RendererCtx *rctx);
+void display_picture(RendererCtx *rctx, VideoPicture *videoPicture);
+int  open_9pconnection(RendererCtx *rctx);
+void close_9pconnection(RendererCtx *rctx);
+void presenter_thread(void *arg);
 
 int
 clientdial(RendererCtx *rctx)
@@ -207,6 +207,87 @@ seturl(RendererCtx *rctx, char *url)
 	setstr(&rctx->fileservername, s, 0);
 	setstr(&rctx->filename, f, 0);
 	LOG("setting url to %s", url);
+}
+
+
+int
+create_window(RendererCtx *rctx)
+{
+	SDL_DisplayMode displaymode;
+	if (SDL_GetCurrentDisplayMode(0, &displaymode) != 0) {
+		LOG("failed to get sdl display mode");
+		return -1;
+	}
+	rctx->screen_width  = displaymode.w;
+	rctx->screen_height = displaymode.h;
+	int requested_window_width  = 800;
+	int requested_window_height = 600;
+	if (rctx->sdl_window == nil) {
+		// create a window with the specified position, dimensions, and flags.
+		rctx->sdl_window = SDL_CreateWindow(
+			"OMM Renderer",
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			requested_window_width,
+			requested_window_height,
+			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
+			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
+			);
+		SDL_GL_SetSwapInterval(1);
+	}
+	if (rctx->sdl_window == nil) {
+		LOG("SDL: could not create window");
+		return -1;
+	}
+	if (rctx->sdl_renderer == nil) {
+		// create a 2D rendering context for the SDL_Window
+		rctx->sdl_renderer = SDL_CreateRenderer(
+			rctx->sdl_window,
+			-1,
+			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+	}
+	SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
+	LOG("SDL window with size %dx%d created", rctx->w, rctx->h);
+	return 0;
+}
+
+
+void
+close_window(RendererCtx *rctx)
+{
+	(void)rctx;
+}
+
+
+void
+wait_for_window_resize(RendererCtx *rctx)
+{
+	SDL_Event event;
+	int ret = SDL_WaitEvent(&event);
+	while (ret)
+	{
+		LOG("waiting for sdl window resize ...");
+		if (event.type == SDL_WINDOWEVENT) {
+			int e = event.window.event;
+			if (e == SDL_WINDOWEVENT_RESIZED ||
+				e == SDL_WINDOWEVENT_SIZE_CHANGED ||
+				e == SDL_WINDOWEVENT_MAXIMIZED) {
+					break;
+			}
+		}
+		ret = SDL_WaitEvent(&event);
+	}
+	SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
+	LOG("resized sdl window to %dx%d", rctx->w, rctx->h);
+}
+
+
+void
+blank_window(RendererCtx *rctx)
+{
+	SDL_SetRenderDrawColor(rctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+	SDL_RenderClear(rctx->sdl_renderer);
+	SDL_RenderPresent(rctx->sdl_renderer);
 }
 
 

@@ -5,7 +5,7 @@ seturl(RendererCtx *rctx, char *url)
 	LOG("setting url to %s", url);
 }
 
-
+#if 0
 /// VLC prepares to render a video frame.
 static void *
 vlc_lock(void *data, void **p_pixels)
@@ -47,11 +47,54 @@ display(void *data, void *id)
 	SDL_RenderPresent(rctx->sdl_renderer);
 	// msg_Info(rctx->player, "pitch: %d\n", rctx->pitch);
 }
+#endif
+
+
+int
+create_window(RendererCtx *rctx)
+{
+	(void)rctx;
+	return 1;
+}
+
+
+void
+close_window(RendererCtx *rctx)
+{
+	(void)rctx;
+}
+
+
+void
+blank_window(RendererCtx *rctx)
+{
+	(void)rctx;
+}
+
+
+int
+resize_video(RendererCtx *rctx)
+{
+	// SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
+	// LOG("resized sdl window to: %dx%d", rctx->w, rctx->h);
+	return 0;
+}
+
+
+void
+wait_for_window_resize(RendererCtx *rctx)
+{
+	(void)rctx;
+}
 
 
 void
 state_run(RendererCtx *rctx)
 {
+	unsigned int video_w, video_h;
+	if (libvlc_video_get_size(rctx->player, 0, &video_w, &video_h) == -1) {
+		LOG("failed to retrieve video size");
+	}
 	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
 	}
 }
@@ -76,11 +119,19 @@ state_load(RendererCtx *rctx)
 	rctx->player = libvlc_media_player_new_from_media(rctx->media);
 	libvlc_media_release(rctx->media);
 	/// Attach SDL to the VLC player
+
+	/// ... to the SDL window only
+	// libvlc_media_player_set_xwindow(rctx->player, SDL_GetWindowID(rctx->sdl_window));
+
+#if 0
+	/// ... or render into an SDL texture
 	/// image format is RV16, which means BGR565 (5 bits blue, 6 bits green, 5 bits red)
 	/// which uses 16 bit per pixel
 	/// The SDL texture is created in the same format
 	unsigned int video_w, video_h;
-	// libvlc_video_get_size(rctx->player, 0, &video_w, &video_h);
+	// if (libvlc_video_get_size(rctx->player, 0, &video_w, &video_h) == -1) {
+		// LOG("failed to retrieve video size");
+	// }
 	video_w = 1920;
 	video_h = 816;
 	LOG("video size: %ux%u", video_w, video_h);
@@ -97,6 +148,8 @@ state_load(RendererCtx *rctx)
 		);
 	libvlc_video_set_callbacks(rctx->player, vlc_lock, vlc_unlock, display, rctx);
 	libvlc_video_set_format(rctx->player, "RV16", video_w, video_h, video_w * 2);
+#endif
+
 	/// Start to play ...
 	libvlc_media_player_play(rctx->player);
 exit:
@@ -110,9 +163,11 @@ state_unload(RendererCtx *rctx)
     libvlc_media_player_stop(rctx->player);
 	libvlc_media_player_release(rctx->player);
 	libvlc_release(rctx->libvlc);
+#if 0
 	SDL_DestroyMutex(rctx->sdl_mutex);
 	SDL_DestroyRenderer(rctx->sdl_renderer);
 	SDL_DestroyTexture(rctx->sdl_texture);
+#endif
 	SDL_CloseAudioDevice(rctx->audio_devid);
 	// Unconditional transition to STOP state
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
@@ -132,13 +187,4 @@ state_disengage(RendererCtx *rctx)
 {
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
-}
-
-
-int
-resize_video(RendererCtx *rctx)
-{
-	SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
-	LOG("resized sdl window to: %dx%d", rctx->w, rctx->h);
-	return 0;
 }

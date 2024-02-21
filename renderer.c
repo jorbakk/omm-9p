@@ -82,6 +82,7 @@ typedef struct RendererCtx
 	int                screen_height;
 	int                window_width;
 	int                window_height;
+	int                w, h, aw, ah;
 	// Threads
 	int                server_tid;
 	int                decoder_tid;
@@ -91,11 +92,6 @@ typedef struct RendererCtx
 	// Audio output
 	SDL_AudioDeviceID  audio_devid;
 	int                audio_only;
-	// Video output
-	SDL_Window        *sdl_window;
-	SDL_Texture       *sdl_texture;
-	SDL_Renderer      *sdl_renderer;
-	int                w, h, aw, ah;
 #ifdef RENDER_FFMPEG
 	// Decoder context
 	AVIOContext       *io_ctx;
@@ -132,6 +128,10 @@ typedef struct RendererCtx
 	SDL_Rect           blit_copy_rect;
 	AVRational         video_timebase;
 	double             video_tbd;
+	// Video output
+	SDL_Window        *sdl_window;
+	SDL_Texture       *sdl_texture;
+	SDL_Renderer      *sdl_renderer;
 #elif defined RENDER_VLC
 	SDL_mutex             *sdl_mutex;
 	libvlc_instance_t     *libvlc;
@@ -291,6 +291,9 @@ static int transitions[NCMD][NSTATE-1] = // no entry for EXIT state needed
 /// Function declarations
 void decoder_thread(void *arg);
 int  resize_video(RendererCtx *rctx);
+int  create_window(RendererCtx *rctx);
+void close_window(RendererCtx *rctx);
+void wait_for_window_resize(RendererCtx *rctx);
 void blank_window(RendererCtx *rctx);
 int  read_cmd(RendererCtx *rctx, int mode);
 void seturl(RendererCtx *rctx, char *url);
@@ -550,72 +553,24 @@ start_server(RendererCtx *rctx)
 }
 
 
-int
-create_sdl_window(RendererCtx *rctx)
+void
+state_stop(RendererCtx *rctx)
 {
-	SDL_DisplayMode displaymode;
-	if (SDL_GetCurrentDisplayMode(0, &displaymode) != 0) {
-		LOG("failed to get sdl display mode");
-		return -1;
+	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
 	}
-	rctx->screen_width  = displaymode.w;
-	rctx->screen_height = displaymode.h;
-	int requested_window_width  = 800;
-	int requested_window_height = 600;
-	if (rctx->sdl_window == nil) {
-		// create a window with the specified position, dimensions, and flags.
-		rctx->sdl_window = SDL_CreateWindow(
-			"OMM Renderer",
-			SDL_WINDOWPOS_UNDEFINED,
-			SDL_WINDOWPOS_UNDEFINED,
-			requested_window_width,
-			requested_window_height,
-			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
-			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
-			);
-		SDL_GL_SetSwapInterval(1);
-	}
-	if (rctx->sdl_window == nil) {
-		LOG("SDL: could not create window");
-		return -1;
-	}
-	if (rctx->sdl_renderer == nil) {
-		// create a 2D rendering context for the SDL_Window
-		rctx->sdl_renderer = SDL_CreateRenderer(
-			rctx->sdl_window,
-			-1,
-			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
-	}
-	SDL_GetWindowSize(rctx->sdl_window, &rctx->w, &rctx->h);
-	LOG("SDL window with size %dx%d created", rctx->w, rctx->h);
-	return 0;
 }
 
 
 void
-blank_window(RendererCtx *rctx)
-{
-	SDL_SetRenderDrawColor(rctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-	SDL_RenderClear(rctx->sdl_renderer);
-	SDL_RenderPresent(rctx->sdl_renderer);
-}
-
-
-void state_stop(RendererCtx *rctx)
+state_idle(RendererCtx *rctx)
 {
 	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
 	}
 }
 
 
-void state_idle(RendererCtx *rctx)
-{
-	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
-	}
-}
-
-
-void state_exit(RendererCtx *rctx)
+void
+state_exit(RendererCtx *rctx)
 {
 	rctx->quit = 1;
 	threadexitsall("");
@@ -732,34 +687,18 @@ threadmain(int argc, char **argv)
 	}
 	reset_rctx(&rctx, 1);
 	// Create OS window
-	SDL_Event event;
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (ret != 0) {
 		LOG("Could not initialize SDL - %s", SDL_GetError());
 		return;
 	}
-	if (create_sdl_window(&rctx) == -1) {
+	if (create_window(&rctx) == -1) {
 		return;
 	}
 	blank_window(&rctx);
 	// Wait for sdl window to be created (restored) and resized
-	ret = SDL_WaitEvent(&event);
-	while (ret)
-	{
-		LOG("waiting for sdl window resize ...");
-		if (event.type == SDL_WINDOWEVENT) {
-			int e = event.window.event;
-			if (e == SDL_WINDOWEVENT_RESIZED ||
-				e == SDL_WINDOWEVENT_SIZE_CHANGED ||
-				e == SDL_WINDOWEVENT_MAXIMIZED) {
-					break;
-			}
-		}
-		ret = SDL_WaitEvent(&event);
-	}
-	SDL_GetWindowSize(rctx.sdl_window, &rctx.w, &rctx.h);
-	LOG("resized sdl window to %dx%d", rctx.w, rctx.h);
+	wait_for_window_resize(&rctx);
 	// Start command server
 	rctx.cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
 	start_server(&rctx);
@@ -774,6 +713,7 @@ threadmain(int argc, char **argv)
 		printf("could not start decoder thread: %s.\n", SDL_GetError());
 		return;
 	}
+	SDL_Event event;
 	for (;;) {
 		yield();
 		if (rctx.renderer_state == STOP || rctx.renderer_state == IDLE) {
