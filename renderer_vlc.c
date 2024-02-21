@@ -53,8 +53,20 @@ display(void *data, void *id)
 int
 create_window(RendererCtx *rctx)
 {
-	(void)rctx;
+	char const *vlc_argv[] = {
+		// "--no-xlib",            // Don't use Xlib.
+		"-v",
+	};
+	int vlc_argc = sizeof(vlc_argv) / sizeof(*vlc_argv);
+	rctx->libvlc = libvlc_new(vlc_argc, vlc_argv);
+	if (rctx->libvlc == NULL) {
+		LOG("LibVLC initialization failure");
+		goto exit;
+	}
+	rctx->player = libvlc_media_player_new(rctx->libvlc);
 	return 1;
+exit:
+	return 0;
 }
 
 
@@ -103,20 +115,11 @@ state_run(RendererCtx *rctx)
 void
 state_load(RendererCtx *rctx)
 {
-	char const *vlc_argv[] = {
-		// "--no-xlib",            // Don't use Xlib.
-		"-v",
-	};
-	int vlc_argc = sizeof(vlc_argv) / sizeof(*vlc_argv);
-	rctx->libvlc = libvlc_new(vlc_argc, vlc_argv);
-	if (rctx->libvlc == NULL) {
-		LOG("LibVLC initialization failure");
-		goto exit;
-	}
 	rctx->sdl_mutex = SDL_CreateMutex();
 	LOG("libvlc loading url: %s", rctx->url);
 	rctx->media = libvlc_media_new_location(rctx->libvlc, rctx->url);
-	rctx->player = libvlc_media_player_new_from_media(rctx->media);
+	// rctx->player = libvlc_media_player_new_from_media(rctx->media);
+	libvlc_media_player_set_media(rctx->player, rctx->media);
 	libvlc_media_release(rctx->media);
 	/// Attach SDL to the VLC player
 
@@ -152,7 +155,7 @@ state_load(RendererCtx *rctx)
 
 	/// Start to play ...
 	libvlc_media_player_play(rctx->player);
-exit:
+// exit:
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
