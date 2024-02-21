@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Jörg Bakker
+ * Copyright 2022 - 2024 Jörg Bakker
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -19,37 +19,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
-
-// TODO:
-// 1. Fixes
-// - memory leaks
-//   - play / stop cycle increases memory footprint
-// - keyboard commands occasionally lead to random crashes (e.g. stop with 's')
-// - seek
-// - blank screen on stop / eof
-// - responsiveness to keyboard input
-// - check if initial resizing works with floating windows or if it blocks
-// 2. AV sync
-// - pause / unpause introduces big av sync gap
-// - decrease video picture display rate variation further
-// - remove audio delay (... if there's any ... caused by samples in sdl queue?!)
-// - add video-only (for videos with or w/o audio) and fix audio-only video playback
-// 3. Query renderer info (current position, media length, renderer state, audio volume) from 9P server
-// 4. Display single still images
-// 5. Refactoring / testing
-// - allow video scaling not only in decoder thread but also in presenter thread
-// - test keyboard / server input combinations (fuzz testing ...)
-// 6. Experiment with serving video and audio output channels via the 9P server
-// 7. Build renderer into drawterm-av
-
-// Thread layout:
-//   main_thread (event loop)
-//   -> 9P command server thread/proc
-//   -> decoder_thread (and state machine)
-//      -> presenter_thread
-//         reads from audio and video channel
-//         only runs in states RUN and IDLE
 
 
 #include <u.h>
@@ -1001,7 +970,9 @@ threadmain(int argc, char **argv)
 	return;
 }
 
-#ifdef RENDER_FFMPEG
+#ifdef RENDER_DUMMY
+#include "renderer_dummy.c"
+#elif RENDER_FFMPEG
 #include "renderer_ffmpeg.c"
 #elif RENDER_VLC
 #include "renderer_vlc.c"
