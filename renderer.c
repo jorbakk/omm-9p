@@ -29,13 +29,6 @@
 #include <9p.h>
 #include <9pclient.h>
 
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libswscale/swscale.h>
-#include <libswresample/swresample.h>
-#include <libavutil/imgutils.h>
-#include <libavutil/time.h>
-
 #include <SDL2/SDL.h>
 
 // #include "renderer.h"
@@ -51,50 +44,16 @@
 /// OS pre-emptive threads
 #define THREAD_CREATE proccreate
 
-
 #ifdef RENDER_FFMPEG
-#define SDL_AUDIO_BUFFER_SIZE 1024
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/time.h>
+
 #define MAX_AUDIO_FRAME_SIZE 192000
-#define MAX_AUDIOQ_SIZE (5 * 16 * 1024)
-#define MAX_VIDEOQ_SIZE (5 * 256 * 1024)
-// Maximum size of the data read from input for determining the input container format.
-#define AV_FORMAT_MAX_PROBE_SIZE 500000
-// Maximum duration (in AV_TIME_BASE units) of the data read from input in avformat_find_stream_info().
-// Demuxing only, set by the caller before avformat_find_stream_info().
-// Can be set to 0 to let avformat choose using a heuristic.
-#define AV_FORMAT_MAX_ANALYZE_DURATION 500000
-#define AV_SYNC_THRESHOLD 0.01
-#define AV_NOSYNC_THRESHOLD 1.0
-#define SAMPLE_CORRECTION_PERCENT_MAX 10
-#define AUDIO_DIFF_AVG_NB 20
-#define VIDEO_PICTURE_QUEUE_SIZE 1
-/* #define DEFAULT_AV_SYNC_TYPE AV_SYNC_AUDIO_MASTER */
-#define DEFAULT_AV_SYNC_TYPE AV_SYNC_EXTERNAL_MASTER
-#define avctxBufferSize 8192 * 10
-
-typedef struct VideoPicture
-{
-	AVFrame    *frame;
-	int         linesize;
-	int         width;
-	int         height;
-	int         pix_fmt;
-	double      pts;
-	int         idx;
-	int         eos;
-} VideoPicture;
-
-typedef struct AudioSample
-{
-	uint8_t	   *sample;
-	int         size;
-	int         idx;
-	double      pts;
-	double      duration;
-	int         eos;
-} AudioSample;
 #endif   /// RENDER_FFMPEG
-
 
 typedef struct RendererCtx
 {
@@ -320,27 +279,6 @@ static int transitions[NCMD][NSTATE-1] = // no entry for EXIT state needed
 	{STOP,    RUN,     IDLE,    RUN,     STOP,    RUN,     IDLE},
 // CMD_ERR, error occured while running the state
 	{STOP,    UNLOAD,  IDLE,    RUN,     STOP,    RUN,     IDLE},
-};
-
-// Clock and sample types
-enum
-{
-	// Sync to audio clock.
-	AV_SYNC_AUDIO_MASTER,
-	// Sync to video clock.
-	AV_SYNC_VIDEO_MASTER,
-	// Sync to external clock: the computer clock
-	AV_SYNC_EXTERNAL_MASTER,
-};
-
-struct sample_fmt_entry {
-    enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;
-} sample_fmt_entries[] = {
-    { AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
-    { AV_SAMPLE_FMT_S16, "s16be", "s16le" },
-    { AV_SAMPLE_FMT_S32, "s32be", "s32le" },
-    { AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
-    { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
 };
 
 /// Function declarations

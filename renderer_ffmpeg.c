@@ -15,6 +15,66 @@ int  open_9pconnection(RendererCtx *rctx);
 void close_9pconnection(RendererCtx *rctx);
 void presenter_thread(void *arg);
 
+#define SDL_AUDIO_BUFFER_SIZE 1024
+#define MAX_AUDIOQ_SIZE (5 * 16 * 1024)
+#define MAX_VIDEOQ_SIZE (5 * 256 * 1024)
+// Maximum size of the data read from input for determining the input container format.
+#define AV_FORMAT_MAX_PROBE_SIZE 500000
+// Maximum duration (in AV_TIME_BASE units) of the data read from input in avformat_find_stream_info().
+// Demuxing only, set by the caller before avformat_find_stream_info().
+// Can be set to 0 to let avformat choose using a heuristic.
+#define AV_FORMAT_MAX_ANALYZE_DURATION 500000
+#define AV_SYNC_THRESHOLD 0.01
+#define AV_NOSYNC_THRESHOLD 1.0
+#define SAMPLE_CORRECTION_PERCENT_MAX 10
+#define AUDIO_DIFF_AVG_NB 20
+#define VIDEO_PICTURE_QUEUE_SIZE 1
+/* #define DEFAULT_AV_SYNC_TYPE AV_SYNC_AUDIO_MASTER */
+#define DEFAULT_AV_SYNC_TYPE AV_SYNC_EXTERNAL_MASTER
+#define avctxBufferSize 8192 * 10
+
+typedef struct VideoPicture
+{
+	AVFrame    *frame;
+	int         linesize;
+	int         width;
+	int         height;
+	int         pix_fmt;
+	double      pts;
+	int         idx;
+	int         eos;
+} VideoPicture;
+
+typedef struct AudioSample
+{
+	uint8_t	   *sample;
+	int         size;
+	int         idx;
+	double      pts;
+	double      duration;
+	int         eos;
+} AudioSample;
+
+// Clock and sample types
+enum
+{
+	// Sync to audio clock.
+	AV_SYNC_AUDIO_MASTER,
+	// Sync to video clock.
+	AV_SYNC_VIDEO_MASTER,
+	// Sync to external clock: the computer clock
+	AV_SYNC_EXTERNAL_MASTER,
+};
+
+struct sample_fmt_entry {
+    enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;
+} sample_fmt_entries[] = {
+    { AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
+    { AV_SAMPLE_FMT_S16, "s16be", "s16le" },
+    { AV_SAMPLE_FMT_S32, "s32be", "s32le" },
+    { AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
+    { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
+};
 
 int
 clientdial(RendererCtx *rctx)
