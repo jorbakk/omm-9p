@@ -17,6 +17,7 @@ P            = $(SYS)/pkg
 
 9PLIBS       = -l9 -l9p -l9pclient -lthread -lsec -lmp -lauth -lbio
 9PCLIENTLIBS = -l9 -l9pclient -lbio -lsec -lauth -lthread
+AVFLAGS      =
 AVLIBS       = -lavutil -lavformat -lavcodec -lswscale -lswresample
 POCOCFLAGS   = -DPOCO_VERSION_HEADER_FOUND
 POCOLIBS     = -lPocoFoundation -lPocoUtil -lPocoXML -lPocoZip
@@ -32,6 +33,14 @@ VLC_PLUGIN_CFLAGS = $(shell $(PKG_CONFIG) --cflags vlc-plugin)
 VLC_PLUGIN_LIBS   = $(shell $(PKG_CONFIG) --libs vlc-plugin)
 VLCFLAGS     = $(shell $(PKG_CONFIG) --cflags libvlc)
 VLCLIBS      = $(shell $(PKG_CONFIG) --libs libvlc)
+
+ifeq ($(RENDER_BACK), RENDER_FFMPEG)
+RENDERFLAGS  = $(AVFLAGS)
+RENDERLIBS   = $(AVLIBS)
+else ifeq ($(RENDER_BACK), RENDER_VLC)
+RENDERFLAGS  = $(VLCFLAGS)
+RENDERLIBS   = $(VLCLIBS)
+endif
 
 ifeq ($(RELEASE), 1)
 CFLAGS       = -O2 -DNDEBUG
@@ -92,7 +101,7 @@ clean:
 	rm -rf $(B)
 
 $(B)/ommrender: renderer.c renderer_ffmpeg.c renderer_vlc.c
-	$(CC) -o $@ $< $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(AVLIBS) $(SDL2LIBS) -lz -lm
+	$(CC) -o $@ $< $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
 
 $(B)/render: render.c
 	$(CC) -o $@ $< $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) $(SDL2LIBS) $(VLCLIBS) -lz -lm

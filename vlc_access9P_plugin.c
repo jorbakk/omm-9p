@@ -33,9 +33,9 @@ struct access_sys_t {
 static ssize_t Read(stream_t *, void *, size_t);
 static int Seek(stream_t *, uint64_t);
 static int Control(stream_t *, int, va_list);
-void seturl(stream_t *, char *);
-int open_9pconnection(stream_t *p_access);
-void close_9pconnection(stream_t *p_access);
+static void seturl(stream_t *, char *);
+static int open_9pconnection(stream_t *p_access);
+static void close_9pconnection(stream_t *p_access);
 
 /**
  * Init the input module
@@ -135,7 +135,7 @@ vlc_module_begin()
 vlc_module_end()
 
 
-int
+static int
 parseurl(char *url, char **fileservername, char **filename, int *isaddr, int *isfile)
 {
 	char *pfileservername = NULL;
@@ -171,7 +171,7 @@ parseurl(char *url, char **fileservername, char **filename, int *isaddr, int *is
 }
 
 
-void
+static void
 setstr(char **str, char *instr, int ninstr)
 {
 	if (*str) {
@@ -186,7 +186,7 @@ setstr(char **str, char *instr, int ninstr)
 }
 
 
-void
+static void
 seturl(stream_t *p_access, char *url)
 {
 	access_sys_t *p_sys = p_access->p_sys;
@@ -211,7 +211,7 @@ seturl(stream_t *p_access, char *url)
 }
 
 
-int
+static int
 open_9pconnection(stream_t *p_access)
 {
 	access_sys_t *p_sys = p_access->p_sys;
@@ -235,7 +235,7 @@ open_9pconnection(stream_t *p_access)
 }
 
 
-void
+static void
 close_9pconnection(stream_t *p_access)
 {
 	access_sys_t *p_sys = p_access->p_sys;

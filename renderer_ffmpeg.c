@@ -152,6 +152,65 @@ close_9pconnection(RendererCtx *rctx)
 
 
 int
+parseurl(char *url, char **fileservername, char **filename, int *isaddr, int *isfile)
+{
+	char *pfileservername = nil;
+	char *pfilename = nil;
+	char *pbang = strchr(url, '!');
+	char *pslash = strchr(url, '/');
+	int fisaddr = 0;
+	int fisfile = 0;
+	if (pslash == nil) {
+		if (pbang != nil) {
+			return -1;
+		}
+		pfilename = url;
+	}
+	else if (pslash == url) {
+		// Local file path that starts with '/'
+		pfilename = url;
+		fisfile = 1;
+	}
+	else {
+		*pslash = '\0';
+		pfileservername = url;
+		pfilename = pslash + 1;
+		if (pbang != nil) {
+			fisaddr = 1;
+		}
+	}
+	*fileservername = pfileservername;
+	*filename = pfilename;
+	*isaddr = fisaddr;
+	*isfile = fisfile;
+	return 0;
+}
+
+
+void
+seturl(RendererCtx *rctx, char *url)
+{
+	char *s, *f;
+	int ret = parseurl(url, &s, &f, &rctx->isaddr, &rctx->isfile);
+	if (rctx->isfile) {
+		LOG("input is file, setting url to %s", url);
+		setstr(&rctx->filename, url, 0);
+		return;
+	}
+	if (ret == -1) {
+		LOG("failed to parse url %s", url);
+		rctx->fileservername = nil;
+		rctx->filename = nil;
+		return;
+	}
+	/* setstr(&rctx->fileservername, DEFAULT_SERVER_NAME, 0); */
+	setstr(&rctx->fileservername, s, 0);
+	setstr(&rctx->filename, f, 0);
+	LOG("setting url to %s", url);
+}
+
+
+int
 open_stream_component(RendererCtx *rctx, int stream_index)
 {
 	LOG("opening stream component ...");
@@ -876,7 +935,8 @@ display_picture(RendererCtx *rctx, VideoPicture *videoPicture)
 	SDL_RenderPresent(rctx->sdl_renderer);
 }
 
-void send_eos_frames(RendererCtx *rctx)
+void
+send_eos_frames(RendererCtx *rctx)
 {
 	if (rctx->video_ctx) {
 		VideoPicture videoPicture = {.eos = 1};
@@ -889,7 +949,8 @@ void send_eos_frames(RendererCtx *rctx)
 }
 
 
-void state_run(RendererCtx *rctx)
+void
+state_run(RendererCtx *rctx)
 {
 	// Main decoder loop
 	for (;;) {
@@ -966,7 +1027,8 @@ void state_run(RendererCtx *rctx)
 }
 
 
-void state_load(RendererCtx *rctx)
+void
+state_load(RendererCtx *rctx)
 {
 	if (open_9pconnection(rctx) == -1) {
 		rctx->renderer_state = transitions[CMD_ERR][rctx->renderer_state];
@@ -992,7 +1054,8 @@ void state_load(RendererCtx *rctx)
 }
 
 
-void state_unload(RendererCtx *rctx)
+void
+state_unload(RendererCtx *rctx)
 {
 	// Stop presenter thread
 	LOG("sending stop to presenter thread ...");
@@ -1048,7 +1111,8 @@ void state_unload(RendererCtx *rctx)
 }
 
 
-void state_engage(RendererCtx *rctx)
+void
+state_engage(RendererCtx *rctx)
 {
 	rctx->pause_presenter_thread = 0;
 	SDL_PauseAudioDevice(rctx->audio_devid, 0);
@@ -1056,7 +1120,8 @@ void state_engage(RendererCtx *rctx)
 }
 
 
-void state_disengage(RendererCtx *rctx)
+void
+state_disengage(RendererCtx *rctx)
 {
 	rctx->pause_presenter_thread = 1;
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);

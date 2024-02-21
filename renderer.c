@@ -51,8 +51,10 @@
 #include <libswresample/swresample.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/time.h>
-
 #define MAX_AUDIO_FRAME_SIZE 192000
+#elif defined RENDER_VLC
+#include "vlc/vlc.h"
+#include <SDL2/SDL_mutex.h>
 #endif   /// RENDER_FFMPEG
 
 typedef struct RendererCtx
@@ -130,6 +132,11 @@ typedef struct RendererCtx
 	SDL_Rect           blit_copy_rect;
 	AVRational         video_timebase;
 	double             video_tbd;
+#elif defined RENDER_VLC
+	SDL_mutex             *sdl_mutex;
+	libvlc_instance_t     *libvlc;
+	libvlc_media_t        *media;
+	libvlc_media_player_t *player;
 #endif   /// RENDER_FFMPEG
 } RendererCtx;
 
@@ -286,6 +293,7 @@ void decoder_thread(void *arg);
 int  resize_video(RendererCtx *rctx);
 void blank_window(RendererCtx *rctx);
 int  read_cmd(RendererCtx *rctx, int mode);
+void seturl(RendererCtx *rctx, char *url);
 
 /// Implementation
 void
@@ -409,64 +417,6 @@ demuxerPacketSeek(void *fid, int64_t offset, int whence)
 	int64_t ret = fsseek(cfid, offset, whence);
 	LOG("demuxer seek found offset %ld", ret);
 	return ret;
-}
-
-
-int
-parseurl(char *url, char **fileservername, char **filename, int *isaddr, int *isfile)
-{
-	char *pfileservername = nil;
-	char *pfilename = nil;
-	char *pbang = strchr(url, '!');
-	char *pslash = strchr(url, '/');
-	int fisaddr = 0;
-	int fisfile = 0;
-	if (pslash == nil) {
-		if (pbang != nil) {
-			return -1;
-		}
-		pfilename = url;
-	}
-	else if (pslash == url) {
-		// Local file path that starts with '/'
-		pfilename = url;
-		fisfile = 1;
-	}
-	else {
-		*pslash = '\0';
-		pfileservername = url;
-		pfilename = pslash + 1;
-		if (pbang != nil) {
-			fisaddr = 1;
-		}
-	}
-	*fileservername = pfileservername;
-	*filename = pfilename;
-	*isaddr = fisaddr;
-	*isfile = fisfile;
-	return 0;
-}
-
-
-void
-seturl(RendererCtx *rctx, char *url)
-{
-	char *s, *f;
-	int ret = parseurl(url, &s, &f, &rctx->isaddr, &rctx->isfile);
-	if (rctx->isfile) {
-		LOG("input is file, setting url to %s", url);
-		setstr(&rctx->filename, url, 0);
-		return;
-	}
-	if (ret == -1) {
-		LOG("failed to parse url %s", url);
-		rctx->fileservername = nil;
-		rctx->filename = nil;
-		return;
-	}
-	/* setstr(&rctx->fileservername, DEFAULT_SERVER_NAME, 0); */
-	setstr(&rctx->fileservername, s, 0);
-	setstr(&rctx->filename, f, 0);
 }
 
 
@@ -910,8 +860,8 @@ threadmain(int argc, char **argv)
 
 #ifdef RENDER_DUMMY
 #include "renderer_dummy.c"
-#elif RENDER_FFMPEG
+#elif defined RENDER_FFMPEG
 #include "renderer_ffmpeg.c"
-#elif RENDER_VLC
+#elif defined RENDER_VLC
 #include "renderer_vlc.c"
 #endif   /// RENDER_FFMPEG
