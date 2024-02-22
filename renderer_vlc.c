@@ -113,7 +113,6 @@ state_run(RendererCtx *rctx)
 void
 state_load(RendererCtx *rctx)
 {
-	rctx->sdl_mutex = SDL_CreateMutex();
 	LOG("libvlc loading url: %s", rctx->url);
 	rctx->media = libvlc_media_new_location(rctx->libvlc, rctx->url);
 	libvlc_media_player_set_media(rctx->player, rctx->media);

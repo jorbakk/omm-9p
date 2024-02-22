@@ -139,9 +139,6 @@ typedef struct RendererCtx
 	libvlc_media_player_t *player;
 	// Video output
 	SDL_Window            *sdl_window;
-	SDL_Texture           *sdl_texture;
-	SDL_Renderer          *sdl_renderer;
-	SDL_mutex             *sdl_mutex;
 #endif   /// RENDER_FFMPEG
 } RendererCtx;
 
@@ -529,7 +526,7 @@ start_server(RendererCtx *rctx)
 	// ... the first access will fail but unmount it.
 	/* if(mtpt && access(mtpt, AEXIST) < 0 && access(mtpt, AEXIST) < 0) */
 		/* sysfatal("mountpoint %s does not exist", mtpt); */
-	/* server.foreground = 1; */
+	// server.foreground = 1;
 	threadpostmountsrv(&server, srvname, mtpt, MREPL|MCREATE);
 	/* threadexits(0); */
 	LOG("9P server started.");
@@ -693,7 +690,7 @@ threadmain(int argc, char **argv)
 	// Start decoder / state machine thread
 	rctx.decoder_tid = THREAD_CREATE(decoder_thread, &rctx, THREAD_STACK_SIZE);
 	if (!rctx.decoder_tid) {
-		printf("could not start decoder thread: %s.\n", SDL_GetError());
+		printf("could not start decoder thread\n");
 		return;
 	}
 	SDL_Event event;
