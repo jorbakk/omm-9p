@@ -46,8 +46,10 @@ ifeq ($(RELEASE), 1)
 CFLAGS       = -O2 -DNDEBUG
 LDFLAGS      = # -static
 else
-CFLAGS       = -std=c99 -Wall -g -D__DEBUG__ -Wno-sizeof-array-div # -fsanitize=address -fsanitize=undefined # -fsanitize=thread
-LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH) # -lasan -lubsan # -fsanitize=thread
+CFLAGS       = -std=c99 -Wall -g -D__DEBUG__ -Wno-sizeof-array-div
+DBG_CFLAGS   = -fsanitize=address -fsanitize=undefined # -fsanitize=thread
+LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH)
+DBG_LDFLAGS  = -lasan -lubsan # -fsanitize=thread
 endif
 
 CFLAGS      += -D$(RENDER_BACK)
@@ -101,7 +103,7 @@ clean:
 	rm -rf $(B)
 
 $(B)/ommrender: renderer.c renderer_ffmpeg.c renderer_vlc.c
-	$(CC) -o $@ $< $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
+	$(CC) -o $@ $< $(DBG_CFLAGS) $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(DBG_LDFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
 
 $(B)/render: render.c
 	$(CC) -o $@ $< $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) $(SDL2LIBS) $(VLCLIBS) -lz -lm
@@ -131,7 +133,7 @@ $(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -L$(B) -lommdvb -lm
 
 $(B)/libvlc_access9P_plugin.so: vlc_access9P_plugin.c $(P)/libixp.make
-	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
+	$(CC) -o $@ $(DBG_CFLAGS) -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(DBG_LDFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
 
 $(B)/libvlc_control9P_plugin.so: vlc_control9P_plugin.c $(P)/libixp.make
 	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)

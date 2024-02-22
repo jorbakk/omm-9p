@@ -46,7 +46,7 @@ Open(vlc_object_t * obj)
 	stream_t *p_access = (stream_t *) obj;
     const char *psz_url = p_access->psz_url;
 	/* Allocate internal state */
-	struct access_sys_t *sys = malloc(sizeof(*sys));
+	struct access_sys_t *sys = calloc(1, sizeof(*sys));
 	sys->url = psz_url + 5;
 	if (unlikely(sys == NULL)) return VLC_ENOMEM;
 	p_access->p_sys = sys;
