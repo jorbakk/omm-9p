@@ -537,6 +537,7 @@ start_server(RendererCtx *rctx)
 void
 state_stop(RendererCtx *rctx)
 {
+	blank_window(rctx);
 	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
 	}
 }
@@ -554,6 +555,7 @@ void
 state_exit(RendererCtx *rctx)
 {
 	rctx->quit = 1;
+	reset_filectx(rctx);
 	threadexitsall("");
 }
 
