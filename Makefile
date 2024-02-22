@@ -133,7 +133,7 @@ $(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -L$(B) -lommdvb -lm
 
 $(B)/libvlc_access9P_plugin.so: vlc_access9P_plugin.c $(P)/libixp.make
-	$(CC) -o $@ $(DBG_CFLAGS) -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(DBG_LDFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
+	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
 
 $(B)/libvlc_control9P_plugin.so: vlc_control9P_plugin.c $(P)/libixp.make
 	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)

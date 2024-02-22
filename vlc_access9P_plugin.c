@@ -47,9 +47,9 @@ Open(vlc_object_t * obj)
     const char *psz_url = p_access->psz_url;
 	/* Allocate internal state */
 	struct access_sys_t *sys = calloc(1, sizeof(*sys));
-	sys->url = psz_url + 5;
 	if (unlikely(sys == NULL)) return VLC_ENOMEM;
 	p_access->p_sys = sys;
+	sys->url = psz_url + 5;
 	msg_Info(p_access, "opening %s ...", sys->url);
 	seturl(p_access, sys->url);
 	if (open_9pconnection(p_access) == -1) goto error;
@@ -70,12 +70,17 @@ static void
 Close(vlc_object_t *obj)
 {
 	stream_t *p_access = (stream_t *) obj;
-	struct access_sys_t *sys = p_access->p_sys;
-	close_9pconnection(p_access);
+	access_sys_t *p_sys = p_access->p_sys;
+	msg_Info(p_access, "closing %s ...", p_sys->url);
+	// msg_Info(p_access, "closing 9P connection for %s ...", p_sys->url);
+	// close_9pconnection(p_access);
 	/* Free internal state */
-	free(sys->url);
-	free(sys);
-	msg_Info(p_access, "closed %s!", sys->url);
+	// msg_Info(p_access, "freeing sys->url ...");
+	// free(p_sys->url);
+	// p_sys->url = NULL;
+	msg_Info(p_access, "freeing sys ...");
+	free(p_sys);
+	msg_Info(p_access, "closed.");
 }
 
 
