@@ -14,12 +14,17 @@ OMM is a set of applications for playing multimedia streams in a distributed env
 
 For basic renderer and server:
 
-1. Plan 9 from user space
-2. FFmpeg libraries: avutil, avformat, avcodec, swscale, swresample
-3. SDL2
-4. SQLite
+1. P9light or Plan 9 from user space
+2. libixp
+3. LibVLC
+4. SDL2
+5. SQLite
 
-For Linux DVB server:
+Optionally, for the ffmpeg renderer backend:
+
+1. FFmpeg libraries: avutil, avformat, avcodec, swscale, swresample
+
+For the Linux DVB server:
 
 1. Linux DVB headers
 2. Linux udev
@@ -38,12 +43,14 @@ $ ommrender <filename>
 
 Start renderer:
 ```
+$ export VLC_PLUGIN_PATH=<path to OMM source directory>/build
+# export DBUS_FATAL_WARNINGS=0
 $ ommrender &
 ```
 
 Control renderer from command line:
 ```
-$ echo set <filename> | 9p write ommrender/ctl
+$ echo set file:///<absolute file path> | 9p write ommrender/ctl
 $ echo play | 9p write ommrender/ctl
 $ echo stop | 9p write ommrender/ctl
 ```
@@ -65,7 +72,7 @@ $ 9p ls ommserve/1
 $ 9p read ommserve/1/meta
 ```
 
-Play media from local server:
+Play media from local server (currently defunct):
 ```
 $ echo set ommserve/1/data | 9p write ommrender/ctl
 $ echo play | 9p write ommrender/ctl
@@ -84,9 +91,14 @@ $ 9p -a tcp!192.168.1.83!4567 ls
 
 Play media from remote server:
 ```
-$ echo set tcp!192.168.1.83!4567/1/data | 9p write ommrender/ctl
+$ echo set 9p://tcp!192.168.1.83!4567/1/data | 9p write ommrender/ctl
 $ echo play | 9p write ommrender/ctl
 $ echo stop | 9p write ommrender/ctl
+```
+
+Quit renderer:
+```
+$ echo quit | 9p write ommrender/ctl
 ```
 
 ## References
