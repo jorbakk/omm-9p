@@ -51,11 +51,55 @@ display(void *data, void *id)
 
 
 int
+create_sdl_window(RendererCtx *rctx)
+{
+	SDL_DisplayMode displaymode;
+	if (SDL_GetCurrentDisplayMode(0, &displaymode) != 0) {
+		LOG("failed to get sdl display mode");
+		return -1;
+	}
+	rctx->screen_width  = displaymode.w;
+	rctx->screen_height = displaymode.h;
+	int requested_window_width  = 800;
+	int requested_window_height = 600;
+	if (rctx->sdl_window == nil) {
+		// create a window with the specified position, dimensions, and flags.
+		rctx->sdl_window = SDL_CreateWindow(
+			"OMM Renderer",
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			requested_window_width,
+			requested_window_height,
+			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
+			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
+			);
+		SDL_GL_SetSwapInterval(1);
+	}
+	if (rctx->sdl_window == nil) {
+		LOG("SDL: could not create window");
+		return -1;
+	}
+	return 0;
+}
+
+
+uint32_t
+get_sdl_window_id(SDL_Window *window)
+{
+	SDL_SysWMinfo wmInfo;
+	SDL_VERSION(&wmInfo.version);
+	SDL_GetWindowWMInfo(window, &wmInfo);
+	return wmInfo.info.x11.window;
+}
+
+
+int
 create_window(RendererCtx *rctx)
 {
+	create_sdl_window(rctx);
 	char const *vlc_argv[] = {
-		// "--no-xlib",            // Don't use Xlib.
 		"-v",
+		// "-I dummy",
 	};
 	int vlc_argc = sizeof(vlc_argv) / sizeof(*vlc_argv);
 	rctx->libvlc = libvlc_new(vlc_argc, vlc_argv);
@@ -64,6 +108,8 @@ create_window(RendererCtx *rctx)
 		goto exit;
 	}
 	rctx->player = libvlc_media_player_new(rctx->libvlc);
+	LOG("SDL window id: %u", get_sdl_window_id(rctx->sdl_window));
+	libvlc_media_player_set_xwindow(rctx->player, get_sdl_window_id(rctx->sdl_window));
 	return 1;
 exit:
 	return 0;

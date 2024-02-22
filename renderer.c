@@ -54,7 +54,8 @@
 #define MAX_AUDIO_FRAME_SIZE 192000
 #elif defined RENDER_VLC
 #include "vlc/vlc.h"
-#include <SDL2/SDL_mutex.h>
+// #include <SDL2/SDL_mutex.h>
+#include <SDL2/SDL_syswm.h>
 #endif   /// RENDER_FFMPEG
 
 typedef struct RendererCtx
