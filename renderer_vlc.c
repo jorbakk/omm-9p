@@ -35,6 +35,13 @@ create_sdl_window(RendererCtx *rctx)
 		LOG("SDL: could not create window");
 		return -1;
 	}
+	if (rctx->sdl_renderer == nil) {
+		// create a 2D rendering context for the SDL_Window
+		rctx->sdl_renderer = SDL_CreateRenderer(
+			rctx->sdl_window,
+			-1,
+			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+	}
 	return 0;
 }
 
@@ -82,7 +89,9 @@ close_window(RendererCtx *rctx)
 void
 blank_window(RendererCtx *rctx)
 {
-	(void)rctx;
+	SDL_SetRenderDrawColor(rctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+	SDL_RenderClear(rctx->sdl_renderer);
+	SDL_RenderPresent(rctx->sdl_renderer);
 }
 
 
