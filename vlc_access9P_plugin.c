@@ -72,13 +72,12 @@ Close(vlc_object_t *obj)
 	stream_t *p_access = (stream_t *) obj;
 	access_sys_t *p_sys = p_access->p_sys;
 	msg_Info(p_access, "closing %s ...", p_sys->url);
-	// msg_Info(p_access, "closing 9P connection for %s ...", p_sys->url);
-	// close_9pconnection(p_access);
+	close_9pconnection(p_access);
 	/* Free internal state */
 	// msg_Info(p_access, "freeing sys->url ...");
 	// free(p_sys->url);
 	// p_sys->url = NULL;
-	msg_Info(p_access, "freeing sys ...");
+	// msg_Info(p_access, "freeing sys ...");
 	free(p_sys);
 	msg_Info(p_access, "closed.");
 }
@@ -244,12 +243,12 @@ static void
 close_9pconnection(stream_t *p_access)
 {
 	access_sys_t *p_sys = p_access->p_sys;
+	if (p_sys->fileserverfid) {
+		ixp_close(p_sys->fileserverfid);
+	}
 	if (p_sys->isfile) {
 		msg_Info(p_access, "input is a file, nothing to do");
 	} else {
 		ixp_unmount(p_sys->client);
-	}
-	if (p_sys->fileserverfid) {
-		ixp_close(p_sys->fileserverfid);
 	}
 }
