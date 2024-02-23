@@ -54,19 +54,15 @@ CFLAGS      += -D$(RENDER_BACK)
 export $(CPATH)
 export $(LIBRARY_PATH)
 ## If -rpath is not used as a linker flag, LD_RUN_PATH is honored (we use -rpath for $(B))
-# export $(LD_RUN_PATH)
+## ... sometimes it needs to be exported, sometimes not ...
+export $(LD_RUN_PATH)
 
 .PHONY: clean sloc transponder.zip
 
+libixp_url = https://github.com/0intro/libixp.git
+
 $(EXT)/%: $(B)
 	cd $(EXT) && git clone $($*_url)
-
-$(P)/%.make: # $(EXT)/%
-	cd $(EXT)/$* && make # CFLAGS=-fPIC
-	cd $(EXT)/$* && make PREFIX=$(WD)/$(SYS) install && make clean
-	touch $@
-
-libixp_url = https://github.com/0intro/libixp.git
 
 DVBOBJS = \
 $(B)/dvb.o \
@@ -86,6 +82,14 @@ $(B)/Dvr.o \
 $(B)/TransportStream.o \
 $(B)/ElementaryStream.o \
 $(B)/TransponderData.o
+
+LIBIXPCFLAGS = -Wno-parentheses -Wno-comment # -Wno-macro-redefined
+
+LIBIXPSRCS = client.c convert.c error.c map.c message.c request.c \
+rpc.c server.c socket.c srv_util.c thread.c timer.c transport.c util.c
+
+LIBIXPOBJS = client.o convert.o error.o map.o message.o request.o \
+rpc.o server.o socket.o srv_util.o thread.o timer.o transport.o util.o
 
 $(B)/%.o: $(DVB)/%.cpp
 	$(CXX) -c -o $@ -I$(B) $(POCOCFLAGS) $(CPPFLAGS) -fPIC $(DVBCXXFLAGS) $<
@@ -109,8 +113,14 @@ $(B)/render: render.c
 $(B)/ommserve: server.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $(B)/ommserve $< $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb -lm
 
-$(B)/ommcontrol: control.c
-	$(CC) -o $@ $< $(CFLAGS) $(LDFLAGS) -L$(SYS)/lib -lixp
+$(SYS)/lib/libixp.a:
+	cd ext/libixp/lib/libixp && $(CC) -I../../include -fPIC -g -D__DEBUG__ $(LIBIXPCFLAGS) -c $(LIBIXPSRCS)
+	cd ext/libixp/lib/libixp && ar rcs libixp.a $(LIBIXPOBJS)
+	cp ext/libixp/include/ixp.h $(SYS)/include
+	mv ext/libixp/lib/libixp/libixp.a $@
+
+$(B)/ommcontrol: control.c $(B) $(SYS)/lib/libixp.a
+	$(CC) -o $@ $< -g -D__DEBUG__ -I$(SYS)/include -L$(SYS)/lib -lixp
 
 $(B)/resgen: $(B)/resgen.o
 	$(CXX) -o $(B)/resgen $< $(POCOLIBS) -lm
@@ -125,18 +135,20 @@ $(B)/libommdvb.so: $(DVB)/TransponderData.h $(DVBOBJS)
 	# $(CXX) -static -o $@ $(DVBOBJS) $(DVBLIBS) -lm
 
 $(B)/tunedvbcpp: $(B)/TuneDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
-	$(CXX) -o $(B)/tunedvbcpp $< -Wl,--copy-dt-needed-entries $(DVBLIBS) -L$(B) -lommdvb -lm
+	$(CXX) -o $(B)/tunedvbcpp $< $(DVBLIBS) -L$(B) -lommdvb -lm
+# $(CXX) -o $(B)/tunedvbcpp $< -Wl,--copy-dt-needed-entries $(DVBLIBS) -L$(B) -lommdvb -lm
 
 $(B)/scandvbcpp: $(B)/ScanDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
-	$(CXX) -o $(B)/scandvbcpp $< -Wl,--copy-dt-needed-entries $(DVBLIBS) -L$(B) -lommdvb -lm
+	$(CXX) -o $(B)/scandvbcpp $< $(DVBLIBS) -L$(B) -lommdvb -lm
+# $(CXX) -o $(B)/scandvbcpp $< -Wl,--copy-dt-needed-entries $(DVBLIBS) -L$(B) -lommdvb -lm
 
 $(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -L$(B) -lommdvb -lm
 
-$(B)/libvlc_access9P_plugin.so: vlc_access9P_plugin.c $(P)/libixp.make
+$(B)/libvlc_access9P_plugin.so: vlc_access9P_plugin.c $(SYS)/lib/libixp.a
 	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
 
-$(B)/libvlc_control9P_plugin.so: vlc_control9P_plugin.c $(P)/libixp.make
+$(B)/libvlc_control9P_plugin.so: vlc_control9P_plugin.c $(SYS)/lib/libixp.a
 	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
 
 sloc:
