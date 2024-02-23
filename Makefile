@@ -4,15 +4,11 @@ RELEASE      = 0
 RENDER_BACK  = RENDER_VLC
 
 WD           = $(shell pwd)
-# B            = $(WD)/build
-# EXT          = $(WD)/ext
-SYS          = $(WD)/sys
-# P            = $(SYS)/pkg
-# DVB          = $(WD)/dvb
+# SYS          = $(WD)/sys
+SYS          = sys
 B            = build
 DVB          = dvb
 EXT          = ext
-# SYS          = sys
 P            = $(SYS)/pkg
 
 9PLIBS       = -l9 -l9p -l9pclient -lthread -lsec -lmp -lauth -lbio
@@ -67,7 +63,7 @@ $(EXT)/%: $(B)
 
 $(P)/%.make: # $(EXT)/%
 	cd $(EXT)/$* && make # CFLAGS=-fPIC
-	cd $(EXT)/$* && make PREFIX=$(SYS) install && make clean
+	cd $(EXT)/$* && make PREFIX=$(WD)/$(SYS) install && make clean
 	touch $@
 
 libixp_url = https://github.com/0intro/libixp.git
@@ -101,6 +97,7 @@ $(B):
 
 clean:
 	rm -rf $(B)
+	rm -f $(SYS)/bin/* $(SYS)/lib/* $(SYS)/pkg/*
 
 $(B)/ommrender: renderer.c renderer_ffmpeg.c renderer_vlc.c
 	$(CC) -o $@ $< $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
