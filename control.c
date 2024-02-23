@@ -11,8 +11,15 @@
 #define fatal(...) ixp_eprint("ixpc: fatal: " __VA_ARGS__); \
 
 static IxpClient *serve, *render;
-static char *serve_addr = "tcp!127.0.0.1!2001";
-static char *render_addr = "tcp!127.0.0.1!2002";
+/// Set the IP address of the omm servers via environment variable
+static char *omm_ip_envar = "OMM_ADDRESS";
+/// Default IP address of omm servers
+static char *omm_ip = "127.0.0.1";
+static int serve_port = 2001;
+static int render_port = 2002;
+/// FIXME server and renderer addresses should be dynamic arrays
+static char serve_addr[48] = {0};
+static char render_addr[48] = {0};
 
 
 static int
@@ -177,6 +184,10 @@ main(int argc, char *argv[]) {
 	char *cmd;
 	struct exectab *tab;
 	int ret = 1;
+	char *oe = getenv(omm_ip_envar);
+	if (oe) omm_ip = oe;
+	sprintf(serve_addr, "tcp!%s!%d", omm_ip, serve_port);
+	sprintf(render_addr, "tcp!%s!%d", omm_ip, render_port);
 	serve = ixp_mount(serve_addr);
 	if(serve == NULL) {
 		fatal("ommserve not available, %s\n", ixp_errbuf());
