@@ -94,7 +94,7 @@ $(B)/TransponderData.o
 $(B)/%.o: $(DVB)/%.cpp
 	$(CXX) -c -o $@ -I$(B) $(POCOCFLAGS) $(CPPFLAGS) -fPIC $(DVBCXXFLAGS) $<
 
-all: cscope.out $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_access9P_plugin.so $(B)/libvlc_control9P_plugin.so
+all: cscope.out $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_access9P_plugin.so $(B)/libvlc_control9P_plugin.so $(B)/ommcontrol
 
 $(B):
 	mkdir -p $(B) $(EXT) $(SYS) $(P)
@@ -111,6 +111,9 @@ $(B)/render: render.c
 
 $(B)/ommserve: server.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $(B)/ommserve $< $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb -lm
+
+$(B)/ommcontrol: control.c
+	$(CC) -o $@ $< $(CFLAGS) $(LDFLAGS) -L$(SYS)/lib -lixp
 
 $(B)/resgen: $(B)/resgen.o
 	$(CXX) -o $(B)/resgen $< $(POCOLIBS) -lm

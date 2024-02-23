@@ -535,6 +535,14 @@ start_server(RendererCtx *rctx)
 
 
 void
+stop_server(RendererCtx *rctx)
+{
+	reset_filectx(rctx);
+	threadexitsall("");
+}
+
+
+void
 state_stop(RendererCtx *rctx)
 {
 	blank_window(rctx);
@@ -555,14 +563,17 @@ void
 state_exit(RendererCtx *rctx)
 {
 	rctx->quit = 1;
-	reset_filectx(rctx);
-	threadexitsall("");
+	stop_server(rctx);
 }
 
 
 void
 cmd_set(RendererCtx *rctx, char *arg, int argn)
 {
+	if (argn == 0) {
+		LOG("set needs an argument, ignoring");
+		return;
+	}
 	setstr(&rctx->url, arg, argn);
 	seturl(rctx, rctx->url);
 }
