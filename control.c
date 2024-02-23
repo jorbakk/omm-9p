@@ -11,6 +11,8 @@
 #define fatal(...) ixp_eprint("ixpc: fatal: " __VA_ARGS__); \
 
 static IxpClient *serve, *render;
+static char *serve_addr = "tcp!127.0.0.1!2001";
+static char *render_addr = "tcp!127.0.0.1!2002";
 
 
 static int
@@ -101,100 +103,60 @@ cleanup:
 }
 
 
+void
+write_buf(IxpCFid *fid, char *buf, int len)
+{
+	/// FIXME ixp_write() seems to write even though count == 0, 
+	///       ... also, we must write one more byte ...
+	len++;
+	int pos = 0, count = 0;
+	while (pos < len && (count = ixp_write(fid, buf + pos, len - pos)) > 0) {
+		pos += count;
+	}
+}
+
+
+int
+write_ctl_cmdbuf(char *buf)
+{
+	char *file = "/ctl";
+	IxpCFid *fid = ixp_open(render, file, P9_OWRITE);
+	if(fid == NULL) {
+		fprintf(stderr, "failed to open ommrender ctl file: %s\n", ixp_errbuf());
+		return 1;
+	}
+	write_buf(fid, buf, strlen(buf));
+	ixp_close(fid);
+	return 0;
+}
+
+
 static int
 xset(int argc, char *argv[])
 {
-	IxpCFid *fid;
-	char *file;
 	char *arg;
-	int ret = 1;
-
-	file = "/ctl";
-	fid = ixp_open(render, file, P9_OWRITE);
-	if(fid == NULL) {
-		fprintf(stderr, "failed to open ommrender ctl file: %s\n", ixp_errbuf());
-		goto cleanup;
+	if (argc == 2) {
+		arg = argv[1];
 	}
-	// if (argc == 1) {
-		arg = "set 9p://tcp!127.0.0.1!2001/14/data";
-	// } else if (argc == 2) {
-		// arg = argv[1];
-	// }
-	// else {
-		// fprintf(stderr, "set requires max. one argument");
-		// goto cleanup;
-	// }
-	/// FIXME ixp_write() seems to write even though count == 0, 
-	///       ... also, we must write one byte more ...
-	// count = ixp_write(fid, arg, strlen(arg));
-	// if (count != strlen(arg)) {
-		// fprintf(stderr, "write error, count: %d, strlen(arg): %ld\n", count, strlen(arg));
-	// }
-	// ixp_write(fid, arg, strlen(arg) + 1);
-	// while ((count = ixp_write(fid, arg + pos, strlen(arg) - pos) + 1) > 0) {
-	int pos = 0, count = 0;
-	int len = strlen(arg) + 1;
-	while (pos < len && (count = ixp_write(fid, arg + pos, len - pos)) > 0) {
-		pos += count;
+	else {
+		fprintf(stderr, "usage: %s <media id>\n", argv[0]);
+		return 1;
 	}
-	ixp_close(fid);
-	ret = 0;
-cleanup:
-	return ret;
+	/// FIXME buf should be a dynamic string
+	char buf[64] = {0};
+	sprintf(buf, "%s 9p://%s/%s/data", argv[0], serve_addr, arg);
+	return write_ctl_cmdbuf(buf);
 }
 
 
 static int
-xplay(int argc, char *argv[])
+xnoparms(int argc, char *argv[])
 {
-	(void)argc; (void)argv;
-	IxpCFid *fid;
-	char *file, *cmd;
-	int ret = 1;
-
-	file = "/ctl";
-	cmd = "play";
-	fid = ixp_open(render, file, P9_OWRITE);
-	if(fid == NULL) {
-		fprintf(stderr, "failed to open ommrender ctl file: %s\n", ixp_errbuf());
-		goto cleanup;
+	if (argc >= 2) {
+		fprintf(stderr, "usage: %s\n", argv[0]);
+		return 1;
 	}
-	int pos = 0, count = 0;
-	int len = strlen(cmd) + 1;
-	while (pos < len && (count = ixp_write(fid, cmd + pos, len - pos)) > 0) {
-		pos += count;
-	}
-	ixp_close(fid);
-	ret = 0;
-cleanup:
-	return ret;
-}
-
-
-static int
-xstop(int argc, char *argv[])
-{
-	(void)argc; (void)argv;
-	IxpCFid *fid;
-	char *file, *cmd;
-	int ret = 1;
-
-	file = "/ctl";
-	cmd = "stop";
-	fid = ixp_open(render, file, P9_OWRITE);
-	if(fid == NULL) {
-		fprintf(stderr, "failed to open ommrender ctl file: %s\n", ixp_errbuf());
-		goto cleanup;
-	}
-	int pos = 0, count = 0;
-	int len = strlen(cmd) + 1;
-	while (pos < len && (count = ixp_write(fid, cmd + pos, len - pos)) > 0) {
-		pos += count;
-	}
-	ixp_close(fid);
-	ret = 0;
-cleanup:
-	return ret;
+	return write_ctl_cmdbuf(argv[0]);
 }
 
 
@@ -204,35 +166,29 @@ struct exectab {
 } etab[] = {
 	{"ls", xls},
 	{"set", xset},
-	{"play", xplay},
-	{"stop", xstop},
+	{"play", xnoparms},
+	{"stop", xnoparms},
 	{0, 0}
 };
 
 
 int
 main(int argc, char *argv[]) {
-	char *cmd, *serve_addr, *render_addr;
+	char *cmd;
 	struct exectab *tab;
 	int ret = 1;
-	serve_addr = "tcp!127.0.0.1!2001";
 	serve = ixp_mount(serve_addr);
 	if(serve == NULL) {
 		fatal("ommserve not available, %s\n", ixp_errbuf());
 	}
-	render_addr = "tcp!127.0.0.1!2002";
 	render = ixp_mount(render_addr);
 	if(render == NULL) {
 		fprintf(stderr, "ommrender not available, %s\n", ixp_errbuf());
 	}
 	if (argc == 1) {
 		cmd = "ls";
-	} else if (argc == 2) {
+	} else {
 		cmd = argv[1];
-	}
-	else {
-		fprintf(stderr, "usage: available commands are ls, set, play, stop ...\n");
-		goto cleanup;
 	}
 	for(tab = etab; tab->cmd; tab++) {
 		if(strcmp(cmd, tab->cmd) == 0) break;
@@ -240,10 +196,9 @@ main(int argc, char *argv[]) {
 	if (tab->cmd == NULL) {
 		fprintf(stderr, "unknown command '%s'\n", cmd);
 	} else {
-		ret = tab->fn(argc, argv);
+		ret = tab->fn(argc - 1, argv + 1);
 	}
 	ret = 0;
-cleanup:
 	ixp_unmount(serve);
 	if (render) {
 		ixp_unmount(render);
