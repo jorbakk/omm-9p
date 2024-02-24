@@ -138,6 +138,32 @@ write_ctl_cmdbuf(char *buf)
 }
 
 
+int
+write_qry_cmdbuf(char *buf)
+{
+	char *file = "/query";
+	IxpCFid *fid = ixp_open(serve, file, P9_OWRITE);
+	if(fid == NULL) {
+		fprintf(stderr, "failed to open ommserver query file: %s\n", ixp_errbuf());
+		return 1;
+	}
+	write_buf(fid, buf, strlen(buf));
+	ixp_close(fid);
+	return 0;
+}
+
+
+static int
+xnoparms(int argc, char *argv[])
+{
+	if (argc >= 2) {
+		fprintf(stderr, "usage: %s\n", argv[0]);
+		return 1;
+	}
+	return write_ctl_cmdbuf(argv[0]);
+}
+
+
 static int
 xput(int argc, char *argv[])
 {
@@ -157,13 +183,22 @@ xput(int argc, char *argv[])
 
 
 static int
-xnoparms(int argc, char *argv[])
+xsearch(int argc, char *argv[])
 {
-	if (argc >= 2) {
-		fprintf(stderr, "usage: %s\n", argv[0]);
+	char *arg;
+	if (argc == 2) {
+		arg = argv[1];
+	}
+	else {
+		fprintf(stderr, "usage: %s <search string>\n", argv[0]);
 		return 1;
 	}
-	return write_ctl_cmdbuf(argv[0]);
+	/// FIXME buf should be a dynamic string
+	char buf[64] = {0};
+	for (int i = 0; arg[i]; i++) {
+		buf[i] = arg[i] == '*' ? '%' : arg[i]; 
+	}
+	return write_qry_cmdbuf(buf);
 }
 
 
@@ -175,6 +210,7 @@ struct exectab {
 	{"put", xput},
 	{"play", xnoparms},
 	{"stop", xnoparms},
+	{"search", xsearch},
 	{0, 0}
 };
 
