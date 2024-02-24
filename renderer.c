@@ -204,7 +204,7 @@ typedef struct Command
 #define NCMD 9
 typedef void (*cmd_func)(RendererCtx*, char*, int);
 
-void cmd_set(RendererCtx *rctx, char *arg, int argn);
+void cmd_put(RendererCtx *rctx, char *arg, int argn);
 void cmd_stop(RendererCtx *rctx, char *arg, int argn);
 void cmd_play(RendererCtx *rctx, char *arg, int argn);
 void cmd_pause(RendererCtx *rctx, char *arg, int argn);
@@ -239,7 +239,7 @@ enum
 
 static cmd_func cmds[NCMD] =
 {
-	cmd_set,
+	cmd_put,
 	nil,
 	nil,
 	nil,
@@ -252,7 +252,7 @@ static cmd_func cmds[NCMD] =
 
 static char* cmdstr[NCMD] =
 {
-	"set",
+	"put",
 	"stop",
 	"play",
 	"pause",
@@ -568,10 +568,10 @@ state_exit(RendererCtx *rctx)
 
 
 void
-cmd_set(RendererCtx *rctx, char *arg, int argn)
+cmd_put(RendererCtx *rctx, char *arg, int argn)
 {
 	if (argn == 0) {
-		LOG("set needs an argument, ignoring");
+		LOG("put needs an argument, ignoring");
 		return;
 	}
 	setstr(&rctx->url, arg, argn);

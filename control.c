@@ -139,7 +139,7 @@ write_ctl_cmdbuf(char *buf)
 
 
 static int
-xset(int argc, char *argv[])
+xput(int argc, char *argv[])
 {
 	char *arg;
 	if (argc == 2) {
@@ -172,7 +172,7 @@ struct exectab {
 	int (*fn)(int, char**);
 } etab[] = {
 	{"ls", xls},
-	{"set", xset},
+	{"put", xput},
 	{"play", xnoparms},
 	{"stop", xnoparms},
 	{0, 0}
