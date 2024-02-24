@@ -4,10 +4,10 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#include "SDL2/SDL.h"
-#include "SDL2/SDL_mutex.h"
+#include <SDL2/SDL.h>
+// #include <SDL2/SDL_mutex.h>
 
-#include "vlc/vlc.h"
+#include <vlc/vlc.h>
 
 #define WIDTH 640
 #define HEIGHT 480
