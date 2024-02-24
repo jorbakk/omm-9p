@@ -83,11 +83,9 @@ $(B)/TransportStream.o \
 $(B)/ElementaryStream.o \
 $(B)/TransponderData.o
 
-LIBIXPCFLAGS = -Wno-parentheses -Wno-comment # -Wno-macro-redefined
-
+LIBIXPCFLAGS = -Wno-parentheses -Wno-comment
 LIBIXPSRCS = client.c convert.c error.c map.c message.c request.c \
 rpc.c server.c socket.c srv_util.c thread.c timer.c transport.c util.c
-
 LIBIXPOBJS = client.o convert.o error.o map.o message.o request.o \
 rpc.o server.o socket.o srv_util.o thread.o timer.o transport.o util.o
 
@@ -102,6 +100,7 @@ $(B):
 clean:
 	rm -rf $(B)
 	rm -f $(SYS)/bin/* $(SYS)/lib/* $(SYS)/pkg/*
+	rm -f ext/libixp/lib/libixp/*.o
 
 $(B)/ommrender: renderer.c renderer_ffmpeg.c renderer_vlc.c
 	$(CC) -o $@ $< $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm

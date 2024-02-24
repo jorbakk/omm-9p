@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Jörg Bakker
+ * Copyright 2022, 2024 Jörg Bakker
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -20,13 +20,6 @@
  * SOFTWARE.
  */
 
-// TODO
-// 1. Fixes
-// ... currently none
-// 2. Queries
-// 3. Avoid 9pserve overhead
-// 4. Test multiple clients
-
 #include <u.h>
 #include <stdio.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
@@ -45,6 +38,7 @@
 #define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
 #define IDSTR_MAXLEN 10
 
+/// 9P server
 static char *srvname           = "ommserve";
 static char *uname             = "omm";
 static char *gname             = "omm";
@@ -52,17 +46,22 @@ static char *datafname         = "data";
 static char *metafname         = "meta";
 static char *queryfname        = "query";
 static char *queryres          = "query result";
+
+/// Database backend
 static sqlite3 *db             = NULL;
 static sqlite3_stmt *idstmt    = NULL;
 static sqlite3_stmt *countstmt = NULL;
 static sqlite3_stmt *metastmt  = NULL;
-static const char *idqry       = "SELECT id FROM obj LIMIT 1 OFFSET ?";
-static const char *countqry    = "SELECT COUNT(id) FROM obj LIMIT 1";
+static const char *idqry       = "SELECT id FROM obj WHERE title like ? LIMIT 1 OFFSET ?";
+static const char *countqry    = "SELECT COUNT(id) FROM obj WHERE title like ? LIMIT 1";
 static const char *metaqry     = "SELECT type, title, path FROM obj WHERE id = ? LIMIT 1";
 
 /* static int nrootdir = 4; */
-static int objcount = 0;
-static int nobjdir = 2;
+
+static const int nobjdir       = 2;
+/// FIXME the following static variables are mutated by all clients
+static int objcount            = 0;
+static char querystr[128]      = "%";     /// By default, no query filter, show all table entries
 
 enum
 {
@@ -182,16 +181,23 @@ static int
 rootgen(int i, Dir *d, void *v)
 {
 	(void)v;
+	sqlite3_bind_text(countstmt, 1, querystr, strlen(querystr), SQLITE_STATIC);
+	int ret = sqlite3_step(countstmt);
+	if (ret == SQLITE_ROW) {
+		objcount = sqlite3_column_int(countstmt, 0);
+		LOG("objcount: %d", objcount);
+	}
+	sqlite3_reset(countstmt);
 	if(i >= objcount + 1)
 		// End of root directory with objcount obj dirs and one query file
 		return -1;
 	if (i == 0) {
 		LOG("rootgen: query file");
 		dostat(qpath(Qquery, 0), nil, d);
-	}
-	else {
-		// SELECT id FROM obj LIMIT 1 OFFSET i
-		sqlite3_bind_int(idstmt, 1, i - 1);
+	} else {
+		// SELECT id FROM obj WHERE title like t LIMIT 1 OFFSET i
+		sqlite3_bind_text(idstmt, 1, querystr, strlen(querystr), SQLITE_STATIC);
+		sqlite3_bind_int(idstmt, 2, i - 1);
 		int ret = sqlite3_step(idstmt);
 		if (ret == SQLITE_ROW) {
 			int id = sqlite3_column_int(idstmt, 0);
@@ -408,8 +414,6 @@ srvwrite(Req *r)
 	/* vlong offset; */
 	vlong path;
 	long count;
-	char querystr[128];
-
 	path = r->fid->qid.path;
 	/* offset = r->ifcall.offset; */
 	count = r->ifcall.count;
@@ -500,11 +504,13 @@ opendb(char *dbfile)
 		closedb();
 		sysfatal("failed to prepare sql count statement");
 	}
+	sqlite3_bind_text(countstmt, 1, querystr, strlen(querystr), SQLITE_STATIC);
 	int ret = sqlite3_step(countstmt);
 	if (ret == SQLITE_ROW) {
 		objcount = sqlite3_column_int(countstmt, 0);
-		LOG("select of objcount returned: %d", objcount);
+		LOG("objcount: %d", objcount);
 	}
+	sqlite3_reset(countstmt);
 	if (sqlite3_prepare_v2(db, metaqry, -1, &metastmt, NULL)) {
 		closedb();
 		sysfatal("failed to prepare sql obj meta data statement");
