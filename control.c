@@ -22,10 +22,20 @@ static char serve_addr[48] = {0};
 static char render_addr[48] = {0};
 
 
+int write_qry_cmdbuf(char *buf);
+
 static int
 xls(int argc, char *argv[])
 {
-	(void)argc; (void)argv;
+	if (argc == 1) {
+		write_qry_cmdbuf("%");
+	} else if (argc == 2) {
+		write_qry_cmdbuf(argv[1]);
+	} else if (argc > 2) {
+		fprintf(stderr, "usage: %s <search pattern>\n", argv[0]);
+		return 1;
+	}
+
 	IxpMsg m;
 	Stat *stat;
 	IxpCFid *fid;
@@ -182,26 +192,6 @@ xput(int argc, char *argv[])
 }
 
 
-static int
-xsearch(int argc, char *argv[])
-{
-	char *arg;
-	if (argc == 2) {
-		arg = argv[1];
-	}
-	else {
-		fprintf(stderr, "usage: %s <search string>\n", argv[0]);
-		return 1;
-	}
-	/// FIXME buf should be a dynamic string
-	char buf[64] = {0};
-	for (int i = 0; arg[i]; i++) {
-		buf[i] = arg[i] == '*' ? '%' : arg[i]; 
-	}
-	return write_qry_cmdbuf(buf);
-}
-
-
 struct exectab {
 	char *cmd;
 	int (*fn)(int, char**);
@@ -210,7 +200,6 @@ struct exectab {
 	{"put", xput},
 	{"play", xnoparms},
 	{"stop", xnoparms},
-	{"search", xsearch},
 	{0, 0}
 };
 
