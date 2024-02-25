@@ -60,19 +60,20 @@ static sqlite3_stmt *countstmt  = NULL;
 static sqlite3_stmt *metastmt   = NULL;
 static sqlite3_stmt *favaddstmt = NULL;
 static sqlite3_stmt *favdelstmt = NULL;
-static const char *idqry        = "SELECT id FROM obj WHERE title like ? LIMIT 1 OFFSET ?";
-static const char *countqry     = "SELECT COUNT(id) FROM obj WHERE title like ? LIMIT 1";
+static const char *idqry        = "SELECT id FROM obj WHERE title like '%%%s%%' LIMIT 1 OFFSET %d";
+static const char *favidqry     = "SELECT obj.id FROM obj, fav WHERE title like '%%%s%%' AND obj.id = fav.objid AND fav.listid = '%s' LIMIT 1 OFFSET %d";
+static const char *countqry     = "SELECT COUNT(id) FROM obj WHERE title like '%%%s%%' LIMIT 1";
+static const char *favcountqry  = "SELECT COUNT(obj.id) FROM obj, fav WHERE title like '%%%s%%' AND obj.id = fav.objid AND fav.listid = '%s' LIMIT 1";
 static const char *metaqry      = "SELECT type, title, path FROM obj WHERE id = ? LIMIT 1";
 static const char *favaddqry    = "INSERT INTO fav VALUES (?,?,?,?)";
 static const char *favdelqry    = "DELETE FROM fav WHERE listid = ? AND objid = ?";
 
-/* static int nrootdir = 4; */
-
 static const int nobjdir        = 2;
 /// FIXME the following static variables are mutated by all clients
 static int objcount             = 0;
-static char querystr[MAX_QRY]   = "%";   /// By default, no query filter, show all table entries
+static char querystr[MAX_QRY]   = "1";   /// By default, no query filter, show all table entries
 static char favid[FAVID_MAXLEN] = "";    /// By default, no fav list, show all table entries
+static char qrootstr[MAX_QRY]   = "";
 static char ctlstr[MAX_CTL]     = "";
 
 enum
@@ -202,7 +203,16 @@ rootgen(int i, Dir *d, void *v)
 {
 	(void)v;
 	int objoff = 2;
-	sqlite3_bind_text(countstmt, 1, querystr, strlen(querystr), SQLITE_STATIC);
+	if (strlen(favid)) {
+		sprintf(qrootstr, favcountqry, querystr, favid);
+	} else {
+		sprintf(qrootstr, countqry, querystr);
+	}
+	LOG("count query: %s", qrootstr);
+	if (sqlite3_prepare_v2(db, qrootstr, -1, &countstmt, NULL)) {
+		closedb();
+		sysfatal("failed to prepare sql count statement");
+	}
 	int ret = sqlite3_step(countstmt);
 	if (ret == SQLITE_ROW) {
 		objcount = sqlite3_column_int(countstmt, 0);
@@ -220,9 +230,16 @@ rootgen(int i, Dir *d, void *v)
 		LOG("rootgen: query file");
 		dostat(qpath(Qquery, i), nil, d);
 	} else {
-		// SELECT id FROM obj WHERE title like t LIMIT 1 OFFSET i
-		sqlite3_bind_text(idstmt, 1, querystr, strlen(querystr), SQLITE_STATIC);
-		sqlite3_bind_int(idstmt, 2, i - objoff);
+		if (strlen(favid)) {
+			sprintf(qrootstr, favidqry, querystr, favid, i - objoff);
+		} else {
+			sprintf(qrootstr, idqry, querystr, i - objoff);
+		}
+		LOG("id query: %s", qrootstr);
+		if (sqlite3_prepare_v2(db, qrootstr, -1, &idstmt, NULL)) {
+			closedb();
+			sysfatal("failed to prepare sql id query statement");
+		}
 		int ret = sqlite3_step(idstmt);
 		if (ret == SQLITE_ROW) {
 			int id = sqlite3_column_int(idstmt, 0);
@@ -534,15 +551,12 @@ opendb(char *dbfile)
 	if (sqlite3_open(dbfile, &db)) {
 		sysfatal("failed to open db");
 	}
-	if (sqlite3_prepare_v2(db, idqry, -1, &idstmt, NULL)) {
-		closedb();
-		sysfatal("failed to prepare sql statement");
-	}
-	if (sqlite3_prepare_v2(db, countqry, -1, &countstmt, NULL)) {
+	sprintf(qrootstr, countqry, querystr);
+	LOG("count query: %s", qrootstr);
+	if (sqlite3_prepare_v2(db, qrootstr, -1, &countstmt, NULL)) {
 		closedb();
 		sysfatal("failed to prepare sql count statement");
 	}
-	sqlite3_bind_text(countstmt, 1, querystr, strlen(querystr), SQLITE_STATIC);
 	int ret = sqlite3_step(countstmt);
 	if (ret == SQLITE_ROW) {
 		objcount = sqlite3_column_int(countstmt, 0);

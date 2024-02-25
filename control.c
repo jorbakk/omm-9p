@@ -39,7 +39,7 @@ static int
 xls(int argc, char *argv[])
 {
 	if (argc == 1) {
-		write_sqry_cmdbuf("%");
+		write_sqry_cmdbuf("");
 	} else if (argc == 2) {
 		write_sqry_cmdbuf(argv[1]);
 	} else if (argc > 2) {
@@ -223,6 +223,8 @@ xfav(int argc, char *argv[])
 		sprintf(buf, "%s %s %s %s", argv[0], argv[1], argv[2], argv[3]);
 	} else if (argc == 3) {
 		sprintf(buf, "%s %s %s", argv[0], argv[1], argv[2]);
+	} else if (argc == 2) {
+		sprintf(buf, "%s %s", argv[0], argv[1]);
 	} else {
 		fprintf(stderr, "usage:\n  %s add|del <favlist id> <media id>\n  %s set <favlist id>\n",
 		  argv[0], argv[0]);
