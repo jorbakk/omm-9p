@@ -58,9 +58,13 @@ static sqlite3 *db              = NULL;
 static sqlite3_stmt *idstmt     = NULL;
 static sqlite3_stmt *countstmt  = NULL;
 static sqlite3_stmt *metastmt   = NULL;
+static sqlite3_stmt *favaddstmt = NULL;
+static sqlite3_stmt *favdelstmt = NULL;
 static const char *idqry        = "SELECT id FROM obj WHERE title like ? LIMIT 1 OFFSET ?";
 static const char *countqry     = "SELECT COUNT(id) FROM obj WHERE title like ? LIMIT 1";
 static const char *metaqry      = "SELECT type, title, path FROM obj WHERE id = ? LIMIT 1";
+static const char *favaddqry    = "INSERT INTO fav VALUES (?,?,?,?)";
+static const char *favdelqry    = "DELETE FROM fav WHERE listid = ? AND objid = ?";
 
 /* static int nrootdir = 4; */
 
@@ -549,6 +553,14 @@ opendb(char *dbfile)
 		closedb();
 		sysfatal("failed to prepare sql obj meta data statement");
 	}
+	if (sqlite3_prepare_v2(db, favaddqry, -1, &favaddstmt, NULL)) {
+		closedb();
+		sysfatal("failed to prepare fav insert statement");
+	}
+	if (sqlite3_prepare_v2(db, favdelqry, -1, &favdelstmt, NULL)) {
+		closedb();
+		sysfatal("failed to prepare fav delete statement");
+	}
 }
 
 
@@ -597,6 +609,20 @@ parse_args(int *argc, char *argv[MAX_ARGC], char *cmd)
 }
 
 
+bool
+exec_stmt(sqlite3 *db, const char *stmt)
+{
+	char *err_msg = 0;
+    int rc = sqlite3_exec(db, stmt, 0, 0, &err_msg);
+    if (rc != SQLITE_OK ) {
+        LOG("SQL error %s in statement: %s", err_msg, stmt);
+        sqlite3_free(err_msg);
+        return false;
+    }
+    return true;
+}
+
+
 static int
 xfav(int argc, char *argv[])
 {
@@ -607,10 +633,31 @@ xfav(int argc, char *argv[])
 	if (argc == 4) {
 		if (strcmp(argv[1], "add") == 0) {
 			LOG("adding %s to favlist: %s", argv[3], argv[2]);
+			/// INSERT INTO fav VALUES (?,?,?,?)
+			/// TODO generate a fav entry id
+			sqlite3_bind_int(favaddstmt, 1, 0);
+			/// TODO user specific fav lists
+			sqlite3_bind_text(favaddstmt, 2, NULL, 0, SQLITE_STATIC);
+			sqlite3_bind_text(favaddstmt, 3, argv[2], strlen(argv[2]), SQLITE_STATIC);
+			sqlite3_bind_text(favaddstmt, 4, argv[3], strlen(argv[3]), SQLITE_STATIC);
+			int rc = sqlite3_step(favaddstmt);
+			if (rc != SQLITE_DONE) {
+				LOG("failed to add item to fav list: %d", rc);
+			}
+			sqlite3_reset(favaddstmt);
 		} else if (strcmp(argv[1], "del") == 0) {
+			/// DELETE FROM fav WHERE listid = ? AND objid = ?
 			LOG("del %s from favlist: %s", argv[3], argv[2]);
+			sqlite3_bind_text(favdelstmt, 1, argv[2], strlen(argv[2]), SQLITE_STATIC);
+			sqlite3_bind_text(favdelstmt, 2, argv[3], strlen(argv[3]), SQLITE_STATIC);
+			sqlite3_step(favdelstmt);
+			int rc = sqlite3_step(favdelstmt);
+			if (rc != SQLITE_DONE) {
+				LOG("failed to delete item to fav list: %d", rc);
+			}
+			sqlite3_reset(favdelstmt);
 		} else {
-			LOG("fav command unknown, skipping.");
+			LOG("fav subcmd unknown, skipping.");
 		}
 		return 0;
 	} else if (argc == 3) {
@@ -618,7 +665,15 @@ xfav(int argc, char *argv[])
 			LOG("setting favlist to: %s", argv[2]);
 			memcpy(favid, argv[2], strlen(argv[2]));
 		} else {
-			LOG("fav command unknown, skipping.");
+			LOG("fav subcmd unknown, skipping.");
+		}
+		return 0;
+	} else if (argc == 2) {
+		if (strcmp(argv[1], "set") == 0) {
+			LOG("setting favlist to none");
+			memset(favid, 0, FAVID_MAXLEN);
+		} else {
+			LOG("fav subcmd unknown, skipping.");
 		}
 		return 0;
 	}

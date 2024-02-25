@@ -32,15 +32,18 @@ const char *drpobj_qry        =      \
 
 /// Table fav
 /// Length of fav.userid should be LOGIN_NAME_MAX (POSIX)
+/// id is not primary key, currently id is always set to 0
 const char *crtfav_qry        =      \
 "CREATE TABLE IF NOT EXISTS fav ("   \
-"id     INTEGER(8) PRIMARY KEY, "    \
+"id     INTEGER(8), "                \
 "userid TEXT(32), "                  \
 "listid TEXT(16), "                  \
 "objid  INTEGER(8) "                 \
 ")";
+#if 0
 const char *idxfav_qry        =      \
 "CREATE INDEX favid_idx ON fav(id)";
+#endif
 const char *drpfav_qry        =      \
 "DROP TABLE IF EXISTS fav";
 
@@ -73,6 +76,7 @@ char *img_types[] = {
 
 int objid = 0;
 
+
 bool
 exec_stmt(sqlite3 *db, const char *stmt)
 {
@@ -102,7 +106,7 @@ create_tables(sqlite3 *db)
 	if (!exec_stmt(db, crtobj_qry)) return false;
 	if (!exec_stmt(db, idxobj_qry)) return false;
 	if (!exec_stmt(db, crtfav_qry)) return false;
-	if (!exec_stmt(db, idxfav_qry)) return false;
+	// if (!exec_stmt(db, idxfav_qry)) return false;
 	return true;
 }
 
