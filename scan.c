@@ -43,6 +43,27 @@ int objid = 0;
 
 #define LOG(...) {fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");};
 
+enum {
+	TYPE_NONE = 0, TYPE_AUDIO, TYPE_VIDEO, TYPE_IMG, TYPE_COUNT,
+};
+
+char *media_types[] = {
+	"-", "audio", "video", "img", NULL,
+};
+
+char *audio_types[] = {
+	"mp3", "wma", "ogg", "wav", NULL,
+};
+
+char *video_types[] = {
+	"mp4", "mpeg", "mpg", "avi", "wmv", "flv", "opus", NULL,
+};
+
+char *img_types[] = {
+	"jpg", "jpeg", "png", "gif", NULL,
+};
+
+
 bool
 exec_stmt(sqlite3 *db, const char *stmt)
 {
@@ -78,18 +99,39 @@ create_tables(sqlite3 *db)
 
 
 int
+media_type(char *fpath)
+{
+	char *ext = strrchr(fpath, '.') + 1;
+	if (!ext) return TYPE_NONE;
+	for (char **t = audio_types; *t; ++t) {
+		if (strcmp(ext, *t) == 0) return TYPE_AUDIO;
+	}
+	for (char **t = video_types; *t; ++t) {
+		if (strcmp(ext, *t) == 0) return TYPE_VIDEO;
+	}
+	for (char **t = img_types; *t; ++t) {
+		if (strcmp(ext, *t) == 0) return TYPE_IMG;
+	}
+	return TYPE_NONE;
+}
+
+
+int
 tag(sqlite3 *db, libvlc_instance_t *libvlc, char *fpath)
 {
     libvlc_media_t* media = libvlc_media_new_path(libvlc, fpath);
     libvlc_media_parse(media);
     char *title = libvlc_media_get_meta(media, libvlc_meta_Title);
+    /// FIXME better insert NULL, not "" into the database
     if (!title) title = "";
     char *artist = libvlc_media_get_meta(media, libvlc_meta_Artist);
     if (!artist) artist = "";
+    char *mtype = media_types[media_type(fpath)];
+    if (!mtype) mtype = "";
     objid++;
 	sqlite3_bind_int(insstmt,  1, objid);
 	sqlite3_bind_text(insstmt, 2, "file",  strlen("file"),  SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 3, "audio", strlen("audio"), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 3, mtype,   strlen(mtype),   SQLITE_STATIC);
 	sqlite3_bind_text(insstmt, 4, artist,  strlen(artist),  SQLITE_STATIC);
 	sqlite3_bind_text(insstmt, 5, title,   strlen(title),   SQLITE_STATIC);
 	sqlite3_bind_text(insstmt, 6, fpath,   strlen(fpath),   SQLITE_STATIC);
