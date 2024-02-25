@@ -122,7 +122,7 @@ $(B)/ommcontrol: control.c $(B) $(SYS)/lib/libixp.a
 	$(CC) -o $@ $< -g -D__DEBUG__ -I$(SYS)/include -L$(SYS)/lib -lixp
 
 $(B)/ommscan: scan.c
-	$(CC) -o $@ $(CFLAGS) $(VLCFLAGS) $(LDFLAGS) $< $(VLCLIBS) $(SQLITE3LIBS) -lm
+	$(CC) -o $@ -Wno-deprecated-declarations $(CFLAGS) $(VLCFLAGS) $(LDFLAGS) $< $(VLCLIBS) $(SQLITE3LIBS) -lm
 
 $(B)/resgen: $(B)/resgen.o
 	$(CXX) -o $(B)/resgen $< $(POCOLIBS) -lm

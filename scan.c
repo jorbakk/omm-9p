@@ -5,12 +5,14 @@
 #include <string.h>
 #include <dirent.h>
 #include <limits.h>
+#include <sys/stat.h>
 
 #include <vlc/vlc.h>
 #include <sqlite3.h>
 
 
 char *basedir                  = NULL;
+libvlc_instance_t *libvlc      = NULL;
 sqlite3 *db                    = NULL;
 const char *crtobj_qry         =     \
 "CREATE TABLE IF NOT EXISTS obj ("   \
@@ -101,6 +103,8 @@ create_tables(sqlite3 *db)
 int
 media_type(char *fpath)
 {
+	/// FIXME a real hash map could be faster here,
+	/// or better write an ffmpeg backend
 	char *ext = strrchr(fpath, '.') + 1;
 	if (!ext) return TYPE_NONE;
 	for (char **t = audio_types; *t; ++t) {
@@ -117,29 +121,64 @@ media_type(char *fpath)
 
 
 int
-tag(sqlite3 *db, libvlc_instance_t *libvlc, char *fpath)
+tag(char *fpath)
 {
-    libvlc_media_t* media = libvlc_media_new_path(libvlc, fpath);
-    libvlc_media_parse(media);
-    char *title = libvlc_media_get_meta(media, libvlc_meta_Title);
-    /// FIXME better insert NULL, not "" into the database
-    if (!title) title = "";
-    char *artist = libvlc_media_get_meta(media, libvlc_meta_Artist);
-    if (!artist) artist = "";
-    char *mtype = media_types[media_type(fpath)];
-    if (!mtype) mtype = "";
-    objid++;
-	sqlite3_bind_int(insstmt,  1, objid);
-	sqlite3_bind_text(insstmt, 2, "file",  strlen("file"),  SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 3, mtype,   strlen(mtype),   SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 4, artist,  strlen(artist),  SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 5, title,   strlen(title),   SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 6, fpath,   strlen(fpath),   SQLITE_STATIC);
+	libvlc_media_t *media = libvlc_media_new_path(libvlc, fpath);
+	if (!media) {
+		LOG("failed to parse: %s, skipping", fpath);
+	}
+	libvlc_media_parse(media);
+	char *title = libvlc_media_get_meta(media, libvlc_meta_Title);
+	/// FIXME better insert NULL, not "" into the database
+	if (!title) title = "";
+	char *artist = libvlc_media_get_meta(media, libvlc_meta_Artist);
+	if (!artist) artist = "";
+	char *mtype = media_types[media_type(fpath)];
+	if (!mtype) mtype = "";
+	objid++;
+	sqlite3_bind_int(insstmt, 1, objid);
+	sqlite3_bind_text(insstmt, 2, "file", strlen("file"), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 3, mtype, strlen(mtype), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 4, artist, strlen(artist), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 5, title, strlen(title), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 6, fpath, strlen(fpath), SQLITE_STATIC);
 	sqlite3_step(insstmt);
 	sqlite3_reset(insstmt);
-    LOG("title: %s", title);
-    libvlc_media_release(media);
-    return 0;
+	LOG("title: %s", title);
+	libvlc_media_release(media);
+	return 0;
+}
+
+
+void
+scan(char *basedir)
+{
+	LOG("scanning dir: %s", basedir);
+	DIR *basedirfd = opendir(basedir);
+	if (!basedirfd) {
+		LOG("failed to open dir %s", basedir);
+		return;
+	}
+    char fpath[PATH_MAX];
+	struct dirent *entryfd;
+	struct stat statbuf;
+	while ((entryfd = readdir(basedirfd))) {
+		if (entryfd->d_name[0] == '.') continue;
+		sprintf(fpath, "%s/%s", basedir, entryfd->d_name);
+		if (stat(fpath, &statbuf) == -1) continue;
+		switch (statbuf.st_mode & S_IFMT) {
+			case S_IFREG:
+				// LOG("tagging: %s", entryfd->d_name);
+				tag(fpath);
+				break;
+			case S_IFDIR:
+				LOG("DIR: %s", entryfd->d_name);
+				break;
+			default:
+				LOG("skipping: %s", entryfd->d_name);
+		}
+	}
+	closedir(basedirfd);
 }
 
 
@@ -151,7 +190,7 @@ main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	} 
 	basedir = argv[1];
-    libvlc_instance_t* libvlc = libvlc_new(0, NULL);
+    libvlc = libvlc_new(0, NULL);
     if (sqlite3_open(argv[2], &db)) {
     	LOG("failed to open db: %s", argv[2]);
     	return EXIT_FAILURE;
@@ -159,32 +198,8 @@ main(int argc, char *argv[])
 	drop_tables(db);
 	create_tables(db);
 	sqlite3_prepare_v2(db, ins_qry, -1, &insstmt, NULL);
-	LOG("scanning dir: %s", basedir);
-	DIR *basedirfd = opendir(basedir);
-	if (!basedirfd) {
-		LOG("failed to open dir %s", basedir);
-		return EXIT_FAILURE;
-	}
 	exec_stmt(db, "BEGIN TRANSACTION");
-    char fpath[PATH_MAX];
-	struct dirent *entryfd;
-	while ((entryfd = readdir(basedirfd))) {
-		if (entryfd->d_name[0] == '.') continue;
-		// LOG("tagging: %s", entryfd->d_name);
-		sprintf(fpath, "%s/%s", basedir, entryfd->d_name);
-		tag(db, libvlc, fpath);
-		// switch (entryfd->d_type) {
-			// case DT_REG:
-				// LOG("tagging: %s", entryfd->d_name);
-				// break;
-			// case DT_DIR:
-				// LOG("DIR: %s", entryfd->d_name);
-				// break;
-			// default:
-				// LOG("other: %s", entryfd->d_name);
-		// }
-	}
-	closedir(basedirfd);
+	scan(basedir);
 	exec_stmt(db, "COMMIT");
 	sqlite3_close(db);
 	libvlc_release(libvlc);
