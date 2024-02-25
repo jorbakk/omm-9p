@@ -23,6 +23,7 @@
 #include <u.h>
 #include <stdio.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
+#include <stdbool.h>
 #include <libc.h>
 #include <fcall.h>
 #include <thread.h>
@@ -37,35 +38,38 @@
 #define QTYPE(p) ((p) & 0xF)
 #define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
 #define IDSTR_MAXLEN 10
-#define MAX_QRY 128
-#define MAX_CTL 128
+#define FAVID_MAXLEN 128
+#define MAX_QRY      128
+#define MAX_CTL      128
+#define MAX_ARGC     32
 
 /// 9P server
-static char *srvname           = "ommserve";
-static char *uname             = "omm";
-static char *gname             = "omm";
-static char *datafname         = "data";
-static char *metafname         = "meta";
-static char *queryfname        = "query";
-// static char *queryres          = "query result";
-static char *ctlfname          = "ctl";
+static char *srvname            = "ommserve";
+static char *uname              = "omm";
+static char *gname              = "omm";
+static char *datafname          = "data";
+static char *metafname          = "meta";
+static char *queryfname         = "query";
+// static char *queryres           = "query result";
+static char *ctlfname           = "ctl";
 
 /// Database backend
-static sqlite3 *db             = NULL;
-static sqlite3_stmt *idstmt    = NULL;
-static sqlite3_stmt *countstmt = NULL;
-static sqlite3_stmt *metastmt  = NULL;
-static const char *idqry       = "SELECT id FROM obj WHERE title like ? LIMIT 1 OFFSET ?";
-static const char *countqry    = "SELECT COUNT(id) FROM obj WHERE title like ? LIMIT 1";
-static const char *metaqry     = "SELECT type, title, path FROM obj WHERE id = ? LIMIT 1";
+static sqlite3 *db              = NULL;
+static sqlite3_stmt *idstmt     = NULL;
+static sqlite3_stmt *countstmt  = NULL;
+static sqlite3_stmt *metastmt   = NULL;
+static const char *idqry        = "SELECT id FROM obj WHERE title like ? LIMIT 1 OFFSET ?";
+static const char *countqry     = "SELECT COUNT(id) FROM obj WHERE title like ? LIMIT 1";
+static const char *metaqry      = "SELECT type, title, path FROM obj WHERE id = ? LIMIT 1";
 
 /* static int nrootdir = 4; */
 
-static const int nobjdir       = 2;
+static const int nobjdir        = 2;
 /// FIXME the following static variables are mutated by all clients
-static int objcount            = 0;
-static char querystr[MAX_QRY]      = "%";     /// By default, no query filter, show all table entries
-static char ctlstr[MAX_CTL]        = "%";     /// By default, no query filter, show all table entries
+static int objcount             = 0;
+static char querystr[MAX_QRY]   = "%";   /// By default, no query filter, show all table entries
+static char favid[FAVID_MAXLEN] = "";    /// By default, no fav list, show all table entries
+static char ctlstr[MAX_CTL]     = "";
 
 enum
 {
@@ -105,6 +109,8 @@ typedef struct AuxObj
 } AuxObj;
 
 static void closedb(void);
+static int xfav(int argc, char *argv[]);
+static void parse_args(int *argc, char *argv[MAX_ARGC], char *cmd);
 
 static vlong
 qpath(int type, int obj)
@@ -445,6 +451,10 @@ srvwrite(Req *r)
 	case Qctl:
 		snprint(ctlstr, count, "%s", r->ifcall.data);
 		LOG("ctl: %s", ctlstr);
+		int argc = 0;
+		char *argv[MAX_ARGC] = {0};
+		parse_args(&argc, argv, ctlstr);
+		xfav(argc, argv);
 		break;
 	}
 	r->ofcall.count = count;
@@ -563,6 +573,59 @@ static void
 closedvb(void)
 {
 	dvb_close();
+}
+
+
+static void
+parse_args(int *argc, char *argv[MAX_ARGC], char *cmd)
+{
+	int len = strlen(cmd);
+	argv[0] = cmd;
+	*argc = 1;
+	char *del = cmd;
+	while (*argc < 5) {
+		del = strchr(del, ' ');
+		if (!del) break;
+		del++;
+		// LOG("argc: %d, argv: %s", *argc, del);
+		argv[*argc] = del;
+		(*argc)++;
+	}
+	for (int i = 0; i < len; ++i) {
+		if (cmd[i] == ' ') cmd[i] = '\0';
+	}
+}
+
+
+static int
+xfav(int argc, char *argv[])
+{
+	if (argc == 1 && strcmp(argv[0], "fav") != 0) {
+		LOG("fav command expected, skipping");
+		return 0;
+	}
+	if (argc == 4) {
+		if (strcmp(argv[1], "add") == 0) {
+			LOG("adding %s to favlist: %s", argv[3], argv[2]);
+		} else if (strcmp(argv[1], "del") == 0) {
+			LOG("del %s from favlist: %s", argv[3], argv[2]);
+		} else {
+			LOG("fav command unknown, skipping.");
+		}
+		return 0;
+	} else if (argc == 3) {
+		if (strcmp(argv[1], "set") == 0) {
+			LOG("setting favlist to: %s", argv[2]);
+			memcpy(favid, argv[2], strlen(argv[2]));
+		} else {
+			LOG("fav command unknown, skipping.");
+		}
+		return 0;
+	}
+	// LOG("argc: %d", argc);
+	// if (argc >= 2) LOG("cmd: %s, arg0: %s", argv[0], argv[1]);
+	LOG("suspicious command, skipping");
+	return 0;
 }
 
 
