@@ -92,7 +92,7 @@ rpc.o server.o socket.o srv_util.o thread.o timer.o transport.o util.o
 $(B)/%.o: $(DVB)/%.cpp
 	$(CXX) -c -o $@ -I$(B) $(POCOCFLAGS) $(CPPFLAGS) -fPIC $(DVBCXXFLAGS) $<
 
-all: cscope.out $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/ommcontrol $(B)/ommtag $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_access9P_plugin.so $(B)/libvlc_control9P_plugin.so
+all: cscope.out $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/ommcontrol $(B)/ommtag $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlcacc_plugin.so
 
 $(B):
 	mkdir -p $(B) $(EXT) $(SYS) $(P)
@@ -147,10 +147,7 @@ $(B)/scandvbcpp: $(B)/ScanDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
 $(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -L$(B) -lommdvb -lm
 
-$(B)/libvlc_access9P_plugin.so: vlc_access9P_plugin.c $(SYS)/lib/libixp.a
-	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
-
-$(B)/libvlc_control9P_plugin.so: vlc_control9P_plugin.c $(SYS)/lib/libixp.a
+$(B)/libvlcacc_plugin.so: vlcacc_plugin.c $(SYS)/lib/libixp.a
 	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)
 
 sloc:
