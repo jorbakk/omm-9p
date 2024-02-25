@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <ixp.h>
 
+/// Length of string: "tcp!ip!port"
+#define ADDR_MAX   (64)
 /// Length of string: "<objid>/meta"
 #define PATH_MAX   (128)
 /// Length of string: "put <mrl>"
@@ -25,8 +27,8 @@ static char *omm_ip = "127.0.0.1";
 static int serve_port = 2001;
 static int render_port = 2002;
 /// FIXME server and renderer addresses should be dynamic arrays
-static char serve_addr[64] = {0};
-static char render_addr[64] = {0};
+static char serve_addr[ADDR_MAX] = {0};
+static char render_addr[ADDR_MAX] = {0};
 
 
 int write_qry_cmdbuf(char *buf);

@@ -92,7 +92,7 @@ rpc.o server.o socket.o srv_util.o thread.o timer.o transport.o util.o
 $(B)/%.o: $(DVB)/%.cpp
 	$(CXX) -c -o $@ -I$(B) $(POCOCFLAGS) $(CPPFLAGS) -fPIC $(DVBCXXFLAGS) $<
 
-all: cscope.out $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/ommcontrol $(B)/ommtag $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlcacc_plugin.so
+all: cscope.out $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/ommcontrol $(B)/ommscan $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlcacc_plugin.so
 
 $(B):
 	mkdir -p $(B) $(EXT) $(SYS) $(P)
@@ -121,7 +121,7 @@ $(SYS)/lib/libixp.a:
 $(B)/ommcontrol: control.c $(B) $(SYS)/lib/libixp.a
 	$(CC) -o $@ $< -g -D__DEBUG__ -I$(SYS)/include -L$(SYS)/lib -lixp
 
-$(B)/ommtag: tag.c
+$(B)/ommscan: scan.c
 	$(CC) -o $@ $(CFLAGS) $(VLCFLAGS) $(LDFLAGS) $< $(VLCLIBS) $(SQLITE3LIBS) -lm
 
 $(B)/resgen: $(B)/resgen.o
