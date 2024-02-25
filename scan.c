@@ -14,6 +14,8 @@
 char *basedir                  = NULL;
 libvlc_instance_t *libvlc      = NULL;
 sqlite3 *db                    = NULL;
+
+/// Table obj
 const char *crtobj_qry         =     \
 "CREATE TABLE IF NOT EXISTS obj ("   \
 "id     INTEGER(8) PRIMARY KEY, "    \
@@ -27,10 +29,13 @@ const char *idxobj_qry        =      \
 "CREATE INDEX objid_idx ON obj(id)";
 const char *drpobj_qry        =      \
 "DROP TABLE IF EXISTS obj";
+
+/// Table fav
+/// Length of fav.userid should be LOGIN_NAME_MAX (POSIX)
 const char *crtfav_qry        =      \
 "CREATE TABLE IF NOT EXISTS fav ("   \
 "id     INTEGER(8) PRIMARY KEY, "    \
-"userid TEXT(128), "                 \
+"userid TEXT(32), "                  \
 "listid TEXT(16), "                  \
 "objid  INTEGER(8) "                 \
 ")";
@@ -38,6 +43,8 @@ const char *idxfav_qry        =      \
 "CREATE INDEX favid_idx ON fav(id)";
 const char *drpfav_qry        =      \
 "DROP TABLE IF EXISTS fav";
+
+/// Insert
 sqlite3_stmt *insstmt          = NULL;
 const char *ins_qry           =      \
 "INSERT INTO obj VALUES (?,?,?,?,?,?)";
