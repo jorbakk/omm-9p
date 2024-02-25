@@ -37,6 +37,8 @@
 #define QTYPE(p) ((p) & 0xF)
 #define QOBJID(p) (((p) >> 4) & 0xFFFFFFFF)
 #define IDSTR_MAXLEN 10
+#define MAX_QRY 128
+#define MAX_CTL 128
 
 /// 9P server
 static char *srvname           = "ommserve";
@@ -45,7 +47,8 @@ static char *gname             = "omm";
 static char *datafname         = "data";
 static char *metafname         = "meta";
 static char *queryfname        = "query";
-static char *queryres          = "query result";
+// static char *queryres          = "query result";
+static char *ctlfname          = "ctl";
 
 /// Database backend
 static sqlite3 *db             = NULL;
@@ -61,7 +64,8 @@ static const char *metaqry     = "SELECT type, title, path FROM obj WHERE id = ?
 static const int nobjdir       = 2;
 /// FIXME the following static variables are mutated by all clients
 static int objcount            = 0;
-static char querystr[128]      = "%";     /// By default, no query filter, show all table entries
+static char querystr[MAX_QRY]      = "%";     /// By default, no query filter, show all table entries
+static char ctlstr[MAX_CTL]        = "%";     /// By default, no query filter, show all table entries
 
 enum
 {
@@ -70,6 +74,7 @@ enum
 	Qdata,
 	Qmeta,
 	Qquery,
+	Qctl,
 };
 
 enum
@@ -122,13 +127,13 @@ dostat(vlong path, Qid *qid, Dir *dir)
 	char *name;
 	Qid q;
 	ulong mode;
-	vlong length;
+	// vlong length;
 
 	q.type = 0;
 	q.vers = 0;
 	q.path = path;
 	mode = 0444;
-	length = 0;
+	// length = 0;
 	name = "???";
 
 	switch(QTYPE(path)) {
@@ -154,7 +159,12 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		q.type = QTFILE;
 		name = queryfname;
 		mode = 0666;
-		length = strlen(queryres);
+		// length = strlen(queryres);
+		break;
+	case Qctl:
+		q.type = QTFILE;
+		name = ctlfname;
+		mode = 0666;
 		break;
 	default:
 		sysfatal("dostat %#llux", path);
@@ -172,7 +182,7 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		if(q.type == QTDIR)
 			mode |= DMDIR | 0111;
 		dir->mode = mode;
-		dir->length = length;
+		// dir->length = length;
 	}
 }
 
@@ -181,6 +191,7 @@ static int
 rootgen(int i, Dir *d, void *v)
 {
 	(void)v;
+	int objoff = 2;
 	sqlite3_bind_text(countstmt, 1, querystr, strlen(querystr), SQLITE_STATIC);
 	int ret = sqlite3_step(countstmt);
 	if (ret == SQLITE_ROW) {
@@ -188,21 +199,26 @@ rootgen(int i, Dir *d, void *v)
 		LOG("objcount: %d", objcount);
 	}
 	sqlite3_reset(countstmt);
-	if(i >= objcount + 1)
+	if (i >= objcount + objoff) {
 		// End of root directory with objcount obj dirs and one query file
 		return -1;
+	}
 	if (i == 0) {
+		LOG("rootgen: ctl file");
+		dostat(qpath(Qctl, i), nil, d);
+	} else if (i == 1) {
 		LOG("rootgen: query file");
-		dostat(qpath(Qquery, 0), nil, d);
+		dostat(qpath(Qquery, i), nil, d);
 	} else {
 		// SELECT id FROM obj WHERE title like t LIMIT 1 OFFSET i
 		sqlite3_bind_text(idstmt, 1, querystr, strlen(querystr), SQLITE_STATIC);
-		sqlite3_bind_int(idstmt, 2, i - 1);
+		sqlite3_bind_int(idstmt, 2, i - objoff);
 		int ret = sqlite3_step(idstmt);
 		if (ret == SQLITE_ROW) {
 			int id = sqlite3_column_int(idstmt, 0);
 			LOG("rootgen: select row %d returned objid: %d", i, id);
-			dostat(qpath(Qobj, id), nil, d);
+			/// 0-clt, 1-query, 2..-obj (objid in db starts with 1)
+			dostat(qpath(Qobj, id + objoff - 2), nil, d);
 		}
 		sqlite3_reset(idstmt);
 	}
@@ -257,6 +273,10 @@ srvwalk1(Fid *fid, char *name, Qid *qid)
 			break;
 		if(strcmp(queryfname, name) == 0) {
 			path = qpath(Qquery, 0);
+			goto Found;
+		}
+		if(strcmp(ctlfname, name) == 0) {
+			path = qpath(Qctl, 0);
 			goto Found;
 		}
 		char *endnum;
@@ -398,9 +418,9 @@ srvread(Req *r)
 		}
 		sqlite3_reset(metastmt);
 		break;
-	case Qquery:
-		readstr(r, queryres);
-		break;
+	// case Qquery:
+		// readstr(r, queryres);
+		// break;
 	}
 	respond(r, nil);
 }
@@ -421,6 +441,10 @@ srvwrite(Req *r)
 	case Qquery:
 		snprint(querystr, count, "%s", r->ifcall.data);
 		LOG("query: %s", querystr);
+		break;
+	case Qctl:
+		snprint(ctlstr, count, "%s", r->ifcall.data);
+		LOG("ctl: %s", ctlstr);
 		break;
 	}
 	r->ofcall.count = count;

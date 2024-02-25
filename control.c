@@ -163,7 +163,22 @@ write_sqry_cmdbuf(char *buf)
 	char *file = "/query";
 	IxpCFid *fid = ixp_open(serve, file, P9_OWRITE);
 	if(fid == NULL) {
-		fprintf(stderr, "failed to open ommserver query file: %s\n", ixp_errbuf());
+		fprintf(stderr, "failed to open ommserve query file: %s\n", ixp_errbuf());
+		return 1;
+	}
+	write_buf(fid, buf, strlen(buf));
+	ixp_close(fid);
+	return 0;
+}
+
+
+int
+write_sctl_cmdbuf(char *buf)
+{
+	char *file = "/ctl";
+	IxpCFid *fid = ixp_open(serve, file, P9_OWRITE);
+	if(fid == NULL) {
+		fprintf(stderr, "failed to open ommserve ctl file: %s\n", ixp_errbuf());
 		return 1;
 	}
 	write_buf(fid, buf, strlen(buf));
@@ -213,7 +228,7 @@ xfav(int argc, char *argv[])
 		  argv[0], argv[0]);
 		return 1;
 	}
-	return write_rctl_cmdbuf(buf);
+	return write_sctl_cmdbuf(buf);
 }
 
 
