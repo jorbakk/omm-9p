@@ -16,6 +16,8 @@
 #define MRL_MAX    (128)
 /// Size of obj meta data buffer
 #define META_MAX   (256)
+/// Length of fav command
+#define FAV_MAX    (128)
 
 #define fatal(...) ixp_eprint("ixpc: fatal: " __VA_ARGS__); \
 
@@ -31,15 +33,15 @@ static char serve_addr[ADDR_MAX] = {0};
 static char render_addr[ADDR_MAX] = {0};
 
 
-int write_qry_cmdbuf(char *buf);
+int write_sqry_cmdbuf(char *buf);
 
 static int
 xls(int argc, char *argv[])
 {
 	if (argc == 1) {
-		write_qry_cmdbuf("%");
+		write_sqry_cmdbuf("%");
 	} else if (argc == 2) {
-		write_qry_cmdbuf(argv[1]);
+		write_sqry_cmdbuf(argv[1]);
 	} else if (argc > 2) {
 		fprintf(stderr, "usage: %s <search pattern>\n", argv[0]);
 		return 1;
@@ -141,7 +143,7 @@ write_buf(IxpCFid *fid, char *buf, int len)
 
 
 int
-write_ctl_cmdbuf(char *buf)
+write_rctl_cmdbuf(char *buf)
 {
 	char *file = "/ctl";
 	IxpCFid *fid = ixp_open(render, file, P9_OWRITE);
@@ -156,7 +158,7 @@ write_ctl_cmdbuf(char *buf)
 
 
 int
-write_qry_cmdbuf(char *buf)
+write_sqry_cmdbuf(char *buf)
 {
 	char *file = "/query";
 	IxpCFid *fid = ixp_open(serve, file, P9_OWRITE);
@@ -177,7 +179,7 @@ xnoparms(int argc, char *argv[])
 		fprintf(stderr, "usage: %s\n", argv[0]);
 		return 1;
 	}
-	return write_ctl_cmdbuf(argv[0]);
+	return write_rctl_cmdbuf(argv[0]);
 }
 
 
@@ -194,7 +196,24 @@ xput(int argc, char *argv[])
 	}
 	char buf[MRL_MAX] = {0};
 	sprintf(buf, "%s 9p://%s/%s/data", argv[0], serve_addr, arg);
-	return write_ctl_cmdbuf(buf);
+	return write_rctl_cmdbuf(buf);
+}
+
+
+static int
+xfav(int argc, char *argv[])
+{
+	char buf[FAV_MAX] = {0};
+	if (argc == 4) {
+		sprintf(buf, "%s %s %s %s", argv[0], argv[1], argv[2], argv[3]);
+	} else if (argc == 3) {
+		sprintf(buf, "%s %s %s", argv[0], argv[1], argv[2]);
+	} else {
+		fprintf(stderr, "usage:\n  %s add|del <favlist id> <media id>\n  %s set <favlist id>\n",
+		  argv[0], argv[0]);
+		return 1;
+	}
+	return write_rctl_cmdbuf(buf);
 }
 
 
@@ -206,6 +225,7 @@ struct exectab {
 	{"put", xput},
 	{"play", xnoparms},
 	{"stop", xnoparms},
+	{"fav", xfav},
 	{0, 0}
 };
 
