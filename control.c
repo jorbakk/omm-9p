@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #define IXP_NO_P9_
 #define IXP_P9_STRUCTS
 #include <stdio.h>
@@ -7,6 +8,12 @@
 #include <unistd.h>
 #include <ixp.h>
 
+/// Length of string: "<objid>/meta"
+#define PATH_MAX   (128)
+/// Length of string: "put <mrl>"
+#define MRL_MAX    (128)
+/// Size of obj meta data buffer
+#define META_MAX   (256)
 
 #define fatal(...) ixp_eprint("ixpc: fatal: " __VA_ARGS__); \
 
@@ -18,8 +25,8 @@ static char *omm_ip = "127.0.0.1";
 static int serve_port = 2001;
 static int render_port = 2002;
 /// FIXME server and renderer addresses should be dynamic arrays
-static char serve_addr[48] = {0};
-static char render_addr[48] = {0};
+static char serve_addr[64] = {0};
+static char render_addr[64] = {0};
 
 
 int write_qry_cmdbuf(char *buf);
@@ -84,8 +91,7 @@ xls(int argc, char *argv[])
 		goto cleanup;
 	}
 	/// Print out the meta data of each root dir entry
-	/// FIXME metapath should be a dynamic string
-	char metapath[64] = {0};
+	char metapath[PATH_MAX] = {0};
 	for(i = 0; i < stat_size; i++) {
 		/// Entry is a file, we're looking for dirs, only
 		if ((stat[i].mode & P9_DMDIR) == 0) continue;
@@ -96,8 +102,7 @@ xls(int argc, char *argv[])
 			continue;
 		}
 		int pos = 0;
-		/// FIXME meta should be a dynamic string
-		char meta[64] = {0};
+		char meta[META_MAX] = {0};
 		buf = ixp_emalloc(fid->iounit);
 		while((count = ixp_read(fid, buf, fid->iounit)) > 0) {
 			memcpy(meta + pos, buf, count);
@@ -185,8 +190,7 @@ xput(int argc, char *argv[])
 		fprintf(stderr, "usage: %s <media id>\n", argv[0]);
 		return 1;
 	}
-	/// FIXME buf should be a dynamic string
-	char buf[64] = {0};
+	char buf[MRL_MAX] = {0};
 	sprintf(buf, "%s 9p://%s/%s/data", argv[0], serve_addr, arg);
 	return write_ctl_cmdbuf(buf);
 }
