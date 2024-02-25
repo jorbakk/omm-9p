@@ -41,7 +41,6 @@ const char *drpfav_qry        =      \
 sqlite3_stmt *insstmt          = NULL;
 const char *ins_qry           =      \
 "INSERT INTO obj VALUES (?,?,?,?,?,?)";
-int objid = 0;
 
 #define LOG(...) {fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");};
 
@@ -65,6 +64,7 @@ char *img_types[] = {
 	"jpg", "jpeg", "png", "gif", NULL,
 };
 
+int objid = 0;
 
 bool
 exec_stmt(sqlite3 *db, const char *stmt)
@@ -159,7 +159,7 @@ scan(char *basedir)
 		LOG("failed to open dir %s", basedir);
 		return;
 	}
-    char fpath[PATH_MAX];
+	char fpath[PATH_MAX];
 	struct dirent *entryfd;
 	struct stat statbuf;
 	while ((entryfd = readdir(basedirfd))) {
@@ -168,11 +168,10 @@ scan(char *basedir)
 		if (stat(fpath, &statbuf) == -1) continue;
 		switch (statbuf.st_mode & S_IFMT) {
 			case S_IFREG:
-				// LOG("tagging: %s", entryfd->d_name);
 				tag(fpath);
 				break;
 			case S_IFDIR:
-				LOG("DIR: %s", entryfd->d_name);
+				scan(fpath);
 				break;
 			default:
 				LOG("skipping: %s", entryfd->d_name);
