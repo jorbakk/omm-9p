@@ -24,8 +24,12 @@
 static IxpClient *serve, *render;
 /// Set the IP address of the omm servers via environment variable
 static char *omm_ip_envar = "OMM_ADDRESS";
+static char *serve_ip_envar = "OMM_SERVE_ADDRESS";
+static char *render_ip_envar = "OMM_RENDER_ADDRESS";
 /// Default IP address of omm servers
 static char *omm_ip = "127.0.0.1";
+static char *serve_ip = NULL;
+static char *render_ip = NULL;
 static int serve_port = 2001;
 static int render_port = 2002;
 /// FIXME server and renderer addresses should be dynamic arrays
@@ -254,8 +258,12 @@ main(int argc, char *argv[]) {
 	int ret = 1;
 	char *oe = getenv(omm_ip_envar);
 	if (oe) omm_ip = oe;
-	sprintf(serve_addr, "tcp!%s!%d", omm_ip, serve_port);
-	sprintf(render_addr, "tcp!%s!%d", omm_ip, render_port);
+	serve_ip = getenv(serve_ip_envar);
+	if (!serve_ip) serve_ip = omm_ip;
+	render_ip = getenv(render_ip_envar);
+	if (!render_ip) render_ip = omm_ip;
+	sprintf(serve_addr, "tcp!%s!%d", serve_ip, serve_port);
+	sprintf(render_addr, "tcp!%s!%d", render_ip, render_port);
 	serve = ixp_mount(serve_addr);
 	if(serve == NULL) {
 		fatal("ommserve not available, %s\n", ixp_errbuf());
