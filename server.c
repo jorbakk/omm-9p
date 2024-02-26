@@ -60,13 +60,31 @@ static sqlite3_stmt *countstmt  = NULL;
 static sqlite3_stmt *metastmt   = NULL;
 static sqlite3_stmt *favaddstmt = NULL;
 static sqlite3_stmt *favdelstmt = NULL;
-static const char *idqry        = "SELECT id FROM obj WHERE title like '%%%s%%' LIMIT 1 OFFSET %d";
-static const char *favidqry     = "SELECT obj.id FROM obj, fav WHERE title like '%%%s%%' AND obj.id = fav.objid AND fav.listid = '%s' LIMIT 1 OFFSET %d";
-static const char *countqry     = "SELECT COUNT(id) FROM obj WHERE title like '%%%s%%' LIMIT 1";
-static const char *favcountqry  = "SELECT COUNT(obj.id) FROM obj, fav WHERE title like '%%%s%%' AND obj.id = fav.objid AND fav.listid = '%s' LIMIT 1";
-static const char *metaqry      = "SELECT type, title, path FROM obj WHERE id = ? LIMIT 1";
-static const char *favaddqry    = "INSERT INTO fav VALUES (?,?,?,?)";
-static const char *favdelqry    = "DELETE FROM fav WHERE listid = ? AND objid = ?";
+static const char *idqry        = \
+	"SELECT id FROM obj WHERE " \
+	"orig like '%%%s%%' OR title like '%%%s%%' " \
+	"LIMIT 1 OFFSET %d";
+static const char *favidqry     = \
+	"SELECT obj.id FROM obj, fav WHERE " \
+	"(orig like '%%%s%%' OR title like '%%%s%%') " \
+	"AND obj.id = fav.objid AND fav.listid = '%s' " \
+	"LIMIT 1 OFFSET %d";
+static const char *countqry     = \
+	"SELECT COUNT(id) FROM obj WHERE " \
+	"orig like '%%%s%%' OR title like '%%%s%%' " \
+	"LIMIT 1";
+static const char *favcountqry  = \
+	"SELECT COUNT(obj.id) FROM obj, fav " \
+	"WHERE (orig like '%%%s%%' OR title like '%%%s%%') " \
+	"AND obj.id = fav.objid AND fav.listid = '%s' " \
+	"LIMIT 1";
+static const char *metaqry      = \
+	"SELECT type, title, path FROM obj WHERE " \
+	"id = ? LIMIT 1";
+static const char *favaddqry    = \
+	"INSERT INTO fav VALUES (?,?,?,?)";
+static const char *favdelqry    = \
+	"DELETE FROM fav WHERE listid = ? AND objid = ?";
 
 static const int nobjdir        = 2;
 /// FIXME the following static variables are mutated by all clients
@@ -204,9 +222,9 @@ rootgen(int i, Dir *d, void *v)
 	(void)v;
 	int objoff = 2;
 	if (strlen(favid)) {
-		sprintf(qrootstr, favcountqry, querystr, favid);
+		sprintf(qrootstr, favcountqry, querystr, querystr, favid);
 	} else {
-		sprintf(qrootstr, countqry, querystr);
+		sprintf(qrootstr, countqry, querystr, querystr);
 	}
 	LOG("count query: %s", qrootstr);
 	if (sqlite3_prepare_v2(db, qrootstr, -1, &countstmt, NULL)) {
@@ -231,9 +249,9 @@ rootgen(int i, Dir *d, void *v)
 		dostat(qpath(Qquery, i), nil, d);
 	} else {
 		if (strlen(favid)) {
-			sprintf(qrootstr, favidqry, querystr, favid, i - objoff);
+			sprintf(qrootstr, favidqry, querystr, querystr, favid, i - objoff);
 		} else {
-			sprintf(qrootstr, idqry, querystr, i - objoff);
+			sprintf(qrootstr, idqry, querystr, querystr, i - objoff);
 		}
 		LOG("id query: %s", qrootstr);
 		if (sqlite3_prepare_v2(db, qrootstr, -1, &idstmt, NULL)) {
@@ -551,7 +569,7 @@ opendb(char *dbfile)
 	if (sqlite3_open(dbfile, &db)) {
 		sysfatal("failed to open db");
 	}
-	sprintf(qrootstr, countqry, querystr);
+	sprintf(qrootstr, countqry, querystr, querystr);
 	LOG("count query: %s", qrootstr);
 	if (sqlite3_prepare_v2(db, qrootstr, -1, &countstmt, NULL)) {
 		closedb();
