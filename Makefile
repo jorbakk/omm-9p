@@ -4,12 +4,12 @@ RELEASE      = 0
 RENDER_BACK  = RENDER_VLC
 
 WD           = $(shell pwd)
-# SYS          = $(WD)/sys
-SYS          = sys
+SYS          = $(WD)/sys
+# SYS          = sys
+P            = $(SYS)/pkg
 B            = build
 DVB          = dvb
 EXT          = ext
-P            = $(SYS)/pkg
 
 9PLIBS       = -l9 -l9p -l9pclient -lthread -lsec -lmp -lauth -lbio
 9PCLIENTLIBS = -l9 -l9pclient -lbio -lsec -lauth -lthread
@@ -39,16 +39,18 @@ RENDERLIBS   = $(VLCLIBS)
 endif
 
 ifeq ($(RELEASE), 1)
-CFLAGS       = -O2 -DNDEBUG
-LDFLAGS      = # -static
+CFLAGS       = -O2 -DNDEBUG -I$(SYS)/include -I$(SYS)/include/p9
+LDFLAGS      = -L$(SYS)/lib
+# LDFLAGS      = -static
 else
-CFLAGS       = -std=c99 -Wall -g -D__DEBUG__ -Wno-sizeof-array-div
+CFLAGS       = -std=c99 -Wall -g -D__DEBUG__ -Wno-sizeof-array-div -I$(SYS)/include -I$(SYS)/include/p9
 DBG_CFLAGS   = -fsanitize=address -fsanitize=undefined # -fsanitize=thread
-LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH)
+LDFLAGS      = -Wl,-rpath,$(B):$(LD_RUN_PATH) -L$(SYS)/lib
 DBG_LDFLAGS  = -lasan -lubsan # -fsanitize=thread
 endif
 
 CFLAGS      += -D$(RENDER_BACK)
+# LD_RUN_PATH += $(SYS)/lib
 
 ## Honor local include and linker paths
 export $(CPATH)
@@ -60,6 +62,7 @@ export $(LD_RUN_PATH)
 .PHONY: clean sloc transponder.zip
 
 libixp_url = https://github.com/0intro/libixp.git
+p9light_url = https://github.com/captaingroove/p9light.git
 
 $(EXT)/%: $(B)
 	cd $(EXT) && git clone $($*_url)
@@ -92,7 +95,7 @@ rpc.o server.o socket.o srv_util.o thread.o timer.o transport.o util.o
 $(B)/%.o: $(DVB)/%.cpp
 	$(CXX) -c -o $@ -I$(B) $(POCOCFLAGS) $(CPPFLAGS) -fPIC $(DVBCXXFLAGS) $<
 
-all: cscope.out $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/ommcontrol $(B)/ommscan $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_acc9p_plugin.so
+all: cscope.out $(P)/p9light $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/ommcontrol $(B)/ommscan $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_acc9p_plugin.so
 
 $(B):
 	mkdir -p $(B) $(EXT) $(SYS) $(P)
@@ -114,9 +117,13 @@ $(B)/ommserve: server.c $(B)/libommdvb.so # $(B)/libommdvb.a
 
 $(SYS)/lib/libixp.a:
 	cd ext/libixp/lib/libixp && $(CC) -I../../include -fPIC -g -D__DEBUG__ $(LIBIXPCFLAGS) -c $(LIBIXPSRCS)
-	cd ext/libixp/lib/libixp && ar rcs libixp.a $(LIBIXPOBJS)
+	cd ext/libixp/lib/libixp && $(AR) rcs libixp.a $(LIBIXPOBJS)
 	cp ext/libixp/include/ixp.h $(SYS)/include
 	mv ext/libixp/lib/libixp/libixp.a $@
+
+$(P)/p9light:
+	cd ext/p9light && make && make install PREFIX=$(SYS) && make clean
+	touch $@
 
 $(B)/ommcontrol: control.c $(B) $(SYS)/lib/libixp.a
 	$(CC) -o $@ $< -g -D__DEBUG__ -I$(SYS)/include -L$(SYS)/lib -lixp

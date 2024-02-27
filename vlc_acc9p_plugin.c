@@ -16,7 +16,7 @@
 #include <vlc_common.h>
 #include <vlc_plugin.h>
 #include <vlc_access.h>
-// #include <vlc_meta.h>
+// #include <vlc_tick.h>
 
 /* Internal state for an instance of the module */
 struct access_sys_t {
@@ -49,14 +49,15 @@ Open(vlc_object_t * obj)
 	struct access_sys_t *sys = calloc(1, sizeof(*sys));
 	if (unlikely(sys == NULL)) return VLC_ENOMEM;
 	p_access->p_sys = sys;
-	sys->url = psz_url + 5;
+	sys->url = (char*)psz_url + 5;
 	msg_Info(p_access, "opening %s ...", sys->url);
 	seturl(p_access, sys->url);
 	if (open_9pconnection(p_access) == -1) goto error;
     /* Set up p_access */
     p_access->pf_read = Read;
     p_access->pf_control = Control;
-    p_access->pf_seek = Seek;
+    // p_access->pf_seek = Seek;
+    p_access->pf_seek = NULL;
 	return VLC_SUCCESS;
  error:
 	free(sys);
@@ -87,6 +88,8 @@ ssize_t
 Read(stream_t *p_access, void *p_buffer, size_t i_len)
 {
 	access_sys_t *p_sys = p_access->p_sys;
+    // if (p_sys->b_eof)
+        // return 0;
 	// if (p_sys->stream == NULL)
 	// return 0;
 	return ixp_read(p_sys->fileserverfid, p_buffer, i_len);
@@ -106,21 +109,31 @@ int
 Control(stream_t *p_access, int i_query, va_list args)
 {
 	access_sys_t *p_sys = p_access->p_sys;
+	bool *pb_bool;
+	int64_t *pi_64;
 	switch (i_query) {
-		/* */
 	case STREAM_CAN_SEEK:
 	case STREAM_CAN_FASTSEEK:
-		// pb_bool = va_arg(args, bool *);
-		// *pb_bool = true;
+		pb_bool = va_arg(args, bool *);
+		*pb_bool = false;
 		break;
 	case STREAM_CAN_PAUSE:
 	case STREAM_CAN_CONTROL_PACE:
-		// pb_bool = va_arg(args, bool *);
-		// *pb_bool = true;
+		pb_bool = va_arg(args, bool *);
+		*pb_bool = false;
 		break;
+    case STREAM_GET_PTS_DELAY:
+            pi_64 = va_arg( args, int64_t * );
+            *pi_64 = INT64_C(1000)
+                   * var_InheritInteger( p_access, "network-caching" );
+    /// Current versions of vlc ...
+        // *va_arg(args, vlc_tick_t *) =
+            // VLC_TICK_FROM_MS(var_InheritInteger(p_access,"network-caching"));
+        break;
+    case STREAM_GET_SIZE:
+        return VLC_EGENERIC;
 	default:
 		return VLC_EGENERIC;
-
 	}
 	return VLC_SUCCESS;
 }
