@@ -4,6 +4,8 @@
  */
 #define MODULE_STRING "access9P"
 
+#define PATH_MAX   (512)
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -23,6 +25,7 @@ struct access_sys_t {
 	char              *url;
 	char              *fileservername;
 	char              *filename;
+	uint64_t           size;
 	int                isfile;
 	int                isaddr;
 	int                fileserverfd;
@@ -46,21 +49,24 @@ Open(vlc_object_t * obj)
 	stream_t *p_access = (stream_t *) obj;
     const char *psz_url = p_access->psz_url;
 	/* Allocate internal state */
-	struct access_sys_t *sys = calloc(1, sizeof(*sys));
-	if (unlikely(sys == NULL)) return VLC_ENOMEM;
-	p_access->p_sys = sys;
-	sys->url = (char*)psz_url + 5;
-	msg_Info(p_access, "opening %s ...", sys->url);
-	seturl(p_access, sys->url);
+	struct access_sys_t *p_sys = calloc(1, sizeof(*p_sys));
+	if (unlikely(p_sys == NULL)) return VLC_ENOMEM;
+	p_access->p_sys = p_sys;
+	p_sys->url = (char*)psz_url + strlen("9p://");
+	msg_Info(p_access, "opening %s ...", p_sys->url);
+	seturl(p_access, p_sys->url);
 	if (open_9pconnection(p_access) == -1) goto error;
     /* Set up p_access */
     p_access->pf_read = Read;
     p_access->pf_control = Control;
-    // p_access->pf_seek = Seek;
-    p_access->pf_seek = NULL;
+    if (p_sys->size) {
+		p_access->pf_seek = Seek;
+	} else {
+		p_access->pf_seek = NULL;
+	}
 	return VLC_SUCCESS;
  error:
-	free(sys);
+	free(p_sys);
 	return VLC_EGENERIC;
 }
 
@@ -72,13 +78,13 @@ Close(vlc_object_t *obj)
 {
 	stream_t *p_access = (stream_t *) obj;
 	access_sys_t *p_sys = p_access->p_sys;
-	msg_Info(p_access, "closing %s ...", p_sys->url);
+	msg_Info(p_access, "closing %s/%s ...", p_sys->url, p_sys->filename);
 	close_9pconnection(p_access);
 	/* Free internal state */
-	// msg_Info(p_access, "freeing sys->url ...");
+	// msg_Info(p_access, "freeing p_sys->url ...");
 	// free(p_sys->url);
 	// p_sys->url = NULL;
-	// msg_Info(p_access, "freeing sys ...");
+	// msg_Info(p_access, "freeing p_sys ...");
 	free(p_sys);
 	msg_Info(p_access, "closed.");
 }
@@ -115,28 +121,33 @@ Control(stream_t *p_access, int i_query, va_list args)
 	case STREAM_CAN_SEEK:
 	case STREAM_CAN_FASTSEEK:
 		pb_bool = va_arg(args, bool *);
-		*pb_bool = false;
+		if (p_sys->size == 0) {
+			*pb_bool = false;
+		} else {
+			*pb_bool = true;
+		}
 		break;
 	case STREAM_CAN_PAUSE:
 	case STREAM_CAN_CONTROL_PACE:
 		pb_bool = va_arg(args, bool *);
-		*pb_bool = false;
+		if (p_sys->size == 0) {
+			*pb_bool = false;
+		} else {
+			*pb_bool = true;
+		}
 		break;
     case STREAM_GET_PTS_DELAY:
             pi_64 = va_arg( args, int64_t * );
-            *pi_64 = INT64_C(1000)
-                   * var_InheritInteger( p_access, "network-caching" );
+            *pi_64 = INT64_C(1000) * var_InheritInteger( p_access, "network-caching" );
     /// Current versions of vlc ...
         // *va_arg(args, vlc_tick_t *) =
             // VLC_TICK_FROM_MS(var_InheritInteger(p_access,"network-caching"));
         break;
     case STREAM_GET_SIZE:
         return VLC_EGENERIC;
-        /// TODO Seek end of file, if it works, enable seeking and set size
-        // if( sys->size == UINT64_MAX )
-            // return VLC_EGENERIC;
-        // *va_arg( args, uint64_t * ) = sys->size;
-        // break;
+        if (p_sys->size == 0) return VLC_EGENERIC;
+        *va_arg( args, uint64_t * ) = p_sys->size;
+        break;
 	default:
 		return VLC_EGENERIC;
 	}
@@ -237,7 +248,7 @@ static int
 open_9pconnection(stream_t *p_access)
 {
 	access_sys_t *p_sys = p_access->p_sys;
-	msg_Info(p_access, "opening 9P connection ...");
+	msg_Info(p_access, "opening 9P connection to: %s ...", p_sys->url);
 	if (p_sys->isfile) {
 		msg_Info(p_access, "input is a file, nothing to do");
 		return 0;
@@ -246,6 +257,16 @@ open_9pconnection(stream_t *p_access)
 	if (!p_sys->client) {
 		msg_Err(p_access, "failed to open 9P connection");
 		return 1;
+	}
+	msg_Info(p_access, "stat 9P file: %s ...", p_sys->filename);
+	Stat *dstat = ixp_stat(p_sys->client, p_sys->filename);
+	if (dstat == NULL) {
+		msg_Err(p_access, "failed to stat '%s', assuming non-seekable stream ...",
+		  p_sys->filename);
+	} else {
+		p_sys->size = dstat->length;
+		msg_Info(p_access, "size of '%s': %ld\n", p_sys->filename, p_sys->size);
+		ixp_freestat(dstat);
 	}
 	msg_Info(p_access, "opening 9P file: %s ...", p_sys->filename);
 	p_sys->fileserverfid = ixp_open(p_sys->client, p_sys->filename, P9_OREAD);

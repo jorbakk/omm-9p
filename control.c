@@ -104,9 +104,8 @@ xls(int argc, char *argv[])
 		/// Entry is a file, we're looking for dirs, only
 		if ((stat[i].mode & P9_DMDIR) == 0) continue;
 		/// Stat data file
-		Stat *dstat;
 		sprintf(path, "/%s/data", stat[i].name);
-		dstat = ixp_stat(serve, path);
+		Stat *dstat = ixp_stat(serve, path);
 		if(dstat == NULL) {
 			fprintf(stderr, "failed to stat '%s', skipping ...\n", path);
 			continue;
