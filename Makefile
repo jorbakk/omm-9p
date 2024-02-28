@@ -113,7 +113,7 @@ $(B)/render: render.c
 	$(CC) -o $@ $< $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) $(SDL2LIBS) $(VLCLIBS) -lz -lm
 
 $(B)/ommserve: server.c $(B)/libommdvb.so # $(B)/libommdvb.a
-	$(CC) $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) -o $(B)/ommserve $< $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb -lm
+	$(CC) -o $(B)/ommserve $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $< $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb -lm
 
 $(SYS)/lib/libixp.a:
 	cd ext/libixp/lib/libixp && $(CC) -I../../include -fPIC -g -D__DEBUG__ $(LIBIXPCFLAGS) -c $(LIBIXPSRCS)
@@ -138,7 +138,7 @@ $(B)/TransponderData.h: $(B)/resgen transponder.zip
 	$(B)/resgen --output-directory=$(DVB) --resource-name=TransponderData $(DVB)/transponder.zip
 
 $(B)/libommdvb.so: $(DVB)/TransponderData.h $(DVBOBJS)
-	$(CXX) -shared -o $@ $(DVBOBJS) $(DVBLIBS) -lm
+	$(CXX) -o $@ $(DVBOBJS) -shared $(DVBLIBS) -lm
 
 # $(B)/libommdvb.a: $(DVB)/TransponderData.h $(DVBOBJS)
 	# $(CXX) -static -o $@ $(DVBOBJS) $(DVBLIBS) -lm
@@ -152,7 +152,7 @@ $(B)/scandvbcpp: $(B)/ScanDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
 # $(CXX) -o $(B)/scandvbcpp $< -Wl,--copy-dt-needed-entries $(DVBLIBS) -L$(B) -lommdvb -lm
 
 $(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -L$(B) -lommdvb -lm
+	$(CC) -o $@ $(CFLAGS) $(LDFLAGS) $^ -L$(B) -lommdvb -lm
 
 $(B)/libvlc_acc9p_plugin.so: vlc_acc9p_plugin.c $(SYS)/lib/libixp.a
 	$(CC) -o $@ -I$(SYS)/include $(VLC_PLUGIN_CFLAGS) $(LDFLAGS) -shared -fPIC $< -L$(SYS)/lib -lixp $(VLC_PLUGIN_LIBS)

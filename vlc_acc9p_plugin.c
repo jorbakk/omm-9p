@@ -132,6 +132,11 @@ Control(stream_t *p_access, int i_query, va_list args)
         break;
     case STREAM_GET_SIZE:
         return VLC_EGENERIC;
+        /// TODO Seek end of file, if it works, enable seeking and set size
+        // if( sys->size == UINT64_MAX )
+            // return VLC_EGENERIC;
+        // *va_arg( args, uint64_t * ) = sys->size;
+        // break;
 	default:
 		return VLC_EGENERIC;
 	}

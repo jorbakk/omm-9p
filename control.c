@@ -99,14 +99,25 @@ xls(int argc, char *argv[])
 		goto cleanup;
 	}
 	/// Print out the meta data of each root dir entry
-	char metapath[PATH_MAX] = {0};
+	char path[PATH_MAX] = {0};
 	for(i = 0; i < stat_size; i++) {
 		/// Entry is a file, we're looking for dirs, only
 		if ((stat[i].mode & P9_DMDIR) == 0) continue;
-		sprintf(metapath, "/%s/meta", stat[i].name);
-		fid = ixp_open(serve, metapath, P9_OREAD);
+		/// Stat data file
+		Stat *dstat;
+		sprintf(path, "/%s/data", stat[i].name);
+		dstat = ixp_stat(serve, path);
+		if(dstat == NULL) {
+			fprintf(stderr, "failed to stat '%s', skipping ...\n", path);
+			continue;
+		}
+		uint64_t fsize = dstat->length;
+		ixp_freestat(dstat);
+		/// Read meta file
+		sprintf(path, "/%s/meta", stat[i].name);
+		fid = ixp_open(serve, path, P9_OREAD);
 		if(fid == NULL) {
-			fprintf(stderr, "failed to open '%s', skipping ...\n", metapath);
+			fprintf(stderr, "failed to open '%s', skipping ...\n", path);
 			continue;
 		}
 		int pos = 0;
@@ -119,10 +130,10 @@ xls(int argc, char *argv[])
 		ixp_close(fid);
 		free(buf);
 		if(count == -1) {
-			fprintf(stderr, "failed to read dir entry '%s': %s\n", metapath, ixp_errbuf());
+			fprintf(stderr, "failed to read from '%s': %s\n", path, ixp_errbuf());
 			goto cleanup;
 		}
-		fprintf(stdout, "%s - %s\n", stat[i].name, meta);
+		fprintf(stdout, "%10ld | %s: %s\n", fsize, stat[i].name, meta);
 	}
 	ret = 0;
 cleanup:

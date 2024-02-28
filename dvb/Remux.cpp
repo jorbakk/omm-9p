@@ -221,7 +221,7 @@ Remux::getTransportStreamPacket()
             }
         }
         else if (pollRes == 0) {
-            LOG(dvb, trace, "remux read thread timeout");
+            LOG(dvb, trace, "remux read thread poll timeout");
             delete pPacket;
             return 0;
         }
@@ -314,7 +314,7 @@ Remux::readPacketBlock()
             }
         }
         else if (pollRes == 0) {
-            LOG(dvb, trace, "remux read thread timeout");
+            LOG(dvb, trace, "remux read thread poll timeout");
             putFreePacketBlock(pPacketBlock);
             return 0;
         }

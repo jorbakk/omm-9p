@@ -20,6 +20,22 @@
  * SOFTWARE.
  */
 
+/**
+Server layout:
+/--[0]-ctl
+ |-[1]-query
+ |-[2]-objid 1--data-aux-(file|dvb)
+          |-meta
+ |-[3]-objid 2--data-aux-(file|dvb)
+          |-meta
+ .
+ .
+ .
+ |-[n+1]-objid n--data-aux-(file|dvb)
+          |-meta
+*/
+
+
 #include <u.h>
 #include <stdio.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
@@ -28,6 +44,10 @@
 #include <fcall.h>
 #include <thread.h>
 #include <9p.h>
+
+/// FIXME use lan 9 stat?
+#include <sys/stat.h>
+
 #include <sqlite3.h>
 
 #include "log.h"
@@ -89,7 +109,7 @@ static const char *favdelqry    = \
 static const int nobjdir        = 2;
 /// FIXME the following static variables are mutated by all clients
 static int objcount             = 0;
-static char querystr[MAX_QRY]   = "1";   /// By default, no query filter, show all table entries
+static char querystr[MAX_QRY]   = "";    /// By default, no search string for title, origin; show all
 static char favid[FAVID_MAXLEN] = "";    /// By default, no fav list, show all table entries
 static char qrootstr[MAX_QRY]   = "";
 static char ctlstr[MAX_CTL]     = "";
@@ -127,7 +147,9 @@ typedef union AuxData
 
 typedef struct AuxObj
 {
+	char *objpath;
 	int ot;
+	uint64_t os;
 	AuxData od;
 } AuxObj;
 
@@ -145,10 +167,11 @@ qpath(int type, int obj)
 static void
 logpath(char *logstr, vlong path)
 {
-	LOG("%s path: 0%08llo, type: %lld, objid: %lld", logstr, path, QTYPE(path), QOBJID(path));
+	LOG("%s path: 0%08llo, objtype: %lld, objid: %lld", logstr, path, QTYPE(path), QOBJID(path));
 }
 
 
+/// dostat() sets qid and dir based on path
 static void
 dostat(vlong path, Qid *qid, Dir *dir)
 {
@@ -156,13 +179,13 @@ dostat(vlong path, Qid *qid, Dir *dir)
 	char *name;
 	Qid q;
 	ulong mode;
-	// vlong length;
+	vlong length;
 
 	q.type = 0;
 	q.vers = 0;
 	q.path = path;
 	mode = 0444;
-	// length = 0;
+	length = 0;
 	name = "???";
 
 	switch(QTYPE(path)) {
@@ -188,7 +211,6 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		q.type = QTFILE;
 		name = queryfname;
 		mode = 0666;
-		// length = strlen(queryres);
 		break;
 	case Qctl:
 		q.type = QTFILE;
@@ -211,8 +233,47 @@ dostat(vlong path, Qid *qid, Dir *dir)
 		if(q.type == QTDIR)
 			mode |= DMDIR | 0111;
 		dir->mode = mode;
-		// dir->length = length;
+		dir->length = length;
 	}
+}
+
+
+/// initaux() initializes r->fid->aux based on r->fid->qid.path
+/// it allocates aux, if necessary, otherwise it sets all fields to zero
+/// then it queries the object for type and path and sets them in aux
+void
+initaux(vlong path, void **aux)
+{
+	logpath("initaux obj", path);
+	// if (*aux) {
+		// memset(*aux, 0, sizeof **aux);
+	// } else {
+		// *aux = malloc(sizeof **aux);
+	// }
+	// if (*aux) return;
+	if (QTYPE(path) == Qdata) {
+		LOG("initaux, Qdata");
+		AuxObj *ao = calloc(1, sizeof(AuxObj));
+		vlong objid = QOBJID(path);
+		// SELECT type, title, path FROM obj WHERE id = objid LIMIT 1
+		sqlite3_bind_int(metastmt, 1, objid);
+		int sqlret = sqlite3_step(metastmt);
+		if (sqlret == SQLITE_ROW) {
+			char *objtype = (char*)sqlite3_column_text(metastmt, 0);
+			char *objpath = (char*)sqlite3_column_text(metastmt, 2);
+			LOG("meta query returned file type: %s, path: %s", objtype, objpath);
+			ao->objpath = estrdup9p(objpath);
+			if (strcmp(objtype, OBJTYPESTR_FILE) == 0) {
+				ao->ot = OTfile;
+			}
+			else if (strcmp(objtype, OBJTYPESTR_DVB) == 0) {
+				ao->ot = OTdvb;
+			}
+		}
+		sqlite3_reset(metastmt);
+		*aux = ao;
+	}
+	LOG("initaux finished");
 }
 
 
@@ -362,9 +423,35 @@ Found:
 
 
 void
+logobj(char *srvf, Qid qid)
+{
+	LOG("%s qidpath: 0%08llo, qidtype: %s, objid: %lld, vers: %ld",
+		srvf,
+		qid.path,
+		qid.type ? "QTFILE" : "QTDIR",
+		QOBJID(qid.path),
+		qid.vers);
+}
+
+
+void
 srvstat(Req *r)
 {
+	logobj("srvstat", r->fid->qid);
 	dostat(r->fid->qid.path, nil, &r->d);
+	/// FIXME setting file length in dir entry should happen in dostat() ...?
+	initaux(r->fid->qid.path, &r->fid->aux);
+	AuxObj *ao = r->fid->aux;
+	struct stat statbuf;
+	if (ao) {
+		switch (ao->ot) {
+		case OTfile:
+			if (stat(ao->objpath, &statbuf) == -1) break;
+			ao->os = statbuf.st_size;
+			r->d.length = ao->os;
+			break;
+		}
+	}
 	respond(r, nil);
 }
 
@@ -372,47 +459,28 @@ srvstat(Req *r)
 static void
 srvopen(Req *r)
 {
-	vlong path = r->fid->qid.path;
-	vlong objid = QOBJID(path);
-	char *objtype, *objpath;
-	LOG("server open on qid path: 0%08llo, vers: %ld, type: %d",
-		path, r->fid->qid.vers, r->fid->qid.type);
-	r->ofcall.qid = r->fid->qid;
-	if (QTYPE(path) == Qdata && r->fid->aux == nil) {
-		// SELECT type, title, path FROM obj WHERE id = objid LIMIT 1
-		sqlite3_bind_int(metastmt, 1, objid);
-		int sqlret = sqlite3_step(metastmt);
-		if (sqlret == SQLITE_ROW) {
-			objtype = (char*)sqlite3_column_text(metastmt, 0);
-			objpath = (char*)sqlite3_column_text(metastmt, 2);
-			LOG("meta query returned file type: %s, path: %s", objtype, objpath);
-			if (strcmp(objtype, OBJTYPESTR_FILE) == 0) {
-				int fh = open(objpath, OREAD);
-				if (fh == -1) {
-					LOG("failed to open file media object");
-				}
-				else {
-					AuxObj *ao = malloc(sizeof(AuxObj));
-					ao->ot = OTfile;
-					ao->od.fh = fh;
-					r->fid->aux = ao;
-				}
+	logobj("srvopen", r->fid->qid);
+	initaux(r->fid->qid.path, &r->fid->aux);
+	AuxObj *ao = r->fid->aux;
+	if (ao) {
+		LOG("aux object: %p", ao);
+		switch (ao->ot) {
+		case OTfile:
+			ao->od.fh = open(ao->objpath, OREAD);
+			ao->os = 567;
+			if (ao->od.fh == -1) {
+				LOG("failed to open file media object");
 			}
-			else if (strcmp(objtype, OBJTYPESTR_DVB) == 0) {
-				struct DvbStream *stream = dvb_stream(objpath);
-				if (stream == nil) {
-					LOG("failed to open dvb media object");
-				}
-				else {
-					AuxObj *ao = malloc(sizeof(AuxObj));
-					ao->ot = OTdvb;
-					ao->od.st = stream;
-					r->fid->aux = ao;
-				}
+			break;
+		case OTdvb:
+			ao->od.st = dvb_stream(ao->objpath);
+			if (ao->od.st == nil) {
+				LOG("failed to open dvb media object");
 			}
+			break;
 		}
-		sqlite3_reset(metastmt);
 	}
+	r->ofcall.qid = r->fid->qid;
 	respond(r, nil);
 }
 
@@ -420,8 +488,7 @@ srvopen(Req *r)
 static void
 srvread(Req *r)
 {
-	LOG("server read on qid path: 0%08llo, objid: %lld, vers: %ld, type: %d",
-		r->fid->qid.path, QOBJID(r->fid->qid.path), r->fid->qid.vers, r->fid->qid.type);
+	logobj("srvread", r->fid->qid);
 	vlong path, offset;
 	path = r->fid->qid.path;
 	offset = r->ifcall.offset;
@@ -439,6 +506,7 @@ srvread(Req *r)
 		break;
 	case Qdata:
 		if (r->fid->aux == nil) {
+			LOG("read failed: aux data not set");
 			break;
 		}
 		ao = (AuxObj*)r->fid->aux;
@@ -474,8 +542,7 @@ srvread(Req *r)
 static void
 srvwrite(Req *r)
 {
-	LOG("server write on qid path: 0%08llo, vers: %ld, type: %d",
-		r->fid->qid.path, r->fid->qid.vers, r->fid->qid.type);
+	logobj("srvwrite", r->fid->qid);
 	/* vlong offset; */
 	vlong path;
 	long count;
@@ -507,6 +574,7 @@ srvdestroyfid(Fid *fid)
 	if(!fid->aux)
 		return;
 	AuxObj *ao = (AuxObj*)(fid->aux);
+	free(ao->objpath);
 	switch (ao->ot) {
 	case OTfile:
 		LOG("closing file data handle");
@@ -719,6 +787,7 @@ xfav(int argc, char *argv[])
 void
 threadmain(int argc, char **argv)
 {
+	LOG("-------------------------------------------------------------------------");
 	if (argc == 1) {
 		sysfatal("no db file provided");
 	}
