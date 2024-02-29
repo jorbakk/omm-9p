@@ -230,6 +230,40 @@ xput(int argc, char *argv[])
 
 
 static int
+xseek(int argc, char *argv[])
+{
+	char *arg;
+	if (argc == 2) {
+		arg = argv[1];
+	}
+	else {
+		fprintf(stderr, "usage: %s <position percentage>\n", argv[0]);
+		return 1;
+	}
+	char buf[MRL_MAX] = {0};
+	sprintf(buf, "%s %s", argv[0], arg);
+	return write_rctl_cmdbuf(buf);
+}
+
+
+static int
+xvol(int argc, char *argv[])
+{
+	char *arg;
+	if (argc == 2) {
+		arg = argv[1];
+	}
+	else {
+		fprintf(stderr, "usage: %s <volume percentage>\n", argv[0]);
+		return 1;
+	}
+	char buf[MRL_MAX] = {0};
+	sprintf(buf, "%s %s", argv[0], arg);
+	return write_rctl_cmdbuf(buf);
+}
+
+
+static int
 xfav(int argc, char *argv[])
 {
 	char buf[FAV_MAX] = {0};
@@ -257,6 +291,8 @@ struct exectab {
 	{"play", xnoparms},
 	{"stop", xnoparms},
 	{"fav", xfav},
+	{"seek", xseek},
+	{"vol", xvol},
 	{0, 0}
 };
 
