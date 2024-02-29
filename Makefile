@@ -1,7 +1,7 @@
 RELEASE      = 0
+RENDER_BACK  = RENDER_VLC
 # RENDER_BACK  = RENDER_DUMMY
 # RENDER_BACK  = RENDER_FFMPEG
-RENDER_BACK  = RENDER_VLC
 
 WD           = $(shell pwd)
 SYS          = $(WD)/sys
@@ -95,7 +95,7 @@ rpc.o server.o socket.o srv_util.o thread.o timer.o transport.o util.o
 $(B)/%.o: $(DVB)/%.cpp
 	$(CXX) -c -o $@ -I$(B) $(POCOCFLAGS) $(CPPFLAGS) -fPIC $(DVBCXXFLAGS) $<
 
-all: cscope.out $(P)/p9light $(B) $(B)/ommrender $(B)/render $(B)/ommserve $(B)/ommcontrol $(B)/ommscan $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_acc9p_plugin.so
+all: cscope.out $(B) $(P)/p9light $(B)/ommrender $(B)/ommserve $(B)/ommcontrol $(B)/ommscan $(B)/tunedvbcpp $(B)/scandvbcpp $(B)/tunedvb $(B)/libvlc_acc9p_plugin.so
 
 $(B):
 	mkdir -p $(B) $(EXT) $(SYS) $(P)
@@ -105,14 +105,14 @@ clean:
 	rm -f $(SYS)/bin/* $(SYS)/lib/* $(SYS)/pkg/*
 	rm -f ext/libixp/lib/libixp/*.o
 
-$(B)/ommrender: renderer.c renderer_ffmpeg.c renderer_vlc.c
+$(B)/ommrender: render.c render_ffmpeg.c render_vlc.c
 	$(CC) -o $@ $< $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
 # $(CC) -o $@ $< $(DBG_CFLAGS) $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(DBG_LDFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
 
-$(B)/render: render.c
+$(B)/render: testlab/render.c
 	$(CC) -o $@ $< $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) $(SDL2LIBS) $(VLCLIBS) -lz -lm
 
-$(B)/ommserve: server.c $(B)/libommdvb.so # $(B)/libommdvb.a
+$(B)/ommserve: serve.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) -o $(B)/ommserve $(CFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $< $(9PLIBS) $(SQLITE3LIBS) -L$(B) -lommdvb -lm
 
 $(SYS)/lib/libixp.a:

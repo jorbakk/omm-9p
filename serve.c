@@ -40,13 +40,11 @@ Server layout:
 #include <stdio.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
 #include <stdbool.h>
+#include <sys/stat.h>
 #include <libc.h>
 #include <fcall.h>
 #include <thread.h>
 #include <9p.h>
-
-/// FIXME use lan 9 stat?
-#include <sys/stat.h>
 
 #include <sqlite3.h>
 
