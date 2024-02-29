@@ -715,7 +715,7 @@ threadmain(int argc, char **argv)
 		}
 		ret = SDL_PollEvent(&event);
 		if (ret) {
-			LOG("received sdl event");
+			LOG("received sdl event type: %d", event.type);
 			Command command = { CMD_NONE, nil, 0 };
 			switch(event.type)
 			{

@@ -27,7 +27,8 @@ create_sdl_window(RendererCtx *rctx)
 			requested_window_width,
 			requested_window_height,
 			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
-			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
+			// SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE
+			SDL_WINDOW_RESIZABLE
 			);
 		SDL_GL_SetSwapInterval(1);
 	}
