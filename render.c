@@ -587,29 +587,6 @@ cmd_quit(RendererCtx *rctx, char *arg, int argn)
 }
 
 
-void
-cmd_seek(RendererCtx *rctx, char *arg, int argn)
-{
-	(void)rctx; (void)arg; (void)argn;
-	// TODO implement cmd_seek()
-	/* uint64_t seekpos = atoll(cmd.arg); */
-	/* av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0); */
-	/* av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0); */
-}
-
-
-void
-cmd_vol(RendererCtx *rctx, char *arg, int argn)
-{
-	(void)rctx; (void)arg; (void)argn;
-	// TODO implement cmd_vol()
-	/* int vol = atoi(cmd.arg); */
-	/* if (vol >=0 && vol <= 100) { */
-		/* rctx->audio_vol = vol; */
-	/* } */
-}
-
-
 int
 read_cmd(RendererCtx *rctx, int mode)
 {

@@ -1230,3 +1230,26 @@ state_disengage(RendererCtx *rctx)
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
+
+
+void
+cmd_seek(RendererCtx *rctx, char *arg, int argn)
+{
+	// TODO implement cmd_seek()
+	(void)rctx; (void)arg; (void)argn;
+	/* uint64_t seekpos = atoll(cmd.arg); */
+	/* av_seek_frame(rctx->format_ctx, rctx->audio_stream, seekpos / rctx->audio_tbd, 0); */
+	/* av_seek_frame(rctx->format_ctx, rctx->video_stream, seekpos / rctx->video_tbd, 0); */
+}
+
+
+void
+cmd_vol(RendererCtx *rctx, char *arg, int argn)
+{
+	// TODO implement cmd_vol()
+	(void)rctx; (void)arg; (void)argn;
+	/* int vol = atoi(cmd.arg); */
+	/* if (vol >=0 && vol <= 100) { */
+		/* rctx->audio_vol = vol; */
+	/* } */
+}

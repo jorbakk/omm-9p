@@ -30,7 +30,7 @@ create_sdl_window(RendererCtx *rctx)
 			// SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE
 			SDL_WINDOW_RESIZABLE
 			);
-		SDL_GL_SetSwapInterval(1);
+		// SDL_GL_SetSwapInterval(1);
 	}
 	if (rctx->sdl_window == nil) {
 		LOG("SDL: could not create window");
@@ -115,6 +115,8 @@ wait_for_window_resize(RendererCtx *rctx)
 void
 state_run(RendererCtx *rctx)
 {
+	/// Keep reading commands in this thread, while the player thread
+	/// keeps running
 	while (read_cmd(rctx, READCMD_BLOCK) == KEEP_STATE) {
 	}
 }
@@ -129,6 +131,7 @@ state_load(RendererCtx *rctx)
 	libvlc_media_release(rctx->media);
 	/// Start to play ...
 	libvlc_media_player_play(rctx->player);
+	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
@@ -147,6 +150,7 @@ void
 state_engage(RendererCtx *rctx)
 {
 	SDL_PauseAudioDevice(rctx->audio_devid, 0);
+	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
 
@@ -155,5 +159,22 @@ void
 state_disengage(RendererCtx *rctx)
 {
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);
+	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
+}
+
+
+void
+cmd_seek(RendererCtx *rctx, char *arg, int argn)
+{
+	(void)argn;
+	libvlc_media_player_set_position(rctx->player, (float)atoi(arg) / 100.0);
+}
+
+
+void
+cmd_vol(RendererCtx *rctx, char *arg, int argn)
+{
+	(void)argn;
+    libvlc_audio_set_volume(rctx->player, (float)atoi(arg));
 }
