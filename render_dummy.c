@@ -90,8 +90,10 @@ cmd_seek(RendererCtx *rctx, char *arg, int argn)
 }
 
 
+#ifndef HW_MASTER_VOL
 void
 cmd_vol(RendererCtx *rctx, char *arg, int argn)
 {
 	(void)rctx; (void)arg; (void)argn;
 }
+#endif

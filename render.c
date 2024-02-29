@@ -22,6 +22,7 @@
 
 #include <u.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
+#include <errno.h>
 #include <libc.h>
 #include <fcall.h>
 #include <thread.h>
@@ -42,6 +43,8 @@
 // #define THREAD_CREATE threadcreate
 /// OS pre-emptive threads
 #define THREAD_CREATE proccreate
+#define VOLPROG "pactl"
+#define HW_MASTER_VOL
 
 #ifdef RENDER_DUMMY
 #elif defined RENDER_VLC
@@ -585,6 +588,23 @@ cmd_quit(RendererCtx *rctx, char *arg, int argn)
 	(void)rctx; (void)arg; (void)argn;
 	// currently nothing planned here ...
 }
+
+
+#ifdef HW_MASTER_VOL
+void
+cmd_vol(RendererCtx *rctx, char *arg, int argn)
+{
+	(void)rctx; (void)argn;
+	char volprogcmd[128];
+	snprintf(volprogcmd, 128, VOLPROG " set-sink-volume @DEFAULT_SINK@ %s%%", arg);
+	int ret = system(volprogcmd);
+	if (ret == -1 || ret == 127) {
+		LOG("failed to execute %s for setting the hardware master volume: %s", VOLPROG, strerror(errno));
+	} else {
+		LOG("%s returned: %d", VOLPROG, ret);
+	}
+}
+#endif
 
 
 int
