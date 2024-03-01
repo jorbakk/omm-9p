@@ -103,7 +103,6 @@ $(B):
 clean:
 	rm -rf $(B)
 	rm -f $(SYS)/bin/* $(SYS)/lib/* $(SYS)/pkg/*
-	rm -f ext/libixp/lib/libixp/*.o
 
 $(B)/ommrender: render.c render_ffmpeg.c render_vlc.c
 	$(CC) -o $@ $< $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
@@ -120,6 +119,7 @@ $(SYS)/lib/libixp.a:
 	cd ext/libixp/lib/libixp && $(AR) rcs libixp.a $(LIBIXPOBJS)
 	cp ext/libixp/include/ixp.h $(SYS)/include
 	mv ext/libixp/lib/libixp/libixp.a $@
+	rm -f ext/libixp/lib/libixp/*.o
 
 $(P)/p9light:
 	cd ext/p9light && make && make install PREFIX=$(SYS) && make clean
