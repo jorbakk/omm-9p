@@ -147,6 +147,7 @@ typedef struct RendererCtx
 } RendererCtx;
 
 static RendererCtx rctx;
+static bool fullscreen;
 
 // State machine
 #define NSTATE 8
@@ -670,6 +671,13 @@ decoder_thread(void *arg)
 
 
 void
+print_usage(int argc, char **argv)
+{
+	printf("%s [ -f || file:///path ]", argv[0]);
+}
+
+
+void
 threadmain(int argc, char **argv)
 {
 	if (_DEBUG_) {
@@ -677,6 +685,20 @@ threadmain(int argc, char **argv)
 		/* chattyfuse = 1; */
 	}
 	reset_rctx(&rctx, 1);
+	if (argc == 2) {
+		if (strcmp(argv[1], "-f") == 0) {
+			fullscreen = true;
+		} else {
+			/// Load file if url is given on command line
+			/// url must be given as: file:///path
+			setstr(&rctx.url, argv[1], strlen(argv[1]));
+			seturl(&rctx, argv[1]);
+			rctx.renderer_state = LOAD;
+		}
+	} else if (argc > 2) {
+		print_usage(argc, argv);
+		return;
+	}
 	// Create OS window
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
@@ -693,11 +715,6 @@ threadmain(int argc, char **argv)
 	// Start command server
 	rctx.cmdq = chancreate(sizeof(Command), MAX_COMMANDQ_SIZE);
 	start_server(&rctx);
-	// Load file if url is given on command line
-	if (argc >= 2) {
-		seturl(&rctx, argv[1]);
-		rctx.renderer_state = LOAD;
-	}
 	// Start decoder / state machine thread
 	rctx.decoder_tid = THREAD_CREATE(decoder_thread, &rctx, THREAD_STACK_SIZE);
 	if (!rctx.decoder_tid) {
@@ -712,7 +729,7 @@ threadmain(int argc, char **argv)
 		}
 		ret = SDL_PollEvent(&event);
 		if (ret) {
-			LOG("received sdl event type: %d", event.type);
+			LOG("received sdl event type: 0x%x", event.type);
 			Command command = { CMD_NONE, nil, 0 };
 			switch(event.type)
 			{

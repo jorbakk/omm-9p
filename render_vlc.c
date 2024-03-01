@@ -18,30 +18,29 @@ create_sdl_window(RendererCtx *rctx)
 	rctx->screen_height = displaymode.h;
 	int requested_window_width  = 800;
 	int requested_window_height = 600;
-	if (rctx->sdl_window == nil) {
-		// create a window with the specified position, dimensions, and flags.
-		rctx->sdl_window = SDL_CreateWindow(
-			"OMM Renderer",
-			SDL_WINDOWPOS_UNDEFINED,
-			SDL_WINDOWPOS_UNDEFINED,
-			requested_window_width,
-			requested_window_height,
-			/* SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI */
-			// SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE
-			SDL_WINDOW_RESIZABLE
-			);
-		// SDL_GL_SetSwapInterval(1);
-	}
+	int options = SDL_WINDOW_RESIZABLE;
+	if (fullscreen) options = SDL_WINDOW_FULLSCREEN_DESKTOP;
+	// create a window with the specified position, dimensions, and flags.
+	rctx->sdl_window = SDL_CreateWindow(
+		"OMM Renderer",
+		SDL_WINDOWPOS_UNDEFINED,
+		SDL_WINDOWPOS_UNDEFINED,
+		requested_window_width,
+		requested_window_height,
+		options
+		);
 	if (rctx->sdl_window == nil) {
 		LOG("SDL: could not create window");
 		return -1;
 	}
+	// create a 2D rendering context for the SDL_Window
+	rctx->sdl_renderer = SDL_CreateRenderer(
+		rctx->sdl_window,
+		-1,
+		SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
 	if (rctx->sdl_renderer == nil) {
-		// create a 2D rendering context for the SDL_Window
-		rctx->sdl_renderer = SDL_CreateRenderer(
-			rctx->sdl_window,
-			-1,
-			SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+		LOG("SDL: could not create renderer");
+		return -1;
 	}
 	return 0;
 }
