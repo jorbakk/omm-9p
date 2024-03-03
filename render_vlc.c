@@ -72,9 +72,19 @@ create_window(RendererCtx *rctx)
 	rctx->player = libvlc_media_player_new(rctx->libvlc);
 	LOG("SDL window id: %u", get_sdl_window_id(rctx->sdl_window));
 	libvlc_media_player_set_xwindow(rctx->player, get_sdl_window_id(rctx->sdl_window));
-	return 1;
-exit:
+	char *vlcpp = getenv("VLC_PLUGIN_PATH");
+	if (vlcpp) {
+		LOG("VLC plugin path: %s", vlcpp);
+	} else {
+		LOG("VLC plugin path not set");
+	}
+	LOG("Setting DBUS_FATAL_WARNINGS to '0' to prevent libvlc from bailing out ...");
+	setenv("DBUS_FATAL_WARNINGS", "0", 1);
+	// LOG("Setting X display to ':0' to make sure we have a namespace for plan9port ...");
+	// setenv("DISPLAY", ":0", 1);
 	return 0;
+exit:
+	return -1;
 }
 
 

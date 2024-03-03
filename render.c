@@ -714,14 +714,18 @@ threadmain(int argc, char **argv)
 	}
 	char *fs = getenv(omm_render_fullscreen);
 	if (fs && strcmp(fs, "1") == 0) fullscreen = true;
+	LOG("omm render config fullscreen: %s", fullscreen ? "true" : "false");
 	char *av = getenv(omm_render_audiovol);
 	if (av && strcmp(av, "PULSE") == 0) cmds[CMD_VOL] = cmd_vol_pulse;
+	LOG("omm render config audio volume channel: %s", av ? "hardware" : "app");
 	if (init_backend() != 0) {
 		return;
 	}
+	LOG("backend initialized.");
 	if (create_window(&rctx) != 0) {
 		return;
 	}
+	LOG("window created.");
 	blank_window(&rctx);
 	// Wait for sdl window to be created (restored) and resized
 	wait_for_window_resize(&rctx);
@@ -748,6 +752,7 @@ threadmain(int argc, char **argv)
 			{
 				case SDL_KEYDOWN:
 				{
+					LOG("received sdl key down event, symbol: 0x%x", event.key.keysym.sym);
 					switch(event.key.keysym.sym)
 					{
 						case SDLK_q:
@@ -786,6 +791,7 @@ threadmain(int argc, char **argv)
 				break;
 				case SDL_WINDOWEVENT:
 				{
+					LOG("received sdl window event: 0x%x", event.window.event);
 					switch(event.window.event)
 					{
 						case SDL_WINDOWEVENT_RESIZED:
@@ -807,6 +813,7 @@ threadmain(int argc, char **argv)
 				break;
 				case SDL_QUIT:
 				{
+					LOG("received sdl quit event");
 					command.cmd = CMD_QUIT;
 					send(rctx.cmdq, &command);
 				}
