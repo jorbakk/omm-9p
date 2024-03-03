@@ -158,6 +158,8 @@ state_unload(RendererCtx *rctx)
 void
 state_engage(RendererCtx *rctx)
 {
+	/// FIXME pause doesn't work
+	libvlc_media_player_pause(rctx->player);
 	SDL_PauseAudioDevice(rctx->audio_devid, 0);
 	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
@@ -167,6 +169,8 @@ state_engage(RendererCtx *rctx)
 void
 state_disengage(RendererCtx *rctx)
 {
+	/// FIXME un-pause doesn't work
+	libvlc_media_player_pause(rctx->player);
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);
 	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
