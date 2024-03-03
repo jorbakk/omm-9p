@@ -1243,7 +1243,6 @@ cmd_seek(RendererCtx *rctx, char *arg, int argn)
 }
 
 
-#ifndef HW_MASTER_VOL
 void
 cmd_vol(RendererCtx *rctx, char *arg, int argn)
 {
@@ -1254,4 +1253,3 @@ cmd_vol(RendererCtx *rctx, char *arg, int argn)
 		/* rctx->audio_vol = vol; */
 	/* } */
 }
-#endif

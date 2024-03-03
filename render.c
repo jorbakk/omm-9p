@@ -23,6 +23,7 @@
 #include <u.h>
 #include <time.h>  // posix std headers should be included between u.h and libc.h
 #include <errno.h>
+#include <stdbool.h>
 #include <libc.h>
 #include <fcall.h>
 #include <thread.h>
@@ -44,7 +45,6 @@
 /// OS pre-emptive threads
 #define THREAD_CREATE proccreate
 #define VOLPROG "pactl"
-#define HW_MASTER_VOL
 
 #ifdef RENDER_DUMMY
 #elif defined RENDER_VLC
@@ -147,7 +147,10 @@ typedef struct RendererCtx
 } RendererCtx;
 
 static RendererCtx rctx;
-static bool fullscreen;
+/// Environment variables for configuration
+static char *omm_render_fullscreen = "OMM_RENDER_FULLSCREEN";
+static char *omm_render_audiovol = "OMM_RENDER_AUDIOVOL";
+static bool fullscreen = false;
 
 // State machine
 #define NSTATE 8
@@ -215,6 +218,9 @@ void cmd_pause(RendererCtx *rctx, char *arg, int argn);
 void cmd_quit(RendererCtx *rctx, char *arg, int argn);
 void cmd_seek(RendererCtx *rctx, char *arg, int argn);
 void cmd_vol(RendererCtx *rctx, char *arg, int argn);
+void cmd_vol_pulse(RendererCtx *rctx, char *arg, int argn);
+
+cmd_func cmd_vol_func;
 
 enum
 {
@@ -591,9 +597,8 @@ cmd_quit(RendererCtx *rctx, char *arg, int argn)
 }
 
 
-#ifdef HW_MASTER_VOL
 void
-cmd_vol(RendererCtx *rctx, char *arg, int argn)
+cmd_vol_pulse(RendererCtx *rctx, char *arg, int argn)
 {
 	(void)rctx; (void)argn;
 	char volprogcmd[128];
@@ -605,7 +610,6 @@ cmd_vol(RendererCtx *rctx, char *arg, int argn)
 		LOG("%s returned: %d", VOLPROG, ret);
 	}
 }
-#endif
 
 
 int
@@ -682,24 +686,25 @@ threadmain(int argc, char **argv)
 {
 	if (_DEBUG_) {
 		chatty9pclient = 1;
-		/* chattyfuse = 1; */
 	}
 	reset_rctx(&rctx, 1);
+	/// Configuration
 	if (argc == 2) {
-		if (strcmp(argv[1], "-f") == 0) {
-			fullscreen = true;
-		} else {
-			/// Load file if url is given on command line
-			/// url must be given as: file:///path
-			setstr(&rctx.url, argv[1], strlen(argv[1]));
-			seturl(&rctx, argv[1]);
-			rctx.renderer_state = LOAD;
-		}
+		/// Load file if url is given on command line
+		/// url must be given as: file:///path
+		/// FIXME add file:// if path starts with '/'?
+		setstr(&rctx.url, argv[1], strlen(argv[1]));
+		seturl(&rctx, argv[1]);
+		rctx.renderer_state = LOAD;
 	} else if (argc > 2) {
 		print_usage(argc, argv);
 		return;
 	}
-	// Create OS window
+	char *fs = getenv(omm_render_fullscreen);
+	if (fs && strcmp(fs, "1") == 0) fullscreen = true;
+	char *av = getenv(omm_render_audiovol);
+	if (av && strcmp(av, "PULSE") == 0) cmds[CMD_VOL] = cmd_vol_pulse;
+	/// FIXME move sdl specific code into backend
 	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
 	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (ret != 0) {

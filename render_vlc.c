@@ -171,11 +171,9 @@ cmd_seek(RendererCtx *rctx, char *arg, int argn)
 }
 
 
-#ifndef HW_MASTER_VOL
 void
 cmd_vol(RendererCtx *rctx, char *arg, int argn)
 {
 	(void)argn;
     libvlc_audio_set_volume(rctx->player, (float)atoi(arg));
 }
-#endif
