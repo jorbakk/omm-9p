@@ -49,7 +49,6 @@
 #ifdef RENDER_DUMMY
 #elif defined RENDER_VLC
 #include "vlc/vlc.h"
-// #include <SDL2/SDL_mutex.h>
 #include <SDL2/SDL_syswm.h>
 #elif defined RENDER_FFMPEG
 #include <libavformat/avformat.h>
@@ -304,6 +303,7 @@ static int transitions[NCMD][NSTATE-1] = // no entry for EXIT state needed
 /// Function declarations
 void decoder_thread(void *arg);
 int  resize_video(RendererCtx *rctx);
+int  init_backend(void);
 int  create_window(RendererCtx *rctx);
 void close_window(RendererCtx *rctx);
 void wait_for_window_resize(RendererCtx *rctx);
@@ -674,6 +674,18 @@ decoder_thread(void *arg)
 }
 
 
+int
+init_backend(void)
+{
+	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
+	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+	if (ret != 0) {
+		LOG("Could not initialize SDL - %s", SDL_GetError());
+	}
+	return ret;
+}
+
+
 void
 print_usage(int argc, char **argv)
 {
@@ -704,14 +716,10 @@ threadmain(int argc, char **argv)
 	if (fs && strcmp(fs, "1") == 0) fullscreen = true;
 	char *av = getenv(omm_render_audiovol);
 	if (av && strcmp(av, "PULSE") == 0) cmds[CMD_VOL] = cmd_vol_pulse;
-	/// FIXME move sdl specific code into backend
-	/* int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER); */
-	int ret = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
-	if (ret != 0) {
-		LOG("Could not initialize SDL - %s", SDL_GetError());
+	if (init_backend() != 0) {
 		return;
 	}
-	if (create_window(&rctx) == -1) {
+	if (create_window(&rctx) != 0) {
 		return;
 	}
 	blank_window(&rctx);
@@ -732,8 +740,8 @@ threadmain(int argc, char **argv)
 		if (rctx.renderer_state == STOP || rctx.renderer_state == IDLE) {
 			sleep(100);
 		}
-		ret = SDL_PollEvent(&event);
-		if (ret) {
+		int evt = SDL_PollEvent(&event);
+		if (evt) {
 			LOG("received sdl event type: 0x%x", event.type);
 			Command command = { CMD_NONE, nil, 0 };
 			switch(event.type)
