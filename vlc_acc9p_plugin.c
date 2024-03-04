@@ -148,6 +148,8 @@ Control(stream_t *p_access, int i_query, va_list args)
         if (p_sys->size == 0) return VLC_EGENERIC;
         *va_arg( args, uint64_t * ) = p_sys->size;
         break;
+    case STREAM_SET_PAUSE_STATE:
+        break;
 	default:
 		return VLC_EGENERIC;
 	}

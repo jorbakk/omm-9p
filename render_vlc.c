@@ -33,7 +33,7 @@ create_sdl_window(RendererCtx *rctx)
 		LOG("SDL: could not create window");
 		return -1;
 	}
-	// create a 2D rendering context for the SDL_Window
+	/// Create a 2D rendering context for the SDL_Window
 	rctx->sdl_renderer = SDL_CreateRenderer(
 		rctx->sdl_window,
 		-1,
@@ -62,6 +62,8 @@ create_window(RendererCtx *rctx)
 	create_sdl_window(rctx);
 	char const *vlc_argv[] = {
 		"-v",
+		"--no-dbus",
+		// "--no-audio",
 	};
 	int vlc_argc = sizeof(vlc_argv) / sizeof(*vlc_argv);
 	rctx->libvlc = libvlc_new(vlc_argc, vlc_argv);
@@ -102,6 +104,10 @@ blank_window(RendererCtx *rctx)
 	SDL_SetRenderDrawColor(rctx->sdl_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 	SDL_RenderClear(rctx->sdl_renderer);
 	SDL_RenderPresent(rctx->sdl_renderer);
+	LOG("blank window.");
+	/// Version 4.0.0 and later only
+	// libvlc_media_player_signal(rctx->player);
+	// libvlc_media_player_unlock(rctx->player);
 }
 
 
@@ -158,9 +164,8 @@ state_unload(RendererCtx *rctx)
 void
 state_engage(RendererCtx *rctx)
 {
-	/// FIXME pause doesn't work
-	libvlc_media_player_pause(rctx->player);
 	SDL_PauseAudioDevice(rctx->audio_devid, 0);
+	libvlc_media_player_pause(rctx->player);
 	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
@@ -169,7 +174,6 @@ state_engage(RendererCtx *rctx)
 void
 state_disengage(RendererCtx *rctx)
 {
-	/// FIXME un-pause doesn't work
 	libvlc_media_player_pause(rctx->player);
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);
 	/// Immediately go to next state (without being issued by a command)
@@ -180,14 +184,24 @@ state_disengage(RendererCtx *rctx)
 void
 cmd_seek(RendererCtx *rctx, char *arg, int argn)
 {
-	(void)argn;
-	libvlc_media_player_set_position(rctx->player, (float)atoi(arg) / 100.0);
+	if (arg == NULL || argn == 0) {
+		LOG("seek cmd arg invalid");
+		return;
+	}
+	libvlc_media_player_set_position(rctx->player, atof(arg) / 100.0);
+	// libvlc_media_player_set_position(rctx->player, (float)atoi(arg) / 100.0);
+	// float val = strtof(arg);
+	// libvlc_media_player_set_position(rctx->player, val / 100.0);
 }
 
 
 void
 cmd_vol(RendererCtx *rctx, char *arg, int argn)
 {
-	(void)argn;
-    libvlc_audio_set_volume(rctx->player, (float)atoi(arg));
+	if (arg == NULL || argn == 0) {
+		LOG("vol cmd arg invalid");
+		return;
+	}
+    libvlc_audio_set_volume(rctx->player, atof(arg));
+    // libvlc_audio_set_volume(rctx->player, (float)atoi(arg));
 }

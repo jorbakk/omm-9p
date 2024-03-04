@@ -694,6 +694,76 @@ print_usage(int argc, char **argv)
 
 
 void
+print_event(const SDL_Event *event)
+{
+	if (event->type == SDL_WINDOWEVENT) {
+		switch (event->window.event) {
+		case SDL_WINDOWEVENT_SHOWN:
+			LOG("... window %d shown", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_HIDDEN:
+			LOG("... window %d hidden", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_EXPOSED:
+			LOG("... window %d exposed", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_MOVED:
+			LOG("... window %d moved to %d,%d",
+			        event->window.windowID, event->window.data1,
+			        event->window.data2);
+			break;
+		case SDL_WINDOWEVENT_RESIZED:
+			LOG("... window %d resized to %dx%d",
+			        event->window.windowID, event->window.data1,
+			        event->window.data2);
+			break;
+		case SDL_WINDOWEVENT_SIZE_CHANGED:
+			LOG("... window %d size changed to %dx%d",
+			        event->window.windowID, event->window.data1,
+			        event->window.data2);
+			break;
+		case SDL_WINDOWEVENT_MINIMIZED:
+			LOG("... window %d minimized", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_MAXIMIZED:
+			LOG("... window %d maximized", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_RESTORED:
+			LOG("... window %d restored", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_ENTER:
+			LOG("... mouse entered window %d", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_LEAVE:
+			LOG("... mouse left window %d", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_FOCUS_GAINED:
+			LOG("... window %d gained keyboard focus", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_FOCUS_LOST:
+			LOG("... window %d lost keyboard focus", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_CLOSE:
+			LOG("... window %d closed", event->window.windowID);
+			break;
+#if SDL_VERSION_ATLEAST(2, 0, 5)
+		case SDL_WINDOWEVENT_TAKE_FOCUS:
+			LOG("... window %d is offered a focus", event->window.windowID);
+			break;
+		case SDL_WINDOWEVENT_HIT_TEST:
+			LOG("... window %d has a special hit test", event->window.windowID);
+			break;
+#endif
+		default:
+			LOG("... window %d got unknown event %d",
+			        event->window.windowID, event->window.event);
+			break;
+		}
+	}
+}
+
+
+void
 threadmain(int argc, char **argv)
 {
 	if (_DEBUG_) {
@@ -713,10 +783,12 @@ threadmain(int argc, char **argv)
 		return;
 	}
 	char *fs = getenv(omm_render_fullscreen);
-	if (fs && strcmp(fs, "1") == 0) fullscreen = true;
+	if (fs && strcmp(fs, "1") == 0)
+		fullscreen = true;
 	LOG("omm render config fullscreen: %s", fullscreen ? "true" : "false");
 	char *av = getenv(omm_render_audiovol);
-	if (av && strcmp(av, "PULSE") == 0) cmds[CMD_VOL] = cmd_vol_pulse;
+	if (av && strcmp(av, "PULSE") == 0)
+		cmds[CMD_VOL] = cmd_vol_pulse;
 	LOG("omm render config audio volume channel: %s", av ? "hardware" : "app");
 	if (init_backend() != 0) {
 		return;
@@ -748,76 +820,87 @@ threadmain(int argc, char **argv)
 		if (evt) {
 			LOG("received sdl event type: 0x%x", event.type);
 			Command command = { CMD_NONE, nil, 0 };
-			switch(event.type)
-			{
-				case SDL_KEYDOWN:
-				{
-					LOG("received sdl key down event, symbol: 0x%x", event.key.keysym.sym);
-					switch(event.key.keysym.sym)
+			switch (event.type) {
+			case SDL_KEYDOWN: {
+				LOG("received sdl key down event, symbol: 0x%x",
+				    event.key.keysym.sym);
+				switch (event.key.keysym.sym) {
+				case SDLK_q:
 					{
-						case SDLK_q:
-						{
-							command.cmd = CMD_QUIT;
-						}
-						break;
-						case SDLK_SPACE:
-						{
-							command.cmd = CMD_PAUSE;
-						}
-						break;
-						case SDLK_s:
-						case SDLK_ESCAPE:
-						{
-							command.cmd = CMD_STOP;
-						}
-						break;
-						case SDLK_p:
-						case SDLK_RETURN:
-						{
-							command.cmd = CMD_PLAY;
-						}
-						break;
-						case SDLK_RIGHT:
-						{
-							command.cmd = CMD_SEEK;
-						}
-						break;
+						command.cmd = CMD_QUIT;
 					}
-					if (command.cmd != CMD_NONE) {
-						send(rctx.cmdq, &command);
-					}
-
-				}
-				break;
-				case SDL_WINDOWEVENT:
-				{
-					LOG("received sdl window event: 0x%x", event.window.event);
-					switch(event.window.event)
+					break;
+				case SDLK_SPACE:
 					{
-						case SDL_WINDOWEVENT_RESIZED:
-						case SDL_WINDOWEVENT_SIZE_CHANGED:
-						case SDL_WINDOWEVENT_MAXIMIZED:
-						{
-							LOG("window resized");
-							resize_video(&rctx);
-						}
-						break;
-						case SDL_WINDOWEVENT_SHOWN:
-						case SDL_WINDOWEVENT_RESTORED:
-						{
-							LOG("window restored");
-							blank_window(&rctx);
-						}
+						command.cmd = CMD_PAUSE;
 					}
+					break;
+				case SDLK_s:
+				case SDLK_ESCAPE:
+					{
+						command.cmd = CMD_STOP;
+					}
+					break;
+				case SDLK_p:
+				case SDLK_RETURN:
+					{
+						command.cmd = CMD_PLAY;
+					}
+					break;
+				case SDLK_RIGHT:
+					{
+						command.cmd  = CMD_SEEK;
+						/// TODO get current position and increment
+						/// FIXME render crash after seek keyboard cmd (remote cmd works)
+						command.arg  = "50";
+						command.argn = 2;
+					}
+					break;
+				case SDLK_LEFT:
+					{
+						command.cmd = CMD_SEEK;
+						/// TODO get current position and decrement
+						/// FIXME render crash after seek keyboard cmd (remote cmd works)
+						command.arg  = "50";
+						command.argn = 2;
+					}
+					break;
 				}
-				break;
-				case SDL_QUIT:
-				{
-					LOG("received sdl quit event");
-					command.cmd = CMD_QUIT;
+				if (command.cmd != CMD_NONE) {
 					send(rctx.cmdq, &command);
 				}
-				break;
+			}
+			break;
+			case SDL_WINDOWEVENT: {
+				LOG("received sdl window event: 0x%x", event.window.event);
+				print_event(&event);
+				switch (event.window.event) {
+				case SDL_WINDOWEVENT_RESIZED:
+				case SDL_WINDOWEVENT_SIZE_CHANGED:
+				case SDL_WINDOWEVENT_MAXIMIZED:
+					{
+						LOG("window resized");
+						resize_video(&rctx);
+					}
+					break;
+				case SDL_WINDOWEVENT_SHOWN:
+				case SDL_WINDOWEVENT_EXPOSED:
+				case SDL_WINDOWEVENT_RESTORED:
+				case SDL_WINDOWEVENT_MOVED:
+				case SDL_WINDOWEVENT_FOCUS_LOST:
+					{
+						LOG("window hidden/shown/moved");
+						// blank_window(&rctx);
+					}
+				}
+			}
+			break;
+			case SDL_QUIT: {
+				LOG("received sdl quit event");
+				command.cmd = CMD_QUIT;
+				send(rctx.cmdq, &command);
+			}
+			break;
 			}
 		}
 	}

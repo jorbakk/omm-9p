@@ -104,9 +104,12 @@ clean:
 	rm -rf $(B)
 	rm -f $(SYS)/bin/* $(SYS)/lib/* $(SYS)/pkg/*
 
+$(B)/ommcontrol: control.c $(SYS)/lib/libixp.a
+	mkdir -p $(B)
+	$(CC) -o $@ $< -g -D__DEBUG__ -I$(SYS)/include -L$(SYS)/lib -lixp
+
 $(B)/ommrender: render.c render_ffmpeg.c render_vlc.c
 	$(CC) -o $@ $< $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
-# $(CC) -o $@ $< $(DBG_CFLAGS) $(CFLAGS) $(RENDERFLAGS) $(SDL2CFLAGS) $(DBG_LDFLAGS) $(LDFLAGS) $(9PLIBS) $(RENDERLIBS) $(SDL2LIBS) -lz -lm
 
 $(B)/render: testlab/render.c
 	$(CC) -o $@ $< $(CFLAGS) $(SDL2CFLAGS) $(VLCFLAGS) $(LDFLAGS) $(SDL2LIBS) $(VLCLIBS) -lz -lm
@@ -125,9 +128,6 @@ $(P)/p9light:
 	cd ext/p9light && make && make install PREFIX=$(SYS) && make clean
 	touch $@
 
-$(B)/ommcontrol: control.c $(B) $(SYS)/lib/libixp.a
-	$(CC) -o $@ $< -g -D__DEBUG__ -I$(SYS)/include -L$(SYS)/lib -lixp
-
 $(B)/ommscan: scan.c
 	$(CC) -o $@ -Wno-deprecated-declarations $(CFLAGS) $(VLCFLAGS) $(LDFLAGS) $< $(VLCLIBS) $(SQLITE3LIBS) -lm
 
@@ -145,11 +145,9 @@ $(B)/libommdvb.so: $(DVB)/TransponderData.h $(DVBOBJS)
 
 $(B)/tunedvbcpp: $(B)/TuneDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CXX) -o $(B)/tunedvbcpp $< $(DVBLIBS) -L$(B) -lommdvb -lm
-# $(CXX) -o $(B)/tunedvbcpp $< -Wl,--copy-dt-needed-entries $(DVBLIBS) -L$(B) -lommdvb -lm
 
 $(B)/scandvbcpp: $(B)/ScanDvb.o $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CXX) -o $(B)/scandvbcpp $< $(DVBLIBS) -L$(B) -lommdvb -lm
-# $(CXX) -o $(B)/scandvbcpp $< -Wl,--copy-dt-needed-entries $(DVBLIBS) -L$(B) -lommdvb -lm
 
 $(B)/tunedvb: $(DVB)/tunedvb.c $(B)/libommdvb.so # $(B)/libommdvb.a
 	$(CC) -o $@ $(CFLAGS) $(LDFLAGS) $^ -L$(B) -lommdvb -lm
