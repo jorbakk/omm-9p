@@ -290,6 +290,7 @@ struct exectab {
 	{"put", xput},
 	{"play", xnoparms},
 	{"stop", xnoparms},
+	{"pause", xnoparms},
 	{"fav", xfav},
 	{"seek", xseek},
 	{"vol", xvol},
