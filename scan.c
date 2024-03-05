@@ -21,7 +21,10 @@ const char *crtobj_qry         =     \
 "id     INTEGER(8) PRIMARY KEY, "    \
 "type   TEXT(16), "                  \
 "fmt    TEXT(16), "                  \
+"timel  INTEGER, "                   \
 "orig   TEXT(16), "                  \
+"album  TEXT, "                      \
+"track  TEXT, "                      \
 "title  TEXT, "                      \
 "path   TEXT "                       \
 ")";
@@ -50,7 +53,7 @@ const char *drpfav_qry        =      \
 /// Insert
 sqlite3_stmt *insstmt          = NULL;
 const char *ins_qry           =      \
-"INSERT INTO obj VALUES (?,?,?,?,?,?)";
+"INSERT INTO obj VALUES (?,?,?,?,?,?,?,?,?)";
 
 #define LOG(...) {fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");};
 
@@ -63,11 +66,11 @@ char *media_types[] = {
 };
 
 char *audio_types[] = {
-	"mp3", "wma", "ogg", "wav", NULL,
+	"mp3", "wma", "ogg", "wav", "opus", NULL,
 };
 
 char *video_types[] = {
-	"mp4", "mpeg", "mpg", "avi", "wmv", "flv", "opus", NULL,
+	"mp4", "mpeg", "mpg", "avi", "wmv", "flv", "webm", NULL,
 };
 
 char *img_types[] = {
@@ -144,15 +147,26 @@ tag(char *fpath)
 	if (!title) title = "";
 	char *artist = libvlc_media_get_meta(media, libvlc_meta_Artist);
 	if (!artist) artist = "";
+    char* album = libvlc_media_get_meta(media, libvlc_meta_Album);
+	if (!album) album = "";
+    char* track = libvlc_media_get_meta(media, libvlc_meta_TrackNumber);
+	if (!track) track = "";
+	libvlc_time_t duration = libvlc_media_get_duration(media);
+	if (duration == -1) {
+		LOG("could not get duration");
+	}
 	char *mtype = media_types[media_type(fpath)];
 	if (!mtype) mtype = "";
 	objid++;
 	sqlite3_bind_int(insstmt, 1, objid);
 	sqlite3_bind_text(insstmt, 2, "file", strlen("file"), SQLITE_STATIC);
 	sqlite3_bind_text(insstmt, 3, mtype, strlen(mtype), SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 4, artist, strlen(artist), SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 5, title, strlen(title), SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 6, fpath, strlen(fpath), SQLITE_STATIC);
+	sqlite3_bind_int(insstmt, 4, duration);
+	sqlite3_bind_text(insstmt, 5, artist, strlen(artist), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 6, album, strlen(title), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 7, track, strlen(title), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 8, title, strlen(title), SQLITE_STATIC);
+	sqlite3_bind_text(insstmt, 9, fpath, strlen(fpath), SQLITE_STATIC);
 	sqlite3_step(insstmt);
 	sqlite3_reset(insstmt);
 	LOG("title: %s", title);
