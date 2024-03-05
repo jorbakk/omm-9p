@@ -60,6 +60,7 @@ Server layout:
 #define MAX_QRY      128
 #define MAX_CTL      128
 #define MAX_ARGC     32
+#define MAX_META     1024
 
 /// 9P server
 static char *srvname            = "ommserve";
@@ -97,7 +98,7 @@ static const char *favcountqry  = \
 	"AND obj.id = fav.objid AND fav.listid = '%s' " \
 	"LIMIT 1";
 static const char *metaqry      = \
-	"SELECT type, title, path FROM obj WHERE " \
+	"SELECT type, fmt, timel, orig, album, track, title, path FROM obj WHERE " \
 	"id = ? LIMIT 1";
 static const char *favaddqry    = \
 	"INSERT INTO fav VALUES (?,?,?,?)";
@@ -253,12 +254,12 @@ initaux(vlong path, void **aux)
 		LOG("initaux, Qdata");
 		AuxObj *ao = calloc(1, sizeof(AuxObj));
 		vlong objid = QOBJID(path);
-		// SELECT type, title, path FROM obj WHERE id = objid LIMIT 1
+		// SELECT type, fmt, timel, orig, album, track, title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
 		int sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
 			char *objtype = (char*)sqlite3_column_text(metastmt, 0);
-			char *objpath = (char*)sqlite3_column_text(metastmt, 2);
+			char *objpath = (char*)sqlite3_column_text(metastmt, 7);
 			LOG("meta query returned file type: %s, path: %s", objtype, objpath);
 			ao->objpath = estrdup9p(objpath);
 			if (strcmp(objtype, OBJTYPESTR_FILE) == 0) {
@@ -493,6 +494,9 @@ srvread(Req *r)
 	vlong objid = QOBJID(path);
 	long count = r->ifcall.count;
 	char *title;
+	size_t title_len;
+	int pos = 0;
+	char meta[MAX_META] = {0};
 	int sqlret;
 	AuxObj *ao = nil;
 	switch(QTYPE(path)) {
@@ -519,13 +523,23 @@ srvread(Req *r)
 		}
 		break;
 	case Qmeta:
-		// SELECT type, title, path FROM obj WHERE id = objid LIMIT 1
+		// SELECT type, fmt, timel, orig, album, track, title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
 		sqlret = sqlite3_step(metastmt);
+		// char sep = '\0';
+		char sep = '\1';
+		// char sep = '@';
 		if (sqlret == SQLITE_ROW) {
-			title   = (char*)sqlite3_column_text(metastmt, 1);
+			for (int m = 0; m < 7; ++m) {
+				title = (char*)sqlite3_column_text(metastmt, m);
+				title_len = strlen(title);
+				memcpy(meta + pos, title, title_len);
+				pos += title_len;
+				meta[pos] = sep;
+				pos++;
+			}
 			LOG("meta query returned title: %s", title);
-			readstr(r, title);
+			readstr(r, meta);
 		}
 		sqlite3_reset(metastmt);
 		break;

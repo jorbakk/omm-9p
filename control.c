@@ -15,7 +15,7 @@
 /// Length of string: "put <mrl>"
 #define MRL_MAX    (128)
 /// Size of obj meta data buffer
-#define META_MAX   (256)
+#define META_MAX   (1024)
 /// Length of fav command
 #define FAV_MAX    (128)
 
@@ -132,7 +132,20 @@ xls(int argc, char *argv[])
 			fprintf(stderr, "failed to read from '%s': %s\n", path, ixp_errbuf());
 			goto cleanup;
 		}
-		fprintf(stdout, "%10ld | %s: %s\n", fsize, stat[i].name, meta);
+		int metacnt = 8;
+		char *metargs[8] = {0};
+		metargs[0] = meta;
+		char *ma = meta;
+		// char sep = '\0';
+		char sep = '\1';
+		// char sep = '@';
+		for (int m = 1; m < metacnt; ++m) {
+			ma = memchr(ma, sep, pos);
+			*(ma) = '\0';
+			ma++;
+			metargs[m] = ma;
+		}
+		fprintf(stdout, "%10ld B | %7s ms | %2s: %s\n", fsize, metargs[2], stat[i].name, metargs[metacnt - 2]);
 	}
 	ret = 0;
 cleanup:
