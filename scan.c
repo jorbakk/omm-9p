@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <strings.h>
 #include <dirent.h>
 #include <limits.h>
 #include <sys/stat.h>
@@ -122,13 +123,13 @@ media_type(char *fpath)
 	char *ext = strrchr(fpath, '.') + 1;
 	if (!ext) return TYPE_NONE;
 	for (char **t = audio_types; *t; ++t) {
-		if (strcmp(ext, *t) == 0) return TYPE_AUDIO;
+		if (strcasecmp(ext, *t) == 0) return TYPE_AUDIO;
 	}
 	for (char **t = video_types; *t; ++t) {
-		if (strcmp(ext, *t) == 0) return TYPE_VIDEO;
+		if (strcasecmp(ext, *t) == 0) return TYPE_VIDEO;
 	}
 	for (char **t = img_types; *t; ++t) {
-		if (strcmp(ext, *t) == 0) return TYPE_IMG;
+		if (strcasecmp(ext, *t) == 0) return TYPE_IMG;
 	}
 	return TYPE_NONE;
 }
