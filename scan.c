@@ -116,10 +116,34 @@ create_tables(sqlite3 *db)
 
 
 int
-media_type(char *fpath)
+media_type_parsed(libvlc_media_t *media)
 {
-	/// FIXME a real hash map could be faster here,
-	/// or better write an ffmpeg backend
+	libvlc_media_track_t **tracks;
+	int ret = TYPE_NONE;
+	int tcount;
+	if ((tcount = libvlc_media_tracks_get(media, &tracks )) == 0) {
+		LOG("could not retrieve media format from parsing channels, falling back to file extension ... ");
+		goto exit;
+	}
+	for (int t = 0; t < tcount; ++t) {
+		if (tracks[t]->i_type == libvlc_track_video) {
+			ret = TYPE_VIDEO;
+			goto exit;
+		}
+		if (tracks[t]->i_type == libvlc_track_audio) {
+			ret = TYPE_AUDIO;
+			goto exit;
+		}
+	}
+exit:
+	libvlc_media_tracks_release(tracks, tcount);
+	return ret;
+}
+
+
+int
+media_type_fext(char *fpath)
+{
 	char *ext = strrchr(fpath, '.') + 1;
 	if (!ext) return TYPE_NONE;
 	for (char **t = audio_types; *t; ++t) {
@@ -136,6 +160,15 @@ media_type(char *fpath)
 
 
 int
+media_type(libvlc_media_t *media, char *fpath)
+{
+	int ret = media_type_parsed(media);
+	if (ret == TYPE_NONE) ret = media_type_fext(fpath);
+	return ret;
+}
+
+
+int
 tag(char *fpath)
 {
 	libvlc_media_t *media = libvlc_media_new_path(libvlc, fpath);
@@ -144,7 +177,6 @@ tag(char *fpath)
 	}
 	libvlc_media_parse(media);
 	char *title = libvlc_media_get_meta(media, libvlc_meta_Title);
-	/// FIXME better insert NULL, not "" into the database
 	if (!title) title = "";
 	char *artist = libvlc_media_get_meta(media, libvlc_meta_Artist);
 	if (!artist) artist = "";
@@ -156,7 +188,7 @@ tag(char *fpath)
 	if (duration == -1) {
 		LOG("could not get duration");
 	}
-	char *mtype = media_types[media_type(fpath)];
+	char *mtype = media_types[media_type(media, fpath)];
 	if (!mtype) mtype = "";
 	objid++;
 	sqlite3_bind_int(insstmt, 1, objid);
