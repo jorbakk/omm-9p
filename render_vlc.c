@@ -1,4 +1,14 @@
 void
+handle_errmsg(void)
+{
+	const char *errmsg = libvlc_errmsg();
+	if (errmsg) {
+		LOG("libvlc error: %s", errmsg);
+	}
+}
+
+
+void
 seturl(RendererCtx *rctx, char *url)
 {
 	(void)rctx;
@@ -61,19 +71,22 @@ create_window(RendererCtx *rctx)
 {
 	create_sdl_window(rctx);
 	char const *vlc_argv[] = {
-		"-v",
+		"-vv",
 		"--no-dbus",
 		// "--no-audio",
 	};
 	int vlc_argc = sizeof(vlc_argv) / sizeof(*vlc_argv);
 	rctx->libvlc = libvlc_new(vlc_argc, vlc_argv);
+	handle_errmsg();
 	if (rctx->libvlc == NULL) {
 		LOG("LibVLC initialization failure");
 		goto exit;
 	}
 	rctx->player = libvlc_media_player_new(rctx->libvlc);
+	handle_errmsg();
 	LOG("SDL window id: %u", get_sdl_window_id(rctx->sdl_window));
 	libvlc_media_player_set_xwindow(rctx->player, get_sdl_window_id(rctx->sdl_window));
+	handle_errmsg();
 	char *vlcpp = getenv("VLC_PLUGIN_PATH");
 	if (vlcpp) {
 		LOG("VLC plugin path: %s", vlcpp);
@@ -94,7 +107,9 @@ void
 close_window(RendererCtx *rctx)
 {
 	libvlc_media_player_release(rctx->player);
+	handle_errmsg();
 	libvlc_release(rctx->libvlc);
+	handle_errmsg();
 }
 
 
@@ -142,10 +157,14 @@ state_load(RendererCtx *rctx)
 {
 	LOG("libvlc loading url: %s", rctx->url);
 	rctx->media = libvlc_media_new_location(rctx->libvlc, rctx->url);
+	handle_errmsg();
 	libvlc_media_player_set_media(rctx->player, rctx->media);
+	handle_errmsg();
 	libvlc_media_release(rctx->media);
+	handle_errmsg();
 	/// Start to play ...
 	libvlc_media_player_play(rctx->player);
+	handle_errmsg();
 	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
@@ -155,6 +174,7 @@ void
 state_unload(RendererCtx *rctx)
 {
     libvlc_media_player_stop(rctx->player);
+	handle_errmsg();
 	SDL_CloseAudioDevice(rctx->audio_devid);
 	// Unconditional transition to STOP state
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
@@ -166,6 +186,7 @@ state_engage(RendererCtx *rctx)
 {
 	SDL_PauseAudioDevice(rctx->audio_devid, 0);
 	libvlc_media_player_pause(rctx->player);
+	handle_errmsg();
 	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
 }
@@ -175,6 +196,7 @@ void
 state_disengage(RendererCtx *rctx)
 {
 	libvlc_media_player_pause(rctx->player);
+	handle_errmsg();
 	SDL_PauseAudioDevice(rctx->audio_devid, 1);
 	/// Immediately go to next state (without being issued by a command)
 	rctx->renderer_state = transitions[CMD_NONE][rctx->renderer_state];
@@ -188,10 +210,12 @@ cmd_seek(RendererCtx *rctx, char *arg, int argn)
 		LOG("seek cmd arg invalid");
 		return;
 	}
-	libvlc_media_player_set_position(rctx->player, atof(arg) / 100.0);
+	// libvlc_media_player_set_position(rctx->player, atof(arg) / 100.0);
 	// libvlc_media_player_set_position(rctx->player, (float)atoi(arg) / 100.0);
 	// float val = strtof(arg);
 	// libvlc_media_player_set_position(rctx->player, val / 100.0);
+	libvlc_media_player_set_time(rctx->player, atof(arg) * 1000.0);
+	handle_errmsg();
 }
 
 
@@ -203,5 +227,6 @@ cmd_vol(RendererCtx *rctx, char *arg, int argn)
 		return;
 	}
     libvlc_audio_set_volume(rctx->player, atof(arg));
+	handle_errmsg();
     // libvlc_audio_set_volume(rctx->player, (float)atoi(arg));
 }

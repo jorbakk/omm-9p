@@ -59,6 +59,7 @@ Open(vlc_object_t * obj)
     /* Set up p_access */
     p_access->pf_read = Read;
     p_access->pf_control = Control;
+	msg_Info(p_access, "enabling seek: %s", p_sys->size ? "true" : "false");
     if (p_sys->size) {
 		p_access->pf_seek = Seek;
 	} else {
@@ -105,6 +106,7 @@ Read(stream_t *p_access, void *p_buffer, size_t i_len)
 int
 Seek(stream_t *p_access, uint64_t i_pos)
 {
+	msg_Info(p_access, "seeking to pos: %ld", i_pos);
 	access_sys_t *p_sys = p_access->p_sys;
 	p_sys->fileserverfid->offset = i_pos;
 	return VLC_SUCCESS;
@@ -119,13 +121,17 @@ Control(stream_t *p_access, int i_query, va_list args)
 	int64_t *pi_64;
 	switch (i_query) {
 	case STREAM_CAN_SEEK:
-	case STREAM_CAN_FASTSEEK:
+	// case STREAM_CAN_FASTSEEK:
 		pb_bool = va_arg(args, bool *);
 		if (p_sys->size == 0) {
 			*pb_bool = false;
 		} else {
 			*pb_bool = true;
 		}
+		break;
+	case STREAM_CAN_FASTSEEK:
+		pb_bool = va_arg(args, bool *);
+		*pb_bool = false;
 		break;
 	case STREAM_CAN_PAUSE:
 	case STREAM_CAN_CONTROL_PACE:
@@ -163,7 +169,6 @@ vlc_module_begin()
     set_description("Reading media data using the 9P protocol")
     set_capability("access", 60)
     set_callbacks(Open, Close)
-    // ACCESS_SET_CALLBACKS(Read, NULL, Control, Seek)
     add_shortcut("9P", "9p")
     set_category(CAT_INPUT)
     set_subcategory(SUBCAT_INPUT_ACCESS)
