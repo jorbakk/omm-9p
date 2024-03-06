@@ -36,8 +36,37 @@ static int render_port = 2002;
 static char serve_addr[ADDR_MAX] = {0};
 static char render_addr[ADDR_MAX] = {0};
 
+enum {
+	MET_TYPE = 0,
+	MET_FMT,
+	MET_DUR,
+	MET_ORIG,
+	MET_ALBUM,
+	MET_TRACK,
+	MET_TITLE,
+	MET_PATH,
+};
+
+
+struct time {
+	uint8_t h, m, s, ms;
+};
+
+
+void msec2time(struct time *t, uint64_t ms)
+{
+	t->s = ms / 1e3f;
+	t->ms = ms % 1000;
+	t->m = t->s / 60;
+	t->s = t->s % 60;
+	t->h = t->m / 60;
+	t->m = t->m % 60;
+	t->h = t->h % 60;
+}
+
 
 int write_sqry_cmdbuf(char *buf);
+
 
 static int
 xls(int argc, char *argv[])
@@ -145,7 +174,13 @@ xls(int argc, char *argv[])
 			ma++;
 			metargs[m] = ma;
 		}
-		fprintf(stdout, "%10ld B | %7s ms | %2s: %s\n", fsize, metargs[2], stat[i].name, metargs[metacnt - 2]);
+		struct time t;
+		uint64_t ms = atol(metargs[MET_DUR]);
+		msec2time(&t, ms);
+		fprintf(stdout, "%2s | %4.1f MB | %02d:%02d:%02d | %16s | %s\n",
+			stat[i].name, fsize / 1e6,
+			t.h, t.m, t.s,
+			metargs[MET_ORIG], metargs[MET_TITLE]);
 	}
 	ret = 0;
 cleanup:
