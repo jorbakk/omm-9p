@@ -48,6 +48,7 @@ Server layout:
 
 #include <sqlite3.h>
 
+#include "omm.h"
 #include "log.h"
 #include "dvb/dvb.h"
 
@@ -526,9 +527,6 @@ srvread(Req *r)
 		// SELECT type, fmt, dur, orig, album, track, title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
 		sqlret = sqlite3_step(metastmt);
-		// char sep = '\0';
-		char sep = '\1';
-		// char sep = '@';
 		int col_cnt = 7;
 		if (sqlret == SQLITE_ROW) {
 			for (int m = 0; m < col_cnt; ++m) {
@@ -536,7 +534,7 @@ srvread(Req *r)
 				col_len = strlen(col_val);
 				memcpy(meta + pos, col_val, col_len);
 				pos += col_len;
-				meta[pos] = sep;
+				meta[pos] = LIST_SEP;
 				pos++;
 			}
 			LOG("meta query returned title: %s", col_val);  /// Last col is title

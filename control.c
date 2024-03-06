@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <ixp.h>
 
+#include "omm.h"
+
 /// Length of string: "tcp!ip!port"
 #define ADDR_MAX   (64)
 /// Length of string: "<objid>/meta"
@@ -171,11 +173,8 @@ xls(int argc, char *argv[])
 		char *metargs[MET_CNT] = {0};
 		metargs[0] = meta;
 		char *ma = meta;
-		// char sep = '\0';
-		char sep = '\1';
-		// char sep = '@';
 		for (int m = 1; m < MET_CNT; ++m) {
-			ma = memchr(ma, sep, meta_len - (ma - meta));
+			ma = memchr(ma, LIST_SEP, meta_len - (ma - meta));
 			*(ma) = '\0';
 			ma++;
 			metargs[m] = ma;
