@@ -54,7 +54,7 @@ enum {
 
 
 struct time {
-	uint8_t h, m, s, ms;
+	int h, m, s, ms;
 };
 
 
@@ -179,7 +179,7 @@ xls(int argc, char *argv[])
 			ma++;
 			metargs[m] = ma;
 		}
-		struct time t;
+		struct time t = {0};
 		uint64_t ms = atol(metargs[MET_DUR]);
 		msec2time(&t, ms);
 		fprintf(stdout,
