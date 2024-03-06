@@ -12,6 +12,7 @@
 #include <sqlite3.h>
 
 
+bool append_mode               = false;
 char *basedir                  = NULL;
 libvlc_instance_t *libvlc      = NULL;
 sqlite3 *db                    = NULL;
@@ -52,9 +53,13 @@ const char *drpfav_qry        =      \
 "DROP TABLE IF EXISTS fav";
 
 /// Insert
-sqlite3_stmt *insstmt          = NULL;
+sqlite3_stmt *ins_stmt         = NULL;
 const char *ins_qry           =      \
 "INSERT INTO obj VALUES (?,?,?,?,?,?,?,?,?)";
+
+sqlite3_stmt *maxid_stmt      = NULL;
+const char *maxid_qry         =      \
+"SELECT MAX(id) FROM obj LIMIT 1";
 
 #define LOG(...) {fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n");};
 
@@ -78,7 +83,7 @@ char *img_types[] = {
 	"jpg", "jpeg", "png", "gif", NULL,
 };
 
-int objid = 0;
+uint64_t objid = 0;
 
 
 bool
@@ -112,6 +117,18 @@ create_tables(sqlite3 *db)
 	if (!exec_stmt(db, crtfav_qry)) return false;
 	// if (!exec_stmt(db, idxfav_qry)) return false;
 	return true;
+}
+
+
+uint64_t maxid(sqlite3 *db)
+{
+	uint64_t ret = 1;
+	int sqlret = sqlite3_step(maxid_stmt);
+	if (sqlret == SQLITE_ROW) {
+		ret = sqlite3_column_int(maxid_stmt, 0);
+	}
+	sqlite3_reset(maxid_stmt);
+	return ret;
 }
 
 
@@ -191,17 +208,17 @@ tag(char *fpath)
 	char *mtype = media_types[media_type(media, fpath)];
 	if (!mtype) mtype = "";
 	objid++;
-	sqlite3_bind_int(insstmt, 1, objid);
-	sqlite3_bind_text(insstmt, 2, "file", strlen("file"), SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 3, mtype, strlen(mtype), SQLITE_STATIC);
-	sqlite3_bind_int(insstmt, 4, duration);
-	sqlite3_bind_text(insstmt, 5, artist, strlen(artist), SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 6, album, strlen(title), SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 7, track, strlen(title), SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 8, title, strlen(title), SQLITE_STATIC);
-	sqlite3_bind_text(insstmt, 9, fpath, strlen(fpath), SQLITE_STATIC);
-	sqlite3_step(insstmt);
-	sqlite3_reset(insstmt);
+	sqlite3_bind_int(ins_stmt, 1, objid);
+	sqlite3_bind_text(ins_stmt, 2, "file", strlen("file"), SQLITE_STATIC);
+	sqlite3_bind_text(ins_stmt, 3, mtype, strlen(mtype), SQLITE_STATIC);
+	sqlite3_bind_int(ins_stmt, 4, duration);
+	sqlite3_bind_text(ins_stmt, 5, artist, strlen(artist), SQLITE_STATIC);
+	sqlite3_bind_text(ins_stmt, 6, album, strlen(title), SQLITE_STATIC);
+	sqlite3_bind_text(ins_stmt, 7, track, strlen(title), SQLITE_STATIC);
+	sqlite3_bind_text(ins_stmt, 8, title, strlen(title), SQLITE_STATIC);
+	sqlite3_bind_text(ins_stmt, 9, fpath, strlen(fpath), SQLITE_STATIC);
+	sqlite3_step(ins_stmt);
+	sqlite3_reset(ins_stmt);
 	LOG("title: %s", title);
 	libvlc_media_release(media);
 	return 0;
@@ -239,22 +256,47 @@ scan(char *basedir)
 }
 
 
+void
+print_usage(char *cmd)
+{
+	printf("usage: %s [ -a ] db dir\n", cmd);
+}
+
+
 int
 main(int argc, char *argv[])
 {
-	if (argc != 3) {
-		LOG("usage: %s dir db", argv[0]);
+	if (argc < 3) {
+		print_usage(argv[0]);
 		return EXIT_FAILURE;
-	} 
-	basedir = argv[1];
+	}
+	int opt = getopt(argc, argv, "a");
+	switch (opt) {
+	case 'a':
+		LOG("append mode");
+		append_mode = true;
+		break;
+	case -1:
+		break;
+	default:
+		print_usage(argv[0]);
+	}
+
     libvlc = libvlc_new(0, NULL);
-    if (sqlite3_open(argv[2], &db)) {
+    if (sqlite3_open(argv[optind], &db)) {
     	LOG("failed to open db: %s", argv[2]);
     	return EXIT_FAILURE;
 	}
-	drop_tables(db);
-	create_tables(db);
-	sqlite3_prepare_v2(db, ins_qry, -1, &insstmt, NULL);
+	basedir = argv[optind + 1];
+	sqlite3_prepare_v2(db, ins_qry, -1, &ins_stmt, NULL);
+	sqlite3_prepare_v2(db, maxid_qry, -1, &maxid_stmt, NULL);
+	if (append_mode) {
+		objid = maxid(db);
+		LOG("continuing with objid: %ld", objid);
+	} else {
+		drop_tables(db);
+		create_tables(db);
+	}
 	exec_stmt(db, "BEGIN TRANSACTION");
 	scan(basedir);
 	exec_stmt(db, "COMMIT");
