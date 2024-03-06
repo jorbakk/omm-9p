@@ -18,8 +18,8 @@
 #define META_MAX   (1024)
 /// Length of fav command
 #define FAV_MAX    (128)
-// #define COL_SEP    ("|")
-#define COL_SEP    ("│")
+// #define COL_SEP    "|"
+#define COL_SEP    "│"
 
 #define fatal(...) ixp_eprint("ixpc: fatal: " __VA_ARGS__); \
 
@@ -147,7 +147,6 @@ xls(int argc, char *argv[])
 		/// Read meta file
 		sprintf(path, "/%s/meta", stat[i].name);
 		fid = ixp_open(serve, path, P9_OREAD);
-		fprintf(stderr, "opening path: %s ...\n", path);
 		if(fid == NULL) {
 			fprintf(stderr, "failed to open '%s', skipping ...\n", path);
 			continue;
@@ -165,7 +164,7 @@ xls(int argc, char *argv[])
 			fprintf(stderr, "failed to read from '%s': %s\n", path, ixp_errbuf());
 			goto cleanup;
 		}
-		if(count == 0) {
+		if(meta_len == 0) {
 			fprintf(stderr, "'%s' is empty\n", path);
 			goto cleanup;
 		}
@@ -184,11 +183,13 @@ xls(int argc, char *argv[])
 		struct time t;
 		uint64_t ms = atol(metargs[MET_DUR]);
 		msec2time(&t, ms);
-		// fprintf(stdout, "%2s "COL_SEP" %4.1f MB "COL_SEP" %02d:%02d:%02d "COL_SEP" %16s "COL_SEP" %s\n",
-		fprintf(stdout, "%2s | %4.1f MB | %02d:%02d:%02d | %16s | %s\n",
-			stat[i].name, fsize / 1e6,
-			t.h, t.m, t.s,
-			metargs[MET_ORIG], metargs[MET_TITLE]);
+		fprintf(stdout,
+			"%2s " COL_SEP " %4.1f MB " \
+			COL_SEP " %02d:%02d:%02d " COL_SEP \
+			" %16s " COL_SEP " %s\n",
+				stat[i].name, fsize / 1e6,
+				t.h, t.m, t.s,
+				metargs[MET_ORIG], metargs[MET_TITLE]);
 	}
 	ret = 0;
 cleanup:
