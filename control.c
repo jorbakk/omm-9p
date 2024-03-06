@@ -18,6 +18,8 @@
 #define META_MAX   (1024)
 /// Length of fav command
 #define FAV_MAX    (128)
+// #define COL_SEP    ("|")
+#define COL_SEP    ("│")
 
 #define fatal(...) ixp_eprint("ixpc: fatal: " __VA_ARGS__); \
 
@@ -45,6 +47,7 @@ enum {
 	MET_TRACK,
 	MET_TITLE,
 	MET_PATH,
+	MET_CNT,
 };
 
 
@@ -144,16 +147,17 @@ xls(int argc, char *argv[])
 		/// Read meta file
 		sprintf(path, "/%s/meta", stat[i].name);
 		fid = ixp_open(serve, path, P9_OREAD);
+		fprintf(stderr, "opening path: %s ...\n", path);
 		if(fid == NULL) {
 			fprintf(stderr, "failed to open '%s', skipping ...\n", path);
 			continue;
 		}
-		int pos = 0;
+		int meta_len = 0;
 		char meta[META_MAX] = {0};
 		buf = ixp_emalloc(fid->iounit);
 		while((count = ixp_read(fid, buf, fid->iounit)) > 0) {
-			memcpy(meta + pos, buf, count);
-			pos += count;
+			memcpy(meta + meta_len, buf, count);
+			meta_len += count;
 		}
 		ixp_close(fid);
 		free(buf);
@@ -161,15 +165,18 @@ xls(int argc, char *argv[])
 			fprintf(stderr, "failed to read from '%s': %s\n", path, ixp_errbuf());
 			goto cleanup;
 		}
-		int metacnt = 8;
-		char *metargs[8] = {0};
+		if(count == 0) {
+			fprintf(stderr, "'%s' is empty\n", path);
+			goto cleanup;
+		}
+		char *metargs[MET_CNT] = {0};
 		metargs[0] = meta;
 		char *ma = meta;
 		// char sep = '\0';
 		char sep = '\1';
 		// char sep = '@';
-		for (int m = 1; m < metacnt; ++m) {
-			ma = memchr(ma, sep, pos);
+		for (int m = 1; m < MET_CNT; ++m) {
+			ma = memchr(ma, sep, meta_len - (ma - meta));
 			*(ma) = '\0';
 			ma++;
 			metargs[m] = ma;
@@ -177,6 +184,7 @@ xls(int argc, char *argv[])
 		struct time t;
 		uint64_t ms = atol(metargs[MET_DUR]);
 		msec2time(&t, ms);
+		// fprintf(stdout, "%2s "COL_SEP" %4.1f MB "COL_SEP" %02d:%02d:%02d "COL_SEP" %16s "COL_SEP" %s\n",
 		fprintf(stdout, "%2s | %4.1f MB | %02d:%02d:%02d | %16s | %s\n",
 			stat[i].name, fsize / 1e6,
 			t.h, t.m, t.s,

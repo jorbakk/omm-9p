@@ -493,8 +493,8 @@ srvread(Req *r)
 	offset = r->ifcall.offset;
 	vlong objid = QOBJID(path);
 	long count = r->ifcall.count;
-	char *title;
-	size_t title_len;
+	char *col_val;
+	size_t col_len;
 	int pos = 0;
 	char meta[MAX_META] = {0};
 	int sqlret;
@@ -529,16 +529,17 @@ srvread(Req *r)
 		// char sep = '\0';
 		char sep = '\1';
 		// char sep = '@';
+		int col_cnt = 7;
 		if (sqlret == SQLITE_ROW) {
-			for (int m = 0; m < 7; ++m) {
-				title = (char*)sqlite3_column_text(metastmt, m);
-				title_len = strlen(title);
-				memcpy(meta + pos, title, title_len);
-				pos += title_len;
+			for (int m = 0; m < col_cnt; ++m) {
+				col_val = (char*)sqlite3_column_text(metastmt, m);
+				col_len = strlen(col_val);
+				memcpy(meta + pos, col_val, col_len);
+				pos += col_len;
 				meta[pos] = sep;
 				pos++;
 			}
-			LOG("meta query returned title: %s", title);
+			LOG("meta query returned title: %s", col_val);  /// Last col is title
 			readstr(r, meta);
 		}
 		sqlite3_reset(metastmt);
