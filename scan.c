@@ -22,7 +22,7 @@ const char *crtobj_qry         =     \
 "id     INTEGER(8) PRIMARY KEY, "    \
 "type   TEXT(16), "                  \
 "fmt    TEXT(16), "                  \
-"timel  INTEGER, "                   \
+"dur    INTEGER, "                   \
 "orig   TEXT(16), "                  \
 "album  TEXT, "                      \
 "track  TEXT, "                      \

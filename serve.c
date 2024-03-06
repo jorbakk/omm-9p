@@ -98,7 +98,7 @@ static const char *favcountqry  = \
 	"AND obj.id = fav.objid AND fav.listid = '%s' " \
 	"LIMIT 1";
 static const char *metaqry      = \
-	"SELECT type, fmt, timel, orig, album, track, title, path FROM obj WHERE " \
+	"SELECT type, fmt, dur, orig, album, track, title, path FROM obj WHERE " \
 	"id = ? LIMIT 1";
 static const char *favaddqry    = \
 	"INSERT INTO fav VALUES (?,?,?,?)";
@@ -254,7 +254,7 @@ initaux(vlong path, void **aux)
 		LOG("initaux, Qdata");
 		AuxObj *ao = calloc(1, sizeof(AuxObj));
 		vlong objid = QOBJID(path);
-		// SELECT type, fmt, timel, orig, album, track, title, path FROM obj WHERE id = objid LIMIT 1
+		// SELECT type, fmt, dur, orig, album, track, title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
 		int sqlret = sqlite3_step(metastmt);
 		if (sqlret == SQLITE_ROW) {
@@ -523,7 +523,7 @@ srvread(Req *r)
 		}
 		break;
 	case Qmeta:
-		// SELECT type, fmt, timel, orig, album, track, title, path FROM obj WHERE id = objid LIMIT 1
+		// SELECT type, fmt, dur, orig, album, track, title, path FROM obj WHERE id = objid LIMIT 1
 		sqlite3_bind_int(metastmt, 1, objid);
 		sqlret = sqlite3_step(metastmt);
 		// char sep = '\0';
