@@ -161,8 +161,9 @@ exit:
 int
 media_type_fext(char *fpath)
 {
-	char *ext = strrchr(fpath, '.') + 1;
+	char *ext = strrchr(fpath, '.');
 	if (!ext) return TYPE_NONE;
+	ext++;
 	for (char **t = audio_types; *t; ++t) {
 		if (strcasecmp(ext, *t) == 0) return TYPE_AUDIO;
 	}
@@ -219,7 +220,7 @@ tag(char *fpath)
 	sqlite3_bind_text(ins_stmt, 9, fpath, strlen(fpath), SQLITE_STATIC);
 	sqlite3_step(ins_stmt);
 	sqlite3_reset(ins_stmt);
-	LOG("title: %s", title);
+	LOG("%s", fpath);
 	libvlc_media_release(media);
 	return 0;
 }
