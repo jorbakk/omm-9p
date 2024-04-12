@@ -73,6 +73,70 @@ void msec2time(struct time *t, uint64_t ms)
 int write_sqry_cmdbuf(char *buf);
 
 
+void
+print_direntry(Stat *stat)
+{
+	char path[PATH_MAX] = {0};
+	char *buf;
+	int count;
+	IxpCFid *fid;
+	/// Entry is a file, we're looking for dirs, only
+	if ((stat->mode & P9_DMDIR) == 0) return;
+	/// Stat data file
+	sprintf(path, "/%s/data", stat->name);
+	Stat *dstat = ixp_stat(serve, path);
+	if(dstat == NULL) {
+		fprintf(stderr, "failed to stat '%s', skipping ...\n", path);
+		return;
+	}
+	uint64_t fsize = dstat->length;
+	ixp_freestat(dstat);
+	/// Read meta file
+	sprintf(path, "/%s/meta", stat->name);
+	fid = ixp_open(serve, path, P9_OREAD);
+	if(fid == NULL) {
+		fprintf(stderr, "failed to open '%s', skipping ...\n", path);
+		return;
+	}
+	int meta_len = 0;
+	char meta[META_MAX] = {0};
+	buf = ixp_emalloc(fid->iounit);
+	while((count = ixp_read(fid, buf, fid->iounit)) > 0) {
+		memcpy(meta + meta_len, buf, count);
+		meta_len += count;
+	}
+	ixp_close(fid);
+	free(buf);
+	if(count == -1) {
+		fprintf(stderr, "failed to read from '%s': %s\n", path, ixp_errbuf());
+		return;
+	}
+	if(meta_len == 0) {
+		fprintf(stderr, "'%s' is empty\n", path);
+		return;
+	}
+	char *metargs[MET_CNT] = {0};
+	metargs[0] = meta;
+	char *ma = meta;
+	for (int m = 1; m < MET_CNT; ++m) {
+		ma = memchr(ma, LIST_SEP, meta_len - (ma - meta));
+		*(ma) = '\0';
+		ma++;
+		metargs[m] = ma;
+	}
+	struct time t = {0};
+	uint64_t ms = atol(metargs[MET_DUR]);
+	msec2time(&t, ms);
+	fprintf(stdout,
+		"%2s " COL_SEP " %4.1f MB " \
+		COL_SEP " %02d:%02d:%02d " COL_SEP \
+		" %16s " COL_SEP " %s\n",
+			stat->name, fsize / 1e6,
+			t.h, t.m, t.s,
+			metargs[MET_ORIG], metargs[MET_TITLE]);
+}
+
+
 static int
 xls(int argc, char *argv[])
 {
@@ -91,13 +155,10 @@ xls(int argc, char *argv[])
 	char *file, *buf;
 	int count, i;
 
-	int stat_size = 0;
-	int stat_capa = 16;
 	int ret = 1;
 
 	file = "/";
 	stat = ixp_stat(serve, file);
-	stat_size++;
 	if(stat == NULL) {
 		fprintf(stderr, "failed to stat file '%s': %s\n", file, ixp_errbuf());
 		goto cleanup;
@@ -107,23 +168,19 @@ xls(int argc, char *argv[])
 		goto cleanup;
 	}
 	ixp_freestat(stat);
-	stat_size--;
 	fid = ixp_open(serve, file, P9_OREAD);
 	if(fid == NULL) {
 		fprintf(stderr, "failed to open dir '%s': %s\n", file, ixp_errbuf());
 		goto cleanup;
 	}
 	/// Read the root dir and stat each entry
-	stat = ixp_emalloc(sizeof(*stat) * stat_capa);
+	stat = ixp_emalloc(sizeof(*stat));
 	buf = ixp_emalloc(fid->iounit);
 	while((count = ixp_read(fid, buf, fid->iounit)) > 0) {
 		m = ixp_message(buf, count, MsgUnpack);
 		while(m.pos < m.end) {
-			if(stat_size == stat_capa) {
-				stat_capa <<= 1;
-				stat = realloc(stat, sizeof(*stat) * stat_capa);
-			}
-			ixp_pstat(&m, &stat[stat_size++]);
+			ixp_pstat(&m, stat);
+			print_direntry(stat);
 		}
 	}
 	ixp_close(fid);
@@ -132,69 +189,9 @@ xls(int argc, char *argv[])
 		fprintf(stderr, "failed to read dir '%s': %s\n", file, ixp_errbuf());
 		goto cleanup;
 	}
-	/// Print out the meta data of each root dir entry
-	char path[PATH_MAX] = {0};
-	for(i = 0; i < stat_size; i++) {
-		/// Entry is a file, we're looking for dirs, only
-		if ((stat[i].mode & P9_DMDIR) == 0) continue;
-		/// Stat data file
-		sprintf(path, "/%s/data", stat[i].name);
-		Stat *dstat = ixp_stat(serve, path);
-		if(dstat == NULL) {
-			fprintf(stderr, "failed to stat '%s', skipping ...\n", path);
-			continue;
-		}
-		uint64_t fsize = dstat->length;
-		ixp_freestat(dstat);
-		/// Read meta file
-		sprintf(path, "/%s/meta", stat[i].name);
-		fid = ixp_open(serve, path, P9_OREAD);
-		if(fid == NULL) {
-			fprintf(stderr, "failed to open '%s', skipping ...\n", path);
-			continue;
-		}
-		int meta_len = 0;
-		char meta[META_MAX] = {0};
-		buf = ixp_emalloc(fid->iounit);
-		while((count = ixp_read(fid, buf, fid->iounit)) > 0) {
-			memcpy(meta + meta_len, buf, count);
-			meta_len += count;
-		}
-		ixp_close(fid);
-		free(buf);
-		if(count == -1) {
-			fprintf(stderr, "failed to read from '%s': %s\n", path, ixp_errbuf());
-			goto cleanup;
-		}
-		if(meta_len == 0) {
-			fprintf(stderr, "'%s' is empty\n", path);
-			goto cleanup;
-		}
-		char *metargs[MET_CNT] = {0};
-		metargs[0] = meta;
-		char *ma = meta;
-		for (int m = 1; m < MET_CNT; ++m) {
-			ma = memchr(ma, LIST_SEP, meta_len - (ma - meta));
-			*(ma) = '\0';
-			ma++;
-			metargs[m] = ma;
-		}
-		struct time t = {0};
-		uint64_t ms = atol(metargs[MET_DUR]);
-		msec2time(&t, ms);
-		fprintf(stdout,
-			"%2s " COL_SEP " %4.1f MB " \
-			COL_SEP " %02d:%02d:%02d " COL_SEP \
-			" %16s " COL_SEP " %s\n",
-				stat[i].name, fsize / 1e6,
-				t.h, t.m, t.s,
-				metargs[MET_ORIG], metargs[MET_TITLE]);
-	}
 	ret = 0;
 cleanup:
-	for(i = 0; i < stat_size; i++) {
-		ixp_freestat(&stat[i]);
-	}
+	ixp_freestat(stat);
 	return ret;
 }
 
